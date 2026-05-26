@@ -1,0 +1,9 @@
+﻿.codegraph/
+.cursor/
+node_modules/
+vendor/
+dist/
+build/
+coverage/
+.env
+.env.*
