@@ -1,4 +1,4 @@
-import type { Provider, ProviderInfo, Message, ChatOptions, ChatResponse, ToolCall } from '../types.js';
+import type { Provider, ProviderInfo, Message, ChatOptions, ChatResponse, StreamEvent, ToolCall } from '../types.js';
 import type { TriModelConfig } from '../config.js';
 
 /**
@@ -205,5 +205,23 @@ export class TriMetaverseProvider implements Provider {
     } catch {
       return false;
     }
+  }
+
+  /** CTO-003 P1: Anthropic SSE streaming — not yet implemented. Falls back to chat(). */
+  async *stream(messages: Message[], options?: ChatOptions): AsyncGenerator<StreamEvent> {
+    // Anthropic SSE streaming requires different parsing (event: content_block_delta, etc.)
+    // For now, fall back to chat() and yield a single synthetic stream event.
+    const response = await this.chat(messages, options);
+    yield {
+      delta: response.content ?? '',
+      tool_calls: response.tool_calls?.map((tc, i) => ({
+        index: i,
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.function.name, arguments: tc.function.arguments },
+      })),
+      finish_reason: response.finish_reason,
+      usage: response.usage,
+    };
   }
 }

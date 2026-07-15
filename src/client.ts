@@ -120,4 +120,38 @@ export class ModelClient {
     }
     return results;
   }
+
+  /** CTO-003 P1: Streaming chat with provider fallback (same pattern as chat()). */
+  async *stream(model: string, messages: Message[], options?: ChatOptions): AsyncGenerator<import('./types.js').StreamEvent> {
+    const route = this.registry[model];
+    if (!route) {
+      throw new Error(`Unknown model: ${model}. Available models: ${this.listModels().join(', ')}`);
+    }
+
+    const provider = this.providers.get(route.primary);
+    if (!provider) {
+      throw new Error(`Provider not found: ${route.primary}`);
+    }
+
+    try {
+      for await (const event of provider.stream(messages, { ...options, model })) {
+        yield event;
+      }
+    } catch (error) {
+      if (route.fallback) {
+        const fallbackRoute = this.registry[route.fallback];
+        if (fallbackRoute) {
+          const fallbackProvider = this.providers.get(fallbackRoute.primary);
+          if (fallbackProvider) {
+            console.warn(`[trimodel] primary model ${model} failed, falling back to ${route.fallback}`);
+            for await (const event of fallbackProvider.stream(messages, { ...options, model: route.fallback })) {
+              yield event;
+            }
+            return;
+          }
+        }
+      }
+      throw error;
+    }
+  }
 }

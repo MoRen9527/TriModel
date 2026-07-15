@@ -9,6 +9,7 @@ export type {
   Message,
   ChatOptions,
   ChatResponse,
+  StreamEvent,
   ToolCall,
   ToolDefinition,
   Provider,

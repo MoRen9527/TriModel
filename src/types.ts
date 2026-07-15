@@ -54,9 +54,28 @@ export interface ProviderInfo {
   baseUrl: string;
 }
 
+/** Streaming event yielded during model streaming. */
+export interface StreamEvent {
+  /** Delta content chunk (accumulated by caller) */
+  delta: string;
+  /** Tool calls accumulated so far (incremental, merge by index) */
+  tool_calls?: Array<{
+    index: number;
+    id?: string;
+    type?: 'function';
+    function?: { name?: string; arguments?: string };
+  }>;
+  /** Finish reason (only present in final event) */
+  finish_reason?: 'stop' | 'length' | 'content_filter' | 'tool_calls' | null;
+  /** Usage info (only present in final event) */
+  usage?: ChatResponse['usage'];
+}
+
 export interface Provider {
   readonly info: ProviderInfo;
   chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse>;
+  /** CTO-003 P1: Streaming chat with SSE parsing. Yields StreamEvent chunks. */
+  stream(messages: Message[], options?: ChatOptions): AsyncGenerator<StreamEvent>;
   healthCheck(): Promise<boolean>;
 }
 
