@@ -1,41 +1,52 @@
-﻿import type { Provider, ProviderInfo, Message, ChatOptions, ChatResponse } from '../types.js';
-import type { TriModelConfig } from '../config.js';
+import type { ChatOptions, ChatResponse, Message, ToolCall, Provider, ProviderInfo } from '../types.js';
 
 export class DeepSeekProvider implements Provider {
+  readonly name = 'deepseek';
   private apiKey: string;
   private baseUrl: string;
 
   readonly info: ProviderInfo = {
     name: 'deepseek',
-    models: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro', 'deepseek-v4-flash'],
-    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    baseUrl: 'https://api.deepseek.com',
   };
 
-  constructor(config: TriModelConfig) {
-    this.apiKey = config.deepseekApiKey;
-    this.baseUrl = config.deepseekBaseUrl;
-    this.info.baseUrl = config.deepseekBaseUrl;
+  constructor(apiKey: string, baseUrl = 'https://api.deepseek.com') {
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl;
   }
 
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    const model = options?.model ?? "deepseek-chat";
+    const model = options?.model ?? 'deepseek-chat';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60_000);
 
     try {
+      const body: Record<string, unknown> = {
+        model,
+        messages: messages.map((m) => {
+          const msg: Record<string, unknown> = { role: m.role };
+          if (m.content !== null && m.content !== undefined) msg.content = m.content;
+          if (m.tool_calls) msg.tool_calls = m.tool_calls;
+          if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+          if (m.name) msg.name = m.name;
+          return msg;
+        }),
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.max_tokens ?? 4096,
+        stream: false,
+      };
+      if (options?.tools && options.tools.length > 0) {
+        body.tools = options.tools;
+      }
+
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: options?.temperature ?? 0.7,
-          max_tokens: options?.max_tokens ?? 4096,
-          stream: false,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -44,41 +55,50 @@ export class DeepSeekProvider implements Provider {
         throw new Error(`DeepSeek API error ${response.status}: ${errorBody}`);
       }
 
-      const data = await response.json() as {
-        id: string;
-        model: string;
-        choices: Array<{
-          message: { role: string; content: string; reasoning_content?: string };
-          finish_reason: string | null;
-        }>;
-        usage?: {
-          prompt_tokens: number;
-          completion_tokens: number;
-          total_tokens: number;
-          completion_tokens_details?: { reasoning_tokens?: number };
-        };
-      };
+      const json = await response.json() as Record<string, unknown>;
+      const choice = (json.choices as Array<Record<string, unknown>>)?.[0];
+      if (!choice) throw new Error('DeepSeek response missing choices');
 
-      const choice = data.choices?.[0];
-      if (!choice?.message) {
-        throw new Error('DeepSeek API returned empty response');
+      const responseMessage = choice.message as Record<string, unknown>;
+      const finishReason = choice.finish_reason as string;
+
+      let content: string | null = (responseMessage.content as string) ?? null;
+      let toolCalls: ToolCall[] | undefined;
+
+      if (responseMessage.tool_calls) {
+        toolCalls = (responseMessage.tool_calls as Array<Record<string, unknown>>).map((tc) => {
+          const fn = tc.function as Record<string, unknown>;
+          return {
+            id: tc.id as string,
+            type: 'function',
+            function: {
+              name: fn.name as string,
+              arguments: fn.arguments as string,
+            },
+          };
+        });
+        if (finishReason === 'tool_calls') {
+          content = null;
+        }
       }
 
-      const content = choice.message.content || choice.message.reasoning_content || '';
-
       return {
-        id: data.id,
-        model: data.model,
+        id: json.id as string,
         content,
-        reasoning_content: choice.message.reasoning_content,
-        finish_reason: (choice.finish_reason as ChatResponse['finish_reason']) ?? null,
-        usage: data.usage ? {
-          prompt_tokens: data.usage.prompt_tokens,
-          completion_tokens: data.usage.completion_tokens,
-          total_tokens: data.usage.total_tokens,
-          reasoning_tokens: data.usage.completion_tokens_details?.reasoning_tokens,
-        } : undefined,
+        model: model as string,
+        finish_reason: (finishReason as ChatResponse['finish_reason']) ?? 'stop',
+        tool_calls: toolCalls,
+        usage: {
+          prompt_tokens: (json.usage as Record<string, number> | undefined)?.prompt_tokens ?? 0,
+          completion_tokens: (json.usage as Record<string, number> | undefined)?.completion_tokens ?? 0,
+          total_tokens: (json.usage as Record<string, number> | undefined)?.total_tokens ?? 0,
+        },
       };
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('DeepSeek API request timed out');
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -87,7 +107,6 @@ export class DeepSeekProvider implements Provider {
   async healthCheck(): Promise<boolean> {
     try {
       await this.chat([{ role: 'user', content: 'ping' }], {
-        model: 'deepseek-chat',
         max_tokens: 1,
       });
       return true;

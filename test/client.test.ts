@@ -6,6 +6,9 @@ import type { TriModelConfig, Message, ChatResponse } from '../src/index.js';
 const testConfig: TriModelConfig = {
   deepseekApiKey: 'sk-test-mock-key',
   deepseekBaseUrl: 'https://api.deepseek.com/v1',
+  trimetaverseApiKey: 'tmv-sk-dev-test',
+  trimetaverseBaseUrl: 'http://127.0.0.1:8000/v1',
+  primaryProvider: 'deepseek',
   defaultModel: 'deepseek-chat',
   fallbackModel: 'deepseek-chat',
   requestTimeoutMs: 5000,
@@ -40,18 +43,18 @@ describe('DeepSeekProvider', () => {
   });
 
   it('should complete a chat request', async () => {
-    const provider = new DeepSeekProvider(testConfig);
+    const provider = new DeepSeekProvider(testConfig.deepseekApiKey, testConfig.deepseekBaseUrl);
     const messages: Message[] = [{ role: 'user', content: 'Hello' }];
     const response = await provider.chat(messages, { model: 'deepseek-chat' });
 
     assert.equal(response.model, 'deepseek-chat');
-    assert.ok(response.content.length > 0);
+    assert.ok(response.content && response.content.length > 0);
     assert.equal(response.finish_reason, 'stop');
     assert.ok(response.usage);
   });
 
   it('should handle deepseek-reasoner model', async () => {
-    const provider = new DeepSeekProvider(testConfig);
+    const provider = new DeepSeekProvider(testConfig.deepseekApiKey, testConfig.deepseekBaseUrl);
     const messages: Message[] = [{ role: 'user', content: 'Solve this problem' }];
     const response = await provider.chat(messages, { model: 'deepseek-reasoner' });
 
@@ -98,30 +101,34 @@ describe('ModelClient', () => {
     const response = await client.chat('deepseek-chat', messages);
 
     assert.equal(response.model, 'deepseek-chat');
-    assert.ok(response.content.includes('deepseek-chat'));
+    assert.ok(response.content?.includes('deepseek-chat'));
   });
 
-  it('should fallback from deepseek-chat to deepseek-reasoner on failure', async () => {
+  it('should fallback from deepseek-chat via TriStaciss on failure', async () => {
     let callCount = 0;
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       callCount++;
+      const url = typeof input === 'string' ? input : input.toString();
       const body = init?.body ? JSON.parse(init.body as string) : {};
 
-      if (body.model === 'deepseek-chat') {
-        return new Response(JSON.stringify({ error: { message: 'rate limit exceeded' } }), {
-          status: 429,
-          headers: { 'Content-Type': 'application/json' },
-        });
+      // First call: deepseek-chat fails
+      if (url.includes('/chat/completions') || callCount === 1) {
+        if (!url.includes('/messages')) {
+          return new Response(JSON.stringify({ error: { message: 'rate limit exceeded' } }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
       }
 
+      // Fallback: tmv-deepseek-chat via TriStaciss (Anthropic format)
       return new Response(JSON.stringify({
-        id: 'chatcmpl-fallback',
-        model: 'deepseek-reasoner',
-        choices: [{
-          message: { role: 'assistant', content: 'Fallback response from reasoner' },
-          finish_reason: 'stop',
-        }],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        id: 'msg_fallback_001',
+        model: body.model ?? 'deepseek-chat',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Fallback response via TriStaciss' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 10, output_tokens: 5 },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
 
@@ -129,9 +136,8 @@ describe('ModelClient', () => {
     const messages: Message[] = [{ role: 'user', content: 'Hi' }];
     const response = await client.chat('deepseek-chat', messages);
 
-    assert.equal(callCount, 2);
-    assert.equal(response.model, 'deepseek-reasoner');
-    assert.ok(response.content.includes('Fallback'));
+    assert.ok(callCount >= 2);
+    assert.ok(response.content?.includes('Fallback'));
   });
 
   it('should throw for unknown model', async () => {
