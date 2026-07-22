@@ -41,7 +41,8 @@
 
 ## Cross-Module Dependencies
 
-- 直接作为 TriMC、TriSkill 等消费者的模型层依赖。消费端 `import TriModel` 时零配置即可使用，Key 由 TriModel 自身管理。
+- 直接作为 **TriMC**、**TriLC**、**TriSkill** 等消费者的模型层依赖。消费端 `import TriModel` 时零配置即可使用，Key 由 TriModel 自身管理。
+- **TriLC**（2026-07-22 确认）：作为 TriModel 消费者，通过 `GET /v1/models` 拉取模型列表，`GET /v1/config/keys` 拉取 Provider Key。TriLC 为 TriPilot 提供模型发现统一路径（TriPilot → TriLC `/v1/models` → TriModel）。
 - TriTest 可以通过 mock fetch 机制对 TriModel 进行模型表现验证。
 
 ## API Key Architecture
@@ -76,6 +77,11 @@ TriModel 作为独立模块，**自管 API Key**，而非依赖消费端注入�
 - 路由：`ModelClient.chat(model, messages)` → 查 `ModelRegistry` → 调 `Provider.chat()` → 失败则 fallback
 - 配置：`readConfig()` 先读 TriModel 自身 `.env` 作为默认 Key，再接受 `createModelClient(config?)` 构造函数参数做实例级覆盖。不依赖消费端 process.env 注入。
 - Key 管理：TriModel `.env` 是 Key 池真源；`.env.example` 是纯文档契约；消费端零配置 import 即可使用
+- **★ Phase 1 配置平面（2026-07-22）**：
+  - HTTP API 服务（`node:http`，零框架依赖，`127.0.0.1:3333`）
+  - 4 端点：`/health`、`/v1/models`、`/v1/config/keys`、`/v1/config/keys/refresh`
+  - 定位：纯配置分发，不代理业务流量（chat/streaming 不经过此服务）
+  - library 模式保留：本地 dev 和 TriLC fallback 继续使用 `import 'trimodel'`
 
 ## Sources
 

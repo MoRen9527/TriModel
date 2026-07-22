@@ -1,6 +1,7 @@
 ﻿import type { Provider, Message, ChatOptions, ChatResponse, ModelRegistry } from './types.js';
 import type { TriModelConfig } from './config.js';
 import { DeepSeekProvider } from './providers/deepseek.js';
+import { DeepSeekAnthropicProvider } from './providers/deepseek-anthropic.js';
 import { TriMetaverseProvider } from './providers/trimetaverse.js';
 
 export class ModelClient {
@@ -11,6 +12,8 @@ export class ModelClient {
     // Always register DeepSeek as fallback/legacy
     if (config.deepseekApiKey) {
       this.providers.set('deepseek', new DeepSeekProvider(config.deepseekApiKey, config.deepseekBaseUrl));
+      // DeepSeek Anthropic endpoint for v4-pro/v4-flash (uses /anthropic/messages)
+      this.providers.set('deepseek-anthropic', new DeepSeekAnthropicProvider(config.deepseekApiKey, config.deepseekAnthropicBaseUrl));
     }
 
     // Register TriMetaverse when configured or when API key is present
@@ -38,13 +41,13 @@ export class ModelClient {
         timeoutMs: config.requestTimeoutMs,
       },
       'deepseek-v4-pro': {
-        primary: 'deepseek',
+        primary: 'deepseek-anthropic',
         fallback: hasTmv ? 'tmv-deepseek-chat' : 'deepseek-chat',
         timeoutMs: config.requestTimeoutMs * 2,
       },
       'deepseek-v4-flash': {
-        primary: 'deepseek',
-        fallback: hasTmv ? 'tmv-deepseek-chat' : 'deepseek-v4-pro',
+        primary: 'deepseek-anthropic',
+        fallback: hasTmv ? 'tmv-deepseek-chat' : 'deepseek-chat',
         timeoutMs: config.requestTimeoutMs,
       },
     };

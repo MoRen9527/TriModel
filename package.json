@@ -17,7 +17,9 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
+    "serve": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "start:server": "node dist/src/server.js",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/**/*.test.ts"
   },

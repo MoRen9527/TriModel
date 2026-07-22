@@ -6,6 +6,7 @@ import type { TriModelConfig, Message, ChatResponse } from '../src/index.js';
 const testConfig: TriModelConfig = {
   deepseekApiKey: 'sk-test-mock-key',
   deepseekBaseUrl: 'https://api.deepseek.com/v1',
+  deepseekAnthropicBaseUrl: 'https://api.deepseek.com/anthropic',
   trimetaverseApiKey: 'tmv-sk-dev-test',
   trimetaverseBaseUrl: 'http://127.0.0.1:8000/v1',
   primaryProvider: 'deepseek',
