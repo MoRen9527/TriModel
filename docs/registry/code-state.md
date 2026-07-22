@@ -50,7 +50,7 @@ test/
 
 - 监听地址：`127.0.0.1:3333`（`TRIMODEL_HOST` / `TRIMODEL_PORT` 可配置）
 - 定位：纯配置分发服务，**不代理业务流量**（chat/streaming 不经过此服务）
-- version: **0.2.0**（从 0.1.0 bump，反映 API server 新增能力）
+- version: **0.2.0**（2026-07-22 R1.5 bump，反映 API server 新增能力）
 
 ### Dependencies
 
@@ -97,9 +97,9 @@ test/
 
 ## Git Health
 
-- **Last commit**: 2026-07-05 (Checkpoint 066: TriDeployment-TriTest CLI Polish)
-- **Uncommitted changes（Phase 1）**: `src/server.ts`, `src/api/`, `src/providers/deepseek-anthropic.ts`, `package.json` (version bump to 0.2.0), `src/client.ts`, `src/config.ts`, `test/client.test.ts`, `.env.example`
-- ⚠️ **R1 合入待闭合**：Phase 1 代码存在于工作树但未 commit，ImplementationEngineer 需完成 `git add + commit + push`
+- **Last commit**: `a181047` — CTO: bump version 0.1.0→0.2.0 (R1.5, 2026-07-22)
+- **cpo-trimodel-deployment Phase 1 合入**: ✅ 已 commit（`4e0154d`） + push（2026-07-22，小全）
+- **R1.5 version bump**: ✅ 已 commit（`a181047`），push 待网络恢复（2026-07-22，CTO 小狄）
 - **Branches**: main
 - **Recent velocity**: Phase 1 最小接入 1 个月内完成；配置平面改造 W30 完成
 
@@ -112,6 +112,13 @@ test/
 5. **无流式支持**: stream 尚不支持，对大响应不友好。
 6. **AGENTS.md / README.md 仍标"待初始化"**: 与当前代码进度脱节。
 7. **★ Phase 1 新增**: S3 安全级别（600 文件权限 + 127.0.0.1 监听），Phase 2 需升级到 S2（AES-256-GCM 加密 + 机器指纹派生密钥）。
+
+## Phase 2 Backlog
+
+- **登记文件**: `../execution/cpo-trimodel-deployment/phase-2-backlog.md`
+- **登记日期**: 2026-07-22（CTO 小狄，cpo-trimodel-8）
+- **内容**: 8 项 CONDITIONAL_PASS（TM-REG-001 + 7 项 Quality Risks）转入 Phase 2 待办
+- **状态**: 已登记，待 CPO 确认优先级和排期
 
 ## Sources
 
