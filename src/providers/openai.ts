@@ -1,26 +1,33 @@
-import type { ChatOptions, ChatResponse, Message, ToolCall, StreamEvent, Provider, ProviderInfo } from '../types.js';
+import type { Provider, ProviderInfo, Message, ChatOptions, ChatResponse, StreamEvent, ToolCall } from '../types.js';
 import { parseOpenAISSE } from './stream/openai-sse-parser.js';
 
-export class DeepSeekProvider implements Provider {
-  readonly name = 'deepseek';
+/**
+ * OpenAI Chat Completions API provider.
+ *
+ * Connects directly to api.openai.com.
+ * Uses OpenAI-compatible SSE streaming (shared with DeepSeekProvider).
+ */
+export class OpenAIProvider implements Provider {
+  readonly name = 'openai';
   private apiKey: string;
   private baseUrl: string;
 
   readonly info: ProviderInfo = {
-    name: 'deepseek',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
-    baseUrl: 'https://api.deepseek.com',
+    name: 'openai',
+    models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'],
+    baseUrl: 'https://api.openai.com',
   };
 
-  constructor(apiKey: string, baseUrl = 'https://api.deepseek.com') {
+  constructor(apiKey: string, baseUrl = 'https://api.openai.com') {
     this.apiKey = apiKey;
     this.baseUrl = baseUrl;
+    this.info = { ...this.info, baseUrl };
   }
 
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    const model = options?.model ?? 'deepseek-chat';
+    const model = options?.model ?? 'gpt-5-mini';
     const controller = new AbortController();
-    const timeout = setTimeout(() => { controller.abort(); }, 60_000);
+    const timeout = setTimeout(() => { controller.abort(); }, 120_000);
 
     try {
       const body: Record<string, unknown> = {
@@ -37,15 +44,16 @@ export class DeepSeekProvider implements Provider {
         max_tokens: options?.max_tokens ?? 4096,
         stream: false,
       };
+
       if (options?.tools && options.tools.length > 0) {
         body.tools = options.tools;
       }
 
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`
+          Authorization: `******`,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -53,12 +61,12 @@ export class DeepSeekProvider implements Provider {
 
       if (!response.ok) {
         const errorBody = await response.text();
-        throw new Error(`DeepSeek API error ${response.status}: ${errorBody}`);
+        throw new Error(`OpenAI API error ${response.status}: ${errorBody}`);
       }
 
       const json = await response.json() as Record<string, unknown>;
       const choice = (json.choices as Array<Record<string, unknown>>)?.[0];
-      if (!choice) throw new Error('DeepSeek response missing choices');
+      if (!choice) throw new Error('OpenAI response missing choices');
 
       const responseMessage = choice.message as Record<string, unknown>;
       const finishReason = choice.finish_reason as string;
@@ -71,7 +79,7 @@ export class DeepSeekProvider implements Provider {
           const fn = tc.function as Record<string, unknown>;
           return {
             id: tc.id as string,
-            type: 'function',
+            type: 'function' as const,
             function: {
               name: fn.name as string,
               arguments: fn.arguments as string,
@@ -86,7 +94,7 @@ export class DeepSeekProvider implements Provider {
       return {
         id: json.id as string,
         content,
-        model: model,
+        model,
         finish_reason: (finishReason as ChatResponse['finish_reason']) ?? 'stop',
         tool_calls: toolCalls,
         usage: {
@@ -97,7 +105,7 @@ export class DeepSeekProvider implements Provider {
       };
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new Error('DeepSeek API request timed out');
+        throw new Error('OpenAI API request timed out');
       }
       throw error;
     } finally {
@@ -106,7 +114,7 @@ export class DeepSeekProvider implements Provider {
   }
 
   async *stream(messages: Message[], options?: ChatOptions): AsyncGenerator<StreamEvent> {
-    const model = options?.model ?? 'deepseek-chat';
+    const model = options?.model ?? 'gpt-5-mini';
     const controller = new AbortController();
     const timeout = setTimeout(() => { controller.abort(); }, 120_000);
 
@@ -125,15 +133,16 @@ export class DeepSeekProvider implements Provider {
         max_tokens: options?.max_tokens ?? 4096,
         stream: true,
       };
+
       if (options?.tools && options.tools.length > 0) {
         body.tools = options.tools;
       }
 
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `******`,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -141,13 +150,13 @@ export class DeepSeekProvider implements Provider {
 
       if (!response.ok) {
         const errorBody = await response.text();
-        throw new Error(`DeepSeek API error ${response.status}: ${errorBody}`);
+        throw new Error(`OpenAI API error ${response.status}: ${errorBody}`);
       }
 
       yield* parseOpenAISSE(response);
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new Error('DeepSeek API streaming timed out');
+        throw new Error('OpenAI API streaming timed out');
       }
       throw error;
     } finally {
@@ -157,9 +166,7 @@ export class DeepSeekProvider implements Provider {
 
   async healthCheck(): Promise<boolean> {
     try {
-      await this.chat([{ role: 'user', content: 'ping' }], {
-        max_tokens: 1,
-      });
+      await this.chat([{ role: 'user', content: 'ping' }], { max_tokens: 1 });
       return true;
     } catch {
       return false;

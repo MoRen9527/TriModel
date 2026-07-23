@@ -25,7 +25,8 @@ const API_TOKEN = process.env.TRIMODEL_API_TOKEN ?? '';
 const DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-chat';
 const REFRESH_INTERVAL_S = Number(process.env.TRIMODEL_KEY_REFRESH_INTERVAL_S ?? 900);
 
-function computeExpiresAt(_refreshIntervalS: number): string {
+function computeExpiresAt(_unused: number): string {
+  void _unused;
   return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 }
 
@@ -46,6 +47,24 @@ function readKeys(): Record<string, ProviderKey> {
     };
   }
 
+  // L1: Anthropic native (Phase 2)
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    keys['anthropic'] = {
+      api_key: anthropicKey,
+      base_url: process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
+    };
+  }
+
+  // L1: OpenAI native (Phase 2)
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (openaiKey) {
+    keys['openai'] = {
+      api_key: openaiKey,
+      base_url: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com',
+    };
+  }
+
   // L2: TriMetaverse platform provider
   const trimetaverseKey = process.env.TRIMODEL_TRIMETAVERSE_API_KEY;
   if (trimetaverseKey) {
@@ -54,8 +73,6 @@ function readKeys(): Record<string, ProviderKey> {
       base_url: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8000/v1',
     };
   }
-
-  // Future L1 providers can be added here (OpenAI, Claude, GLM, etc.)
 
   return keys;
 }
@@ -106,14 +123,17 @@ export function handleRefreshKeys(authHeader: string | undefined): { statusCode:
     };
   }
 
-  // Phase 1: reads from environment variables (re-reading picks up any env var changes)
-  // Phase 2: can trigger Secret Manager reload
+  // TM-R-003: Actually re-read environment variables on refresh
+  // Phase 2: triggers Secret Manager reload (currently env var re-read)
+  const keys = readKeys();
+  console.log(`[trimodel] keys refreshed: ${String(Object.keys(keys).length)} providers`);
+
   return {
     statusCode: 200,
     body: {
       ok: true,
       refreshed_at: new Date().toISOString(),
-      message: 'Key cache refreshed; clients will receive updated keys on next pull',
+      message: `Key cache refreshed (${String(Object.keys(keys).length)} providers); clients will receive updated keys on next pull`,
     },
   };
 }

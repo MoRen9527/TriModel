@@ -1,5 +1,6 @@
 import type { Provider, ProviderInfo, Message, ChatOptions, ChatResponse, StreamEvent, ToolCall } from '../types.js';
 import type { TriModelConfig } from '../config.js';
+import { parseAnthropicSSE } from './stream/anthropic-sse-parser.js';
 
 /**
  * TriMetaverseProvider — routes through TriStaciss Anthropic-compatible endpoint.
@@ -40,7 +41,7 @@ export class TriMetaverseProvider implements Provider {
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     const model = options?.model ?? 'deepseek-chat';
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
+    const timeout = setTimeout(() => { controller.abort(); }, 120_000);
 
     try {
       // Build Anthropic Messages API request body
@@ -207,21 +208,79 @@ export class TriMetaverseProvider implements Provider {
     }
   }
 
-  /** CTO-003 P1: Anthropic SSE streaming — not yet implemented. Falls back to chat(). */
+  /** CTO-003 P1: Anthropic SSE streaming via shared parser. */
   async *stream(messages: Message[], options?: ChatOptions): AsyncGenerator<StreamEvent> {
-    // Anthropic SSE streaming requires different parsing (event: content_block_delta, etc.)
-    // For now, fall back to chat() and yield a single synthetic stream event.
-    const response = await this.chat(messages, options);
-    yield {
-      delta: response.content ?? '',
-      tool_calls: response.tool_calls?.map((tc, i) => ({
-        index: i,
-        id: tc.id,
-        type: 'function' as const,
-        function: { name: tc.function.name, arguments: tc.function.arguments },
-      })),
-      finish_reason: response.finish_reason,
-      usage: response.usage,
-    };
+    const model = options?.model ?? 'deepseek-chat';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => { controller.abort(); }, 120_000);
+
+    try {
+      const systemMessages = messages.filter((m) => m.role === 'system');
+      const conversationMessages = messages.filter((m) => m.role !== 'system');
+      const systemText = systemMessages.map((m) => m.content).join('\n\n') || undefined;
+
+      const anthropicMessages: Array<Record<string, unknown>> = [];
+      for (const msg of conversationMessages) {
+        const blocks: Array<Record<string, unknown>> = [];
+        if (msg.content) {
+          blocks.push({ type: 'text', text: msg.content });
+        }
+        if (msg.tool_calls) {
+          for (const tc of msg.tool_calls) {
+            let input: unknown;
+            try { input = JSON.parse(tc.function.arguments); } catch { input = {}; }
+            blocks.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+          }
+        }
+        if (msg.role === 'tool' && msg.tool_call_id) {
+          anthropicMessages.push({
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: msg.tool_call_id, content: msg.content ?? '' }],
+          });
+          continue;
+        }
+        anthropicMessages.push({ role: msg.role, content: blocks });
+      }
+
+      const body: Record<string, unknown> = {
+        model,
+        messages: anthropicMessages,
+        stream: true,
+        max_tokens: options?.max_tokens ?? 4096,
+      };
+      if (systemText) body.system = systemText;
+      if (options?.temperature !== undefined) body.temperature = options.temperature;
+      if (options?.tools && options.tools.length > 0) {
+        body.tools = options.tools.map((t) => ({
+          name: t.function.name,
+          description: t.function.description,
+          input_schema: t.function.parameters,
+        }));
+      }
+
+      const response = await fetch(`${this.baseUrl}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `******`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`TriMetaverse API error ${response.status}: ${errorBody}`);
+      }
+
+      yield* parseAnthropicSSE(response);
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('TriMetaverse API streaming timed out');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }

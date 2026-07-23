@@ -1,0 +1,64 @@
+name: TriModel CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check
+
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  build:
+    name: Build & Verify
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Verify dist integrity
+        run: |
+          test -f dist/src/index.js || (echo "MISSING: dist/src/index.js" && exit 1)
+          test -f dist/src/index.d.ts || (echo "MISSING: dist/src/index.d.ts" && exit 1)
+          test -f dist/src/client.js || (echo "MISSING: dist/src/client.js" && exit 1)
+          test -f dist/src/config.js || (echo "MISSING: dist/src/config.js" && exit 1)
+          test -f dist/src/types.js || (echo "MISSING: dist/src/types.js" && exit 1)
+          test -f dist/src/server.js || (echo "MISSING: dist/src/server.js" && exit 1)
+          echo "dist/ integrity check passed"

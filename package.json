@@ -21,14 +21,18 @@
     "build": "tsc -p tsconfig.json",
     "start:server": "node dist/src/server.js",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test test/**/*.test.ts"
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "lint": "eslint src/ test/ --max-warnings 200",
+    "lint:fix": "eslint src/ test/ --fix --max-warnings 200"
   },
   "dependencies": {
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
+    "eslint": "^9.0.0",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.0.0"
   }
 }

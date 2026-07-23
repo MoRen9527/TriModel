@@ -17,6 +17,14 @@ export interface TriModelConfig {
   deepseekBaseUrl: string;
   deepseekAnthropicBaseUrl: string;
 
+  // Anthropic native (L1 — Phase 2)
+  anthropicApiKey: string;
+  anthropicBaseUrl: string;
+
+  // OpenAI native (L1 — Phase 2)
+  openaiApiKey: string;
+  openaiBaseUrl: string;
+
   // TriMetaverse platform provider (L2 — routes through TriStaciss)
   trimetaverseApiKey: string;
   trimetaverseBaseUrl: string;
@@ -35,6 +43,12 @@ export function readConfig(): TriModelConfig {
     deepseekApiKey: process.env.DEEPSEEK_API_KEY ?? '',
     deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
     deepseekAnthropicBaseUrl: process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? 'https://api.deepseek.com/anthropic',
+
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
+
+    openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+    openaiBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com',
 
     trimetaverseApiKey: process.env.TRIMODEL_TRIMETAVERSE_API_KEY ?? 'tmv-sk-dev-default',
     trimetaverseBaseUrl: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8000/v1',

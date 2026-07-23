@@ -1,6 +1,8 @@
 export { ModelClient } from './client.js';
 export { DeepSeekProvider } from './providers/deepseek.js';
 export { TriMetaverseProvider } from './providers/trimetaverse.js';
+export { AnthropicProvider } from './providers/anthropic.js';
+export { OpenAIProvider } from './providers/openai.js';
 export { readConfig } from './config.js';
 export { UsageAccumulator } from './usage.js';
 export type { TokenUsage, UsageSummary } from './usage.js';
