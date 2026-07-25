@@ -13,10 +13,12 @@
 - 模型路由：`ModelRegistry` 记录每个模型的主 provider、fallback 模型和超时。
 - 工厂函数：`createModelClient(config?)` — 读取环境变量并合并自定义配置，返回 `ModelClient` 实例。
 - 当前支持的模型：
-  - `deepseek-v4-pro` — 主模型，fallback → deepseek-chat, 超时 120s
-  - `deepseek-v4-flash` — 快速模型，fallback → deepseek-v4-pro
-  - `deepseek-chat` — 通用对话，fallback → deepseek-v4-pro
-  - `deepseek-reasoner` — 推理模型，fallback → deepseek-chat
+  - `deepseek-v4-pro` — 主模型，fallback → deepseek-v4-flash, 超时 120s
+  - `deepseek-v4-flash` — 快速模型 / fallback 终端，fallback → deepseek-v4-pro（有界环，MAX_FALLBACK_DEPTH=2）
+  - `deepseek-chat` — 【退役名兼容别名】上游已退役（实测 400），primary 失败后自动 fallback → deepseek-v4-flash，旧调用方无感升级
+  - `deepseek-reasoner` — 【退役名兼容别名】同上，fallback → deepseek-v4-flash
+
+  > 注（2026-07-25，需通知 CPO）：`deepseek-chat` / `deepseek-reasoner` 因上游退役转为自愈别名——对外模型名不变，行为为自动降级到 `deepseek-v4-flash`。
 
 ## Current Progress
 

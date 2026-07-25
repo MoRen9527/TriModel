@@ -22,7 +22,7 @@ interface RefreshResponse {
 }
 
 const API_TOKEN = process.env.TRIMODEL_API_TOKEN ?? '';
-const DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-chat';
+const DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-v4-pro';
 const REFRESH_INTERVAL_S = Number(process.env.TRIMODEL_KEY_REFRESH_INTERVAL_S ?? 900);
 
 function computeExpiresAt(_unused: number): string {

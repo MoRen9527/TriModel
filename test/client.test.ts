@@ -14,8 +14,8 @@ const testConfig: TriModelConfig = {
   trimetaverseApiKey: 'tmv-sk-dev-test',
   trimetaverseBaseUrl: 'http://127.0.0.1:8000/v1',
   primaryProvider: 'deepseek',
-  defaultModel: 'deepseek-chat',
-  fallbackModel: 'deepseek-chat',
+  defaultModel: 'deepseek-v4-pro',
+  fallbackModel: 'deepseek-v4-flash',
   requestTimeoutMs: 5000,
 };
 
@@ -109,31 +109,42 @@ describe('ModelClient', () => {
     assert.ok(response.content?.includes('deepseek-chat'));
   });
 
-  it('should fallback from deepseek-chat via TriStaciss on failure', async () => {
+  it('should fallback from deepseek-chat to deepseek-v4-flash', async () => {
     let callCount = 0;
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       callCount++;
       const url = typeof input === 'string' ? input : input.toString();
       const body = init?.body ? JSON.parse(init.body as string) : {};
 
-      // First call: deepseek-chat fails
-      if (url.includes('/chat/completions') || callCount === 1) {
-        if (!url.includes('/messages')) {
-          return new Response(JSON.stringify({ error: { message: 'rate limit exceeded' } }), {
-            status: 429,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
+      // First call: deepseek-chat fails (rate limit)
+      if (callCount === 1) {
+        return new Response(JSON.stringify({ error: { message: 'rate limit exceeded' } }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
 
-      // Fallback: tmv-deepseek-chat via TriStaciss (Anthropic format)
+      // Anthropic-format endpoint keeps Anthropic response shape
+      if (url.includes('/messages')) {
+        return new Response(JSON.stringify({
+          id: 'msg_fallback_001',
+          model: body.model ?? 'deepseek-v4-pro',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Fallback response via Anthropic endpoint' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // Fallback: deepseek-v4-flash via OpenAI-compatible endpoint
       return new Response(JSON.stringify({
-        id: 'msg_fallback_001',
-        model: body.model ?? 'deepseek-chat',
-        role: 'assistant',
-        content: [{ type: 'text', text: 'Fallback response via TriStaciss' }],
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 10, output_tokens: 5 },
+        id: 'chatcmpl-fallback-001',
+        model: body.model ?? 'deepseek-v4-flash',
+        choices: [{
+          message: { role: 'assistant', content: 'Fallback response from deepseek-v4-flash' },
+          finish_reason: 'stop',
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
 
@@ -197,7 +208,7 @@ describe('ModelClient', () => {
     );
   });
 
-  it('should have no circular fallback (deepseek-chat → v4-flash → deepseek-chat stops)', () => {
+  it('should have bounded fallback ring (v4-pro <-> v4-flash stops at depth limit)', () => {
     const client = new ModelClient(testConfig);
     const models = client.listModels();
 
@@ -365,7 +376,7 @@ describe('readConfig', () => {
     assert.equal(config.deepseekApiKey, '');
     assert.equal(config.anthropicApiKey, '');
     assert.equal(config.openaiApiKey, '');
-    assert.equal(config.defaultModel, 'deepseek-chat');
+    assert.equal(config.defaultModel, 'deepseek-v4-pro');
     assert.equal(config.requestTimeoutMs, 60_000);
   });
 });

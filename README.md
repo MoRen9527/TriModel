@@ -34,7 +34,7 @@ npm run serve          # Start config-plane HTTP server on port 3333
 
 | Provider | Models | API Format |
 |----------|--------|------------|
-| **DeepSeek** | deepseek-chat, deepseek-reasoner | OpenAI-compatible |
+| **DeepSeek** | deepseek-v4-pro, deepseek-v4-flash（deepseek-chat / deepseek-reasoner 为退役名兼容别名） | OpenAI-compatible |
 | **DeepSeek (Anthropic)** | deepseek-v4-pro, deepseek-v4-flash | Anthropic Messages |
 | **Anthropic** | claude-sonnet-4, claude-haiku-3-5, claude-opus-4 | Anthropic Messages |
 | **OpenAI** | gpt-5, gpt-5-mini, gpt-5-nano | OpenAI Chat Completions |
@@ -70,7 +70,7 @@ See `.env.example` for the full list. Key variables:
 | `DEEPSEEK_API_KEY` | — | DeepSeek API key |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key |
 | `OPENAI_API_KEY` | — | OpenAI API key |
-| `TRIMODEL_DEFAULT_MODEL` | `deepseek-chat` | Default model |
+| `TRIMODEL_DEFAULT_MODEL` | `deepseek-v4-pro` | Default model |
 | `TRIMODEL_PORT` | `3333` | Config-plane HTTP port |
 
 ## API Endpoints (Config Plane)

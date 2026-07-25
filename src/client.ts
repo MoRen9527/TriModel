@@ -14,7 +14,9 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
 
   // DeepSeek models (Phase 1, fallback chain fixed Phase 2)
   if (providers.has('deepseek') || providers.has('deepseek-anthropic')) {
-    // Terminal model: deepseek-chat (falls back to nothing within DeepSeek family)
+    // deepseek-chat / deepseek-reasoner are retired upstream model names, kept as
+    // backward-compat aliases: primary call 400s on the retired name, then auto-falls
+    // back to deepseek-v4-flash (old callers upgrade transparently).
     registry['deepseek-chat'] = {
       primary: 'deepseek',
       fallback: 'deepseek-v4-flash',
@@ -22,17 +24,17 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
     };
     registry['deepseek-reasoner'] = {
       primary: 'deepseek',
-      fallback: 'deepseek-chat',
+      fallback: 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs,
     };
     registry['deepseek-v4-pro'] = {
-      primary: 'deepseek-anthropic',
+      primary: 'deepseek',
       fallback: 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs * 2,
     };
     registry['deepseek-v4-flash'] = {
-      primary: 'deepseek-anthropic',
-      fallback: 'deepseek-chat',
+      primary: 'deepseek',
+      fallback: 'deepseek-v4-pro',
       timeoutMs: config.requestTimeoutMs,
     };
   }
@@ -42,7 +44,7 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
     Object.assign(registry, {
       'tmv-deepseek-chat': {
         primary: 'trimetaverse',
-        fallback: providers.has('deepseek') ? 'deepseek-chat' : undefined,
+        fallback: providers.has('deepseek') ? 'deepseek-v4-flash' : undefined,
         timeoutMs: config.requestTimeoutMs,
       },
       'tmv-deepseek-reasoner': {
@@ -67,17 +69,17 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
   if (providers.has('anthropic')) {
     registry['claude-sonnet-4-20250514'] = {
       primary: 'anthropic',
-      fallback: providers.has('deepseek-anthropic') ? 'deepseek-v4-pro' : 'deepseek-chat',
+      fallback: providers.has('deepseek-anthropic') ? 'deepseek-v4-pro' : 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs * 2,
     };
     registry['claude-haiku-3-5-20250514'] = {
       primary: 'anthropic',
-      fallback: 'deepseek-chat',
+      fallback: 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs,
     };
     registry['claude-opus-4-20250514'] = {
       primary: 'anthropic',
-      fallback: providers.has('deepseek-anthropic') ? 'deepseek-v4-pro' : 'deepseek-chat',
+      fallback: providers.has('deepseek-anthropic') ? 'deepseek-v4-pro' : 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs * 2,
     };
   }
@@ -86,17 +88,17 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
   if (providers.has('openai')) {
     registry['gpt-5'] = {
       primary: 'openai',
-      fallback: providers.has('deepseek-anthropic') ? 'deepseek-v4-pro' : 'deepseek-chat',
+      fallback: providers.has('deepseek-anthropic') ? 'deepseek-v4-pro' : 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs * 2,
     };
     registry['gpt-5-mini'] = {
       primary: 'openai',
-      fallback: 'deepseek-chat',
+      fallback: 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs,
     };
     registry['gpt-5-nano'] = {
       primary: 'openai',
-      fallback: 'deepseek-chat',
+      fallback: 'deepseek-v4-flash',
       timeoutMs: config.requestTimeoutMs,
     };
   }

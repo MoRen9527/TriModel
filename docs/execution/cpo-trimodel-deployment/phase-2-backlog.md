@@ -21,7 +21,7 @@ Phase 1 交付门禁中以下 8 项被标记为 CONDITIONAL_PASS，统一转入 
 | 2 | TM-GAP-PROVIDER | 功能 | 单 provider 依赖：仅实现 DeepSeek，无 provider 多样性保证。需接入 OpenAI / Anthropic / GLM 等至少一个额外 provider | P2 | 4h |
 | 3 | TM-GAP-LINT | 工程 | 无 lint/format 工具：未配置 ESLint 或 Prettier。需补齐标准 TypeScript lint/format 配置 | P2 | 1h |
 | 4 | TM-GAP-CI | 工程 | 无 CI：无 GitHub Actions 流水线。需补齐 `npm run check && npm test` 的 CI workflow | P2 | 1h |
-| 5 | TM-GAP-FALLBACK | 风险 | fallback 链递归风险：`deepseek-v4-pro → deepseek-chat → deepseek-v4-pro`。需增加 fallback 深度计数或环路检测 | P1 | 1h |
+| 5 | TM-GAP-FALLBACK | 风险 | ~~fallback 链递归风险：`deepseek-v4-pro → deepseek-chat → deepseek-v4-pro`~~ **SUPERSEDED（2026-07-25）**：上游退役 chat/reasoner 触发 fallback 链重设计——新链 `deepseek-v4-pro ↔ deepseek-v4-flash` 有界环 + `MAX_FALLBACK_DEPTH=2` 深度封顶已落地（client.ts），本条关闭 | — | — |
 | 6 | TM-GAP-STREAM | 功能 | 无流式支持：stream 尚不支持，对大响应不友好。需补齐 SSE streaming 支持 | P1 | 3h |
 | 7 | TM-GAP-AGENTS | 文档 | AGENTS.md / README.md 仍标"待初始化"，与当前代码进度脱节。需更新为 Phase 1 完成后的准确实态 | P2 | 0.5h |
 | 8 | TM-GAP-S2 | 安全 | S3→S2 安全升级：当前 S3（600 文件权限 + 127.0.0.1 监听），Phase 2 需升级到 S2（AES-256-GCM 加密 + 机器指纹派生密钥） | P1 | 4h |

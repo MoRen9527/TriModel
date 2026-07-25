@@ -108,7 +108,7 @@ test/
 1. **单 provider 依赖**: 仅实现 DeepSeek，无 provider 多样性保证。
 2. **无 lint/format 工具**: 未配置 ESLint 或 Prettier。
 3. **无 CI**: 无 GitHub Actions 或 CI 流水线。
-4. **fallback 递归风险**: fallback 链 `deepseek-v4-pro → deepseek-chat → deepseek-v4-pro` — 两个都失败时会循环（当前由单次 try/catch 保护，不会死循环，但会抛原始错误）。
+4. **fallback 链（2026-07-25 修复）**: 上游退役 `deepseek-chat` / `deepseek-reasoner`（实测 400），二者保留为向后兼容别名（primary 400 后自动 fallback → `deepseek-v4-flash`，旧调用方无感升级）。v4 系列改走 OpenAI 兼容端点（`/chat/completions`）以规避 DeepSeekAnthropicProvider 透传 Bug #2（Turn-2 tool 历史透传 Anthropic 端点必 400）。新链：`deepseek-v4-pro ↔ deepseek-v4-flash` 有界环，由 `MAX_FALLBACK_DEPTH=2` 封顶。已知取舍：v4 走 OpenAI 端点后丢失 thinking 内容回传（R1 已接受，Phase-2 恢复）。
 5. **无流式支持**: stream 尚不支持，对大响应不友好。
 6. **AGENTS.md / README.md 仍标"待初始化"**: 与当前代码进度脱节。
 7. **★ Phase 1 新增**: S3 安全级别（600 文件权限 + 127.0.0.1 监听），Phase 2 需升级到 S2（AES-256-GCM 加密 + 机器指纹派生密钥）。
