@@ -73,7 +73,7 @@ function readKeys(): Record<string, ProviderKey> {
   if (trimetaverseKey) {
     keys['trimetaverse'] = {
       api_key: trimetaverseKey,
-      base_url: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8000/v1',
+      base_url: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8008/v1',
     };
   }
 

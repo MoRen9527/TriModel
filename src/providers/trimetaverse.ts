@@ -29,7 +29,7 @@ export class TriMetaverseProvider implements Provider {
       'glm-4-plus',
       'kimi-k2',
     ],
-    baseUrl: 'http://127.0.0.1:8000/v1',
+    baseUrl: 'http://127.0.0.1:8008/v1',
   };
 
   constructor(config: TriModelConfig) {

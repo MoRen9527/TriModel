@@ -51,7 +51,7 @@ export function readConfig(): TriModelConfig {
     openaiBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com',
 
     trimetaverseApiKey: process.env.TRIMODEL_TRIMETAVERSE_API_KEY ?? 'tmv-sk-dev-default',
-    trimetaverseBaseUrl: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8000/v1',
+    trimetaverseBaseUrl: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8008/v1',
 
     primaryProvider: (process.env.TRIMODEL_PRIMARY_PROVIDER as 'deepseek' | 'trimetaverse') ?? 'deepseek',
 
