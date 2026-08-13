@@ -165,7 +165,8 @@ export class ModelClient {
       return await provider.chat(messages, { ...options, model });
     } catch (error) {
       if (route.fallback) {
-        console.warn(`[trimodel] ${model} failed (depth=${_depth}), trying ${route.fallback}`);
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(`[trimodel] ${model} failed (depth=${_depth}, reason: ${reason.slice(0, 300)}), trying ${route.fallback}`);
         return await this.chat(route.fallback, messages, options, _depth + 1);
       }
       throw error;
@@ -201,7 +202,8 @@ export class ModelClient {
       }
     } catch (error) {
       if (route.fallback) {
-        console.warn(`[trimodel] ${model} failed (depth=${_depth}), trying stream fallback ${route.fallback}`);
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(`[trimodel] ${model} failed (depth=${_depth}, reason: ${reason.slice(0, 300)}), trying stream fallback ${route.fallback}`);
         for await (const event of this.stream(route.fallback, messages, options, _depth + 1)) {
           yield event;
         }
