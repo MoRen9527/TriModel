@@ -188,6 +188,7 @@ export class ModelClient {
 
   /** CTO-003 P1: Streaming chat with provider fallback (same pattern as chat(), with depth limit). */
   async *stream(model: string, messages: Message[], options?: ChatOptions, _depth = 0): AsyncGenerator<StreamEvent> {
+    console.error(`[trimodel-client][dbg] STREAM model=${model} depth=${_depth} msgs=${messages.length} known=${!!this.registry[model]}`);
     if (_depth > MAX_FALLBACK_DEPTH) {
       throw new Error(`All fallback models exhausted for ${model}. Please try again later.`);
     }

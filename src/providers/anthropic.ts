@@ -218,11 +218,7 @@ export class AnthropicProvider implements Provider {
 
       const body: Record<string, unknown> = {
         model,
-        messages: conversationMessages.map((m) => {
-          const msg: Record<string, unknown> = { role: m.role };
-          if (m.content !== null && m.content !== undefined) msg.content = m.content;
-          return msg;
-        }),
+        messages: toAnthropicConversation(conversationMessages as unknown as AnyMsg[]),
         max_tokens: maxTokens,
         stream: true,
       };
