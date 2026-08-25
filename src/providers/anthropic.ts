@@ -1,6 +1,63 @@
 import type { Provider, ProviderInfo, Message, ChatOptions, ChatResponse, StreamEvent, ToolCall } from '../types.js';
 import { parseAnthropicSSE } from './stream/anthropic-sse-parser.js';
 
+// ── TC-4b 出站消息规范化（2026-08-26）──
+// 内核（agent-core）回喂工具结果用的是 OpenAI 形态：{role:'tool', tool_call_id,
+// content} 与 assistant.tool_calls 字段。Anthropic Messages 端点要求：
+//   tool 结果 = {role:'user', content:[{type:'tool_result', tool_use_id, content}]}
+//   工具调用 = assistant.content 内嵌 {type:'tool_use', id, name, input}
+// 且相邻同角色需合并。此层统一净化，未匹配形态原样透传。
+type AnyMsg = Record<string, unknown>;
+
+function toAnthropicConversation(messages: AnyMsg[]): AnyMsg[] {
+  const out: AnyMsg[] = [];
+  const mergeToolResult = (block: unknown) => {
+    const last = out[out.length - 1];
+    if (last && last.role === 'user' && Array.isArray(last.content)) {
+      (last.content as unknown[]).push(block);
+    } else {
+      out.push({ role: 'user', content: [block] });
+    }
+  };
+  for (const m of messages) {
+    if (m.role === 'tool') {
+      mergeToolResult({
+        type: 'tool_result',
+        tool_use_id: String(m.tool_call_id ?? ''),
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+      });
+      continue;
+    }
+    const calls = m.tool_calls as Array<Record<string, unknown>> | undefined;
+    if (m.role === 'assistant' && calls && calls.length > 0) {
+      const blocks: unknown[] = [];
+      const text = typeof m.content === 'string' ? m.content : '';
+      if (text) blocks.push({ type: 'text', text });
+      for (const tc of calls) {
+        const fn = (tc.function ?? {}) as Record<string, unknown>;
+        let input: unknown = fn.arguments ?? tc.input ?? {};
+        if (typeof input === 'string') {
+          try { input = JSON.parse(input); } catch { /* 原样保留 */ }
+        }
+        blocks.push({
+          type: 'tool_use',
+          id: String(tc.id ?? ''),
+          name: String(fn.name ?? tc.name ?? ''),
+          input,
+        });
+      }
+      out.push({ role: 'assistant', content: blocks });
+      continue;
+    }
+    if (m.role === 'assistant' && (m.content === null || m.content === '')) {
+      continue; // 空助手消息直接丢弃（部分推理模型会发空壳轮）
+    }
+    out.push({ role: m.role as string, content: m.content });
+  }
+  return out;
+}
+
+
 /**
  * Native Anthropic Messages API provider.
  *
@@ -28,6 +85,7 @@ export class AnthropicProvider implements Provider {
     this.info = { ...this.info, baseUrl };
   }
 
+
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     const model = options?.model ?? 'claude-sonnet-4-20250514';
     const maxTokens = options?.max_tokens ?? 8192;
@@ -40,13 +98,7 @@ export class AnthropicProvider implements Provider {
 
       const body: Record<string, unknown> = {
         model,
-        messages: conversationMessages.map((m) => {
-          const msg: Record<string, unknown> = { role: m.role };
-          if (m.content !== null && m.content !== undefined) msg.content = m.content;
-          if (m.tool_calls) msg.tool_calls = m.tool_calls;
-          if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
-          return msg;
-        }),
+        messages: toAnthropicConversation(conversationMessages as unknown as AnyMsg[]),
         max_tokens: maxTokens,
         stream: false,
       };
