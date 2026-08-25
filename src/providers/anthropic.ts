@@ -78,6 +78,8 @@ export class AnthropicProvider implements Provider {
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': this.apiKey,
+          // OpenRouter 等 Anthropic 兼容网关只认 Bearer 不认 x-api-key（2026-08-25 实证）
+          ...(this.baseUrl.includes('openrouter') ? { Authorization: `Bearer ${this.apiKey}` } : {}),
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),
@@ -189,6 +191,8 @@ export class AnthropicProvider implements Provider {
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': this.apiKey,
+          // OpenRouter 等 Anthropic 兼容网关只认 Bearer 不认 x-api-key（2026-08-25 实证）
+          ...(this.baseUrl.includes('openrouter') ? { Authorization: `Bearer ${this.apiKey}` } : {}),
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),

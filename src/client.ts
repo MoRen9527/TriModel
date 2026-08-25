@@ -65,7 +65,11 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
 
   // Anthropic models (Phase 2)
   if (providers.has('anthropic')) {
-    registry['claude-sonnet-4-20250514'] = {
+        registry['stealth/ox-alpha'] = {
+      primary: 'anthropic',
+      timeoutMs: config.requestTimeoutMs * 2,
+    };
+registry['claude-sonnet-4-20250514'] = {
       primary: 'anthropic',
       fallback: providers.has('deepseek-anthropic') ? 'deepseek-v4-pro' : 'deepseek-chat',
       timeoutMs: config.requestTimeoutMs * 2,

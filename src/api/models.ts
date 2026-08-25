@@ -40,6 +40,7 @@ function inferDisplayName(modelId: string): string {
     'tmv-deepseek-reasoner': 'TriMetaverse DeepSeek Reasoner',
     'tmv-deepseek-v4-pro': 'TriMetaverse DeepSeek V4 Pro',
     'tmv-deepseek-v4-flash': 'TriMetaverse DeepSeek V4 Flash',
+    'stealth/ox-alpha': 'Ox Alpha (OpenRouter)',
   };
   return map[modelId] ?? modelId;
 }
