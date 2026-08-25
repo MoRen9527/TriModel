@@ -55,8 +55,8 @@ export function readConfig(): TriModelConfig {
 
     primaryProvider: (process.env.TRIMODEL_PRIMARY_PROVIDER as 'deepseek' | 'trimetaverse') ?? 'deepseek',
 
-    defaultModel: process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-chat',
-    fallbackModel: process.env.TRIMODEL_FALLBACK_MODEL ?? 'deepseek-chat',
+    defaultModel: process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-v4-pro',
+    fallbackModel: process.env.TRIMODEL_FALLBACK_MODEL ?? 'deepseek-v4-flash',
     requestTimeoutMs: Number(process.env.TRIMODEL_REQUEST_TIMEOUT_MS ?? 60_000),
   };
 }

@@ -8,7 +8,7 @@ export class DeepSeekProvider implements Provider {
 
   readonly info: ProviderInfo = {
     name: 'deepseek',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
     baseUrl: 'https://api.deepseek.com',
   };
 
@@ -18,7 +18,7 @@ export class DeepSeekProvider implements Provider {
   }
 
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    const model = options?.model ?? 'deepseek-chat';
+    const model = options?.model ?? 'deepseek-v4-flash';
     const controller = new AbortController();
     const timeout = setTimeout(() => { controller.abort(); }, 60_000);
 
@@ -34,7 +34,7 @@ export class DeepSeekProvider implements Provider {
           return msg;
         }),
         temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.max_tokens ?? 4096,
+        max_tokens: options?.max_tokens ?? 8192,
         stream: false,
       };
       if (options?.tools && options.tools.length > 0) {
@@ -106,7 +106,7 @@ export class DeepSeekProvider implements Provider {
   }
 
   async *stream(messages: Message[], options?: ChatOptions): AsyncGenerator<StreamEvent> {
-    const model = options?.model ?? 'deepseek-chat';
+    const model = options?.model ?? 'deepseek-v4-flash';
     const controller = new AbortController();
     const timeout = setTimeout(() => { controller.abort(); }, 120_000);
 
@@ -122,7 +122,7 @@ export class DeepSeekProvider implements Provider {
           return msg;
         }),
         temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.max_tokens ?? 4096,
+        max_tokens: options?.max_tokens ?? 8192,
         stream: true,
       };
       if (options?.tools && options.tools.length > 0) {
