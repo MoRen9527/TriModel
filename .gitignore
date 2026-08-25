@@ -9,3 +9,5 @@ coverage/
 .env.local
 .env.production
 .env.development
+trimodel.log
+trimodel.err.log
