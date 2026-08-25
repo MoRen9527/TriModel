@@ -102,6 +102,14 @@ export class AnthropicProvider implements Provider {
         max_tokens: maxTokens,
         stream: false,
       };
+      // TEMP DEBUG（TC-4b 验证期）：出站请求形态采样
+      try {
+        const sample = (body.messages as AnyMsg[]).map((m) => ({
+          role: m.role,
+          contentType: Array.isArray(m.content) ? 'blocks:' + (m.content as unknown[]).map((b) => (b as Record<string, unknown>).type).join('+') : typeof m.content,
+        }));
+        console.error('[anthropic-provider][dbg] outbound:', model, JSON.stringify(sample));
+      } catch { /* ignore */ }
 
       if (systemMessages.length > 0) {
         body.system = systemMessages
