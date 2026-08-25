@@ -262,7 +262,7 @@ export class TriMetaverseProvider implements Provider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `******`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
