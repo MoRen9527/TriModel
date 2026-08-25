@@ -152,6 +152,8 @@ export class ModelClient {
   }
 
   async chat(model: string, messages: Message[], options?: ChatOptions, _depth = 0): Promise<ChatResponse> {
+    // TEMP DEBUG（TC-4b 验证期）
+    console.error(`[trimodel-client][dbg] chat model=${model} depth=${_depth} msgs=${messages.length} lastRole=${messages[messages.length - 1]?.role} known=${!!this.registry[model]}`);
     if (_depth > MAX_FALLBACK_DEPTH) {
       throw new Error(`All fallback models exhausted for ${model}. Please try again later.`);
     }
