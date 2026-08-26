@@ -65,11 +65,22 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
     });
   }
 
-  // Anthropic models (Phase 2)
+  // Anthropic-compatible models (Phase 2)
+  // 2026-08-26 模型切换：stealth/ox-alpha 上游停服移除，GLM（bigmodel.cn
+  // Anthropic 兼容端点，ANTHROPIC_BASE_URL 环境变量驱动）接替。glm-5.3[1M]
+  // 是 CC 宿主的上下文档位后缀别名，与裸名同路由。
   if (providers.has('anthropic')) {
-        registry['stealth/ox-alpha'] = {
+    registry['glm-5.3'] = {
       primary: 'anthropic',
       timeoutMs: config.requestTimeoutMs * 2,
+    };
+    registry['glm-5.3[1M]'] = {
+      primary: 'anthropic',
+      timeoutMs: config.requestTimeoutMs * 2,
+    };
+    registry['GLM-4.7-Flash'] = {
+      primary: 'anthropic',
+      timeoutMs: config.requestTimeoutMs,
     };
 registry['claude-sonnet-4-20250514'] = {
       primary: 'anthropic',
