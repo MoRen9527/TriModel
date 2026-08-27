@@ -22,7 +22,10 @@ interface RefreshResponse {
 }
 
 const API_TOKEN = process.env.TRIMODEL_API_TOKEN ?? '';
-const DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-v4-pro';
+// O-R3-1 (2026-08-13): keys API 报告的 default_model 同步 tmv-* 注册表
+// （消费方 TriLC key-cache 会取此值，旧名 'deepseek-v4-pro' 与 C12/C13 后
+// 生产注册表错配）。env TRIMODEL_DEFAULT_MODEL 覆盖仍优先。
+const DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'tmv-deepseek-v4-pro';
 const REFRESH_INTERVAL_S = Number(process.env.TRIMODEL_KEY_REFRESH_INTERVAL_S ?? 900);
 
 function computeExpiresAt(_unused: number): string {
@@ -70,7 +73,7 @@ function readKeys(): Record<string, ProviderKey> {
   if (trimetaverseKey) {
     keys['trimetaverse'] = {
       api_key: trimetaverseKey,
-      base_url: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8000/v1',
+      base_url: process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8008/v1',
     };
   }
 

@@ -54,6 +54,16 @@ export class UsageAccumulator {
     }
   }
 
+  /** C15: Current cumulative prompt tokens (for compaction threshold check). */
+  get totalPromptTokens(): number {
+    return this.total.prompt_tokens;
+  }
+
+  /** C15: Current cumulative total tokens. */
+  get totalAllTokens(): number {
+    return this.total.total_tokens;
+  }
+
   summary(): UsageSummary {
     return {
       calls: this.calls,

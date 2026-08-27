@@ -376,7 +376,7 @@ describe('readConfig', () => {
     assert.equal(config.deepseekApiKey, '');
     assert.equal(config.anthropicApiKey, '');
     assert.equal(config.openaiApiKey, '');
-    assert.equal(config.defaultModel, 'deepseek-v4-pro');
+    assert.equal(config.defaultModel, 'tmv-deepseek-v4-pro');
     assert.equal(config.requestTimeoutMs, 60_000);
   });
 });
