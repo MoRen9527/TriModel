@@ -78,6 +78,16 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
       primary: 'anthropic',
       timeoutMs: config.requestTimeoutMs * 2,
     };
+    // flash 档（2026-08-27）：glm-5.3-flash 为 bigmodel.cn 正典 ID（大写为别名，
+    // 上游归一返回 glm-5.3-flash）；R/M 面编排档位切换用
+    registry['glm-5.3-flash'] = {
+      primary: 'anthropic',
+      timeoutMs: config.requestTimeoutMs * 2,
+    };
+    registry['GLM-5.3-Flash'] = {
+      primary: 'anthropic',
+      timeoutMs: config.requestTimeoutMs * 2,
+    };
     registry['GLM-4.7-Flash'] = {
       primary: 'anthropic',
       timeoutMs: config.requestTimeoutMs,
