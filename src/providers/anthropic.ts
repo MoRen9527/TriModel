@@ -85,6 +85,66 @@ export class AnthropicProvider implements Provider {
     this.info = { ...this.info, baseUrl };
   }
 
+  private buildHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'x-api-key': this.apiKey,
+      // OpenRouter 等 Anthropic 兼容网关只认 Bearer 不认 x-api-key（2026-08-25 实证）
+      ...(this.baseUrl.includes('openrouter') ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      'anthropic-version': '2023-06-01',
+    };
+  }
+
+  /** 限流韧性（2026-08-27）：多面共用上游配额时按 key 维度撞 429——
+   * 对 429/500/502/503/504 与网络错误做指数退避重试（最多 3 次尝试，
+   * 尊重 Retry-After 上限 30s）。外部 signal 可打断等待与在途请求。 */
+  private async fetchWithRetry(
+    bodyJson: string,
+    externalSignal: AbortSignal,
+    label: string,
+  ): Promise<Response> {
+    const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+    const MAX_ATTEMPTS = 3;
+    const ATTEMPT_TIMEOUT_MS = 120_000;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (externalSignal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const controller = new AbortController();
+      const onAbort = () => controller.abort();
+      externalSignal.addEventListener('abort', onAbort, { once: true });
+      const timer = setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT_MS);
+      try {
+        const response = await fetch(`${this.baseUrl}/v1/messages`, {
+          method: 'POST',
+          headers: this.buildHeaders(),
+          body: bodyJson,
+          signal: controller.signal,
+        });
+        if (response.ok || !RETRYABLE.has(response.status) || attempt === MAX_ATTEMPTS) {
+          return response;
+        }
+        const raMs = Number(response.headers.get('retry-after') ?? '') * 1000;
+        const backoff = Number.isFinite(raMs) && raMs > 0
+          ? Math.min(raMs, 30_000)
+          : 1500 * 2 ** (attempt - 1) + Math.random() * 500;
+        console.warn(`[anthropic-provider] ${label} ${response.status}, retry ${attempt}/${MAX_ATTEMPTS - 1} in ${Math.round(backoff)}ms`);
+        await new Promise((r) => setTimeout(r, backoff));
+      } catch (err) {
+        lastErr = err;
+        if (externalSignal.aborted) throw err;
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, 1500 * 2 ** (attempt - 1)));
+          continue;
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
+        externalSignal.removeEventListener('abort', onAbort);
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(`${label}: retries exhausted`);
+  }
+
 
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     const model = options?.model ?? 'claude-sonnet-4-20250514';
@@ -133,18 +193,7 @@ export class AnthropicProvider implements Provider {
         body.temperature = options.temperature;
       }
 
-      const response = await fetch(`${this.baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          // OpenRouter 等 Anthropic 兼容网关只认 Bearer 不认 x-api-key（2026-08-25 实证）
-          ...(this.baseUrl.includes('openrouter') ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      const response = await this.fetchWithRetry(JSON.stringify(body), controller.signal, 'chat');
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -242,18 +291,7 @@ export class AnthropicProvider implements Provider {
         body.temperature = options.temperature;
       }
 
-      const response = await fetch(`${this.baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          // OpenRouter 等 Anthropic 兼容网关只认 Bearer 不认 x-api-key（2026-08-25 实证）
-          ...(this.baseUrl.includes('openrouter') ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      const response = await this.fetchWithRetry(JSON.stringify(body), controller.signal, 'stream');
 
       if (!response.ok) {
         const errorBody = await response.text();
