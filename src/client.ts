@@ -5,8 +5,42 @@ import { DeepSeekAnthropicProvider } from './providers/deepseek-anthropic.js';
 import { TriMetaverseProvider } from './providers/trimetaverse.js';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { OpenAIProvider } from './providers/openai.js';
+import {
+  classifyRelayError,
+  getTokenStats,
+  isCoolingDown,
+  markCooldown,
+  recordRelayEvent,
+} from './relay.js';
 
 const MAX_FALLBACK_DEPTH = 2;
+
+// ── LG-006 额度接力链（双席合流稿 f312a695；BOD 终裁四项全批）────────────────
+// TRIMODEL_FALLBACK_CHAIN env：逗号分隔有序候选池（如
+// "glm-5.3-flash@anthropic,glm-5.3-flash@deepseek-anthropic,deepseek-v4-flash"）。
+// 节点支持「模型@账号」粒度（同模型先账号级接力，账号穷尽再跨模型——节点显式
+// 列举即运营决策，禁自动发现，稿 §二.1 CPO 并稿②）。链语义（稿零破坏边界）：
+// 入参 model ∈ 链 → 从该节点起按链顺序接力（覆盖内置 registry fallback）；
+// 入参 model ∉ 链 → registry 原路由不变。MAX_FALLBACK_DEPTH 根治面=链循环以
+// 链长天然为界（F5 教训：深度截断不再吞链尾）。
+
+interface ChainNode {
+  model: string;
+  account: string | null; // @账号（provider 名）；null=模型默认 primary
+}
+
+export function parseFallbackChain(raw: string | undefined | null): ChainNode[] {
+  if (!raw || !raw.trim()) return [];
+  return raw
+    .split(',')
+    .map((seg) => seg.trim())
+    .filter(Boolean)
+    .map((seg) => {
+      const at = seg.lastIndexOf('@');
+      if (at > 0) return { model: seg.slice(0, at), account: seg.slice(at + 1) };
+      return { model: seg, account: null };
+    });
+}
 
 function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig): ModelRegistry {
   const registry: ModelRegistry = {};
@@ -135,6 +169,8 @@ export class ModelClient {
   private providers: Map<string, Provider> = new Map();
   private registry: ModelRegistry;
   private config: TriModelConfig;
+  /** LG-006：候选池链（env 显式列举制；空=内置 registry 路由不变）。 */
+  private fallbackChain: ChainNode[] = [];
 
   constructor(config: TriModelConfig) {
     this.config = config;
@@ -162,6 +198,14 @@ export class ModelClient {
 
     // Build registry dynamically based on available providers
     this.registry = buildRegistry(this.providers, config);
+
+    // LG-006：接力链解析（env 显式列举制；配置即激活 chain 模式）
+    this.fallbackChain = parseFallbackChain(
+      process.env.TRIMODEL_FALLBACK_CHAIN ?? process.env.TRIMODEL_FALLBACK_CHAIN_ENV ?? '',
+    );
+    if (this.fallbackChain.length > 0) {
+      console.log(`[trimodel] fallback chain active: ${this.fallbackChain.length} nodes (${process.env.TRIMODEL_FALLBACK_CHAIN})`);
+    }
   }
 
   getProvider(name: string): Provider | undefined {
@@ -172,9 +216,216 @@ export class ModelClient {
     return Object.keys(this.registry);
   }
 
+  // ── LG-006 链执行核 ──────────────────────────────────────────────────────
+
+  /** 解析链节点为可调用 provider（账号粒度；无账号=模型默认 primary）。 */
+  private resolveNodeProvider(node: ChainNode): Provider | undefined {
+    const account = node.account ?? this.registry[node.model]?.primary;
+    return account ? this.providers.get(account) : undefined;
+  }
+
+  /** 链模式判定：入参 model ∈ 候选池（否则 registry 原路由，零破坏边界）。 */
+  private chainStartIndex(model: string): number {
+    return this.fallbackChain.findIndex((n) => n.model === model);
+  }
+
+  /** 禁接力判定（终裁④两层）：per-task options.noRelay / per-agent TRIMODEL_NO_RELAY=1。 */
+  private isNoRelay(options?: ChatOptions): boolean {
+    return options?.noRelay === true || process.env.TRIMODEL_NO_RELAY === '1';
+  }
+
+  private nodeLabel(node: ChainNode): string {
+    return node.account ? `${node.model}@${node.account}` : node.model;
+  }
+
+  private async chatViaNode(node: ChainNode, messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
+    const provider = this.resolveNodeProvider(node);
+    if (!provider) throw new Error(`Provider not found for chain node ${this.nodeLabel(node)}`);
+    return provider.chat(messages, { ...options, model: node.model });
+  }
+
+  /**
+   * 链模式执行（LG-006 稿 §二）：严格按链序接力；错误分类表判换棒（网络超时
+   * 先重试 1 次）；冷却期内节点跳过防回切；跨模型换棒一次性明示（relayNote）；
+   * 同模型账号间静默仅台账；noRelay=主链断即显式失败（宁失败勿降级）；
+   * 链穷尽=显式失败+已尝试链路报告。
+   */
+  private async chatWithChain(
+    startIdx: number, messages: Message[], options?: ChatOptions, noRelay = false,
+  ): Promise<ChatResponse> {
+    const chain = this.fallbackChain;
+    let relayNote: string | undefined;
+    let crossModelBoundaryCrossed = false;
+    const firstModel = chain[startIdx].model;
+    const attempted: string[] = [];
+    let idx = startIdx;
+
+    while (idx < chain.length) {
+      const node = chain[idx];
+      if (!noRelay && isCoolingDown(node.model, node.account ?? this.registry[node.model]?.primary ?? '')) {
+        console.warn(`[trimodel-relay] node ${this.nodeLabel(node)} in cooldown, skip`);
+        idx += 1;
+        continue;
+      }
+      if (noRelay && idx > startIdx) {
+        // 禁接力（宁失败勿降级）：主棒之外不试任何节点
+        throw new Error(
+          `Relay disabled for this task; primary node ${this.nodeLabel(chain[startIdx])} failed ` +
+          `[attempted: ${attempted.join(' → ')}]`,
+        );
+      }
+      attempted.push(this.nodeLabel(node));
+      try {
+        const resp = await this.chatViaNode(node, messages, options);
+        if (relayNote) resp.relayNote = relayNote;
+        return resp;
+      } catch (error) {
+        const cls = classifyRelayError(error);
+        if (!cls.relay) throw error; // 请求坏/未知错：换棒无意义，显式抛
+        if (noRelay) {
+          // 禁接力（宁失败勿降级）：主棒可换棒错误也直接显式失败，不记台账不前进
+          throw new Error(
+            `Relay disabled for this task; primary node ${this.nodeLabel(chain[startIdx])} failed: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        if (cls.retry_first) {
+          // 网络超时：同节点重试 1 次（稿 §二.2），再败才换棒
+          try {
+            const resp = await this.chatViaNode(node, messages, options);
+            if (relayNote) resp.relayNote = relayNote;
+            return resp;
+          } catch (retryError) {
+            error = retryError;
+          }
+        }
+        const next = chain[idx + 1];
+        if (!next) {
+          // 链穷尽：显式失败+已尝试链路报告（禁静默吞错）
+          throw new Error(
+            `All ${attempted.length} chain nodes exhausted [${attempted.join(' → ')}]; ` +
+            `last reason: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        // 台账 + 冷却 + 透明度分级
+        const fromAccount = node.account ?? this.registry[node.model]?.primary ?? 'default';
+        recordRelayEvent({
+          from_model: node.model,
+          from_account: fromAccount,
+          to_model: next.model,
+          to_account: next.account ?? this.registry[next.model]?.primary ?? 'default',
+          reason: cls.reason ?? 'network_timeout',
+          ts: Date.now(),
+        });
+        markCooldown(node.model, fromAccount);
+        if (next.model !== node.model && !crossModelBoundaryCrossed) {
+          // 跨模型换棒：会话内一次性明示（禁静默跨模型）
+          crossModelBoundaryCrossed = true;
+          relayNote = `已切换至 ${next.model} 模型`;
+          console.warn(`[trimodel-relay] ${relayNote}（跨模型换棒一次性明示）`);
+        }
+        idx += 1;
+      }
+    }
+    throw new Error(`Fallback chain exhausted for ${firstModel} [${attempted.join(' → ')}]`);
+  }
+
+  /** stream 链模式执行（同 chatWithChain；成功路径直接透传节点 stream）。 */
+  private async *streamWithChain(
+    startIdx: number, messages: Message[], options?: ChatOptions, noRelay = false,
+  ): AsyncGenerator<StreamEvent> {
+    const chain = this.fallbackChain;
+    let noteYielded = false;
+    let relayNote: string | undefined;
+    const attempted: string[] = [];
+    let idx = startIdx;
+
+    while (idx < chain.length) {
+      const node = chain[idx];
+      if (!noRelay && isCoolingDown(node.model, node.account ?? this.registry[node.model]?.primary ?? '')) {
+        idx += 1;
+        continue;
+      }
+      if (noRelay && idx > startIdx) {
+        throw new Error(
+          `Relay disabled for this task; primary node ${this.nodeLabel(chain[startIdx])} failed ` +
+          `[attempted: ${attempted.join(' → ')}]`,
+        );
+      }
+      attempted.push(this.nodeLabel(node));
+      const provider = this.resolveNodeProvider(node);
+      if (!provider) {
+        idx += 1;
+        continue;
+      }
+      try {
+        if (relayNote && !noteYielded) {
+          noteYielded = true;
+          yield { delta: '', relayNote };
+        }
+        for await (const event of provider.stream(messages, { ...options, model: node.model })) {
+          yield event;
+        }
+        return;
+      } catch (error) {
+        const cls = classifyRelayError(error);
+        if (!cls.relay) throw error;
+        if (noRelay) {
+          throw new Error(
+            `Relay disabled for this task; primary node ${this.nodeLabel(chain[startIdx])} failed: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        if (cls.retry_first) {
+          try {
+            if (relayNote && !noteYielded) {
+              noteYielded = true;
+              yield { delta: '', relayNote };
+            }
+            for await (const event of provider.stream(messages, { ...options, model: node.model })) {
+              yield event;
+            }
+            return;
+          } catch (retryError) {
+            error = retryError;
+          }
+        }
+        const next = chain[idx + 1];
+        if (!next) {
+          throw new Error(
+            `All ${attempted.length} chain nodes exhausted [${attempted.join(' → ')}]; ` +
+            `last reason: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const fromAccount = node.account ?? this.registry[node.model]?.primary ?? 'default';
+        recordRelayEvent({
+          from_model: node.model,
+          from_account: fromAccount,
+          to_model: next.model,
+          to_account: next.account ?? this.registry[next.model]?.primary ?? 'default',
+          reason: cls.reason ?? 'network_timeout',
+          ts: Date.now(),
+        });
+        markCooldown(node.model, fromAccount);
+        if (next.model !== node.model && !noteYielded) {
+          relayNote = `已切换至 ${next.model} 模型`;
+          console.warn(`[trimodel-relay] ${relayNote}（跨模型换棒一次性明示）`);
+        }
+        idx += 1;
+      }
+    }
+    throw new Error(`Fallback chain exhausted [${attempted.join(' → ')}]`);
+  }
+
   async chat(model: string, messages: Message[], options?: ChatOptions, _depth = 0): Promise<ChatResponse> {
     // TEMP DEBUG（TC-4b 验证期）
     console.error(`[trimodel-client][dbg] chat model=${model} depth=${_depth} msgs=${messages.length} lastRole=${messages[messages.length - 1]?.role} known=${!!this.registry[model]}`);
+    // LG-006 链模式：入参 model ∈ 候选池 → 链接力；noRelay=主棒单发显式失败
+    // （宁失败勿降级——不走 registry fallback 降级路径）
+    const chainIdx = this.chainStartIndex(model);
+    if (chainIdx >= 0) {
+      return this.chatWithChain(chainIdx, messages, options, this.isNoRelay(options));
+    }
     if (_depth > MAX_FALLBACK_DEPTH) {
       throw new Error(`All fallback models exhausted for ${model}. Please try again later.`);
     }
@@ -211,6 +462,12 @@ export class ModelClient {
   /** CTO-003 P1: Streaming chat with provider fallback (same pattern as chat(), with depth limit). */
   async *stream(model: string, messages: Message[], options?: ChatOptions, _depth = 0): AsyncGenerator<StreamEvent> {
     console.error(`[trimodel-client][dbg] STREAM model=${model} depth=${_depth} msgs=${messages.length} known=${!!this.registry[model]}`);
+    // LG-006 链模式（同 chat 分支语义；noRelay=主棒单发）
+    const chainIdx = this.chainStartIndex(model);
+    if (chainIdx >= 0) {
+      yield* this.streamWithChain(chainIdx, messages, options, this.isNoRelay(options));
+      return;
+    }
     if (_depth > MAX_FALLBACK_DEPTH) {
       throw new Error(`All fallback models exhausted for ${model}. Please try again later.`);
     }

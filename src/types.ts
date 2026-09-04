@@ -31,6 +31,8 @@ export interface ChatOptions {
   max_tokens?: number;
   stream?: boolean;
   tools?: ToolDefinition[];
+  /** LG-006 终裁④ per-task：任务级禁接力标记——主链不可用即显式失败不降级（宁失败勿降级）。 */
+  noRelay?: boolean;
 }
 
 export interface ChatResponse {
@@ -46,6 +48,8 @@ export interface ChatResponse {
     total_tokens: number;
     reasoning_tokens?: number;
   };
+  /** LG-006 透明度分级（稿 §二.5）：跨模型换棒时会话内一次性明示注记；同模型账号间静默不设。 */
+  relayNote?: string;
 }
 
 export interface ProviderInfo {
@@ -69,6 +73,8 @@ export interface StreamEvent {
   finish_reason?: 'stop' | 'length' | 'content_filter' | 'tool_calls' | null;
   /** Usage info (only present in final event) */
   usage?: ChatResponse['usage'];
+  /** LG-006 透明度分级：跨模型换棒一次性明示（首棒前 yield 一次）。 */
+  relayNote?: string;
 }
 
 export interface Provider {
