@@ -126,13 +126,15 @@ export function decryptEntries(doc: TrimmcCardDocument): Record<string, Decrypte
 }
 
 /** PUT-side: encrypt one api_key into a card entry (at-rest ciphertext only). */
-export function buildEntry(provider: string, model: string, apiKey: string, enabled: boolean): CardEntry {
+export function buildEntry(provider: string, model: string, apiKey: string, enabled: boolean, baseUrl?: string): CardEntry {
   return {
     provider,
     model,
     api_key_encrypted: encrypt(apiKey).toString('base64'),
     enabled,
     updated_at: new Date().toISOString(),
+    // D8: base_url must survive the hydrate round-trip (S10⑤ 必填+S5 derive 路由消费点)
+    ...(baseUrl ? { base_url: baseUrl } : {}),
   };
 }
 

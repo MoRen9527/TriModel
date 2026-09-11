@@ -17,6 +17,7 @@ import type { PolicyShape } from '../src/policy.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY_FILE = join(REPO_ROOT, 'policy.json');
+const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 read path
 const DS_KEY = 'sk-gate-deepseek-sentinel';
 const GLM_KEY = 'sk-gate-glm-sentinel';
 const TMV_KEY = 'sk-gate-tmv-sentinel';
@@ -26,6 +27,7 @@ let mock: Server | null = null;
 let proxyPort = 0;
 let mockPort = 0;
 let policySnap: string | null = null;
+let policyLocalSnap: string | null = null; // S11 read path: policies/local.json
 const savedEnv: Record<string, string | undefined> = {};
 
 interface CapturedRequest { headers: IncomingMessage['headers']; body: string; at: number }
@@ -97,7 +99,9 @@ function get(path: string): Promise<{ status: number; text: string }> {
 describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
   before(async () => {
     policySnap = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
+    policyLocalSnap = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
     rmSync(POLICY_FILE, { force: true }); // deterministic: env-default routing
+    rmSync(POLICY_LOCAL, { force: true }); // S11: stray applied policy would override env pin
     setEnv('DEEPSEEK_API_KEY', DS_KEY);
     setEnv('GLM_API_KEY', GLM_KEY);
     setEnv('TRIMODEL_TRIMETAVERSE_API_KEY', TMV_KEY);
@@ -151,6 +155,8 @@ describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
     mock?.close();
     if (policySnap === null) rmSync(POLICY_FILE, { force: true });
     else writeFileSync(POLICY_FILE, policySnap, 'utf-8');
+    if (policyLocalSnap === null) rmSync(POLICY_LOCAL, { force: true });
+    else writeFileSync(POLICY_LOCAL, policyLocalSnap, 'utf-8');
     for (const [name, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;

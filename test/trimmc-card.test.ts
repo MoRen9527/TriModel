@@ -221,7 +221,7 @@ describe('D7: PUT merge semantics — degraded forms rejected, explicit delete c
     });
     const r = m.handlePutTrimmcCard(auth, doc, { cardPath: join(dir, 'c.json') });
     assert.equal(r.statusCode, 400);
-    assert.match(String((r.body as { error: string }).error), /条目数据格式错误/);
+    assert.match((r.body as { error: string }).error, /条目数据格式错误/);
   });
 
   it('string-valued entry → 400 (degraded form never persists)', async () => {
@@ -238,7 +238,7 @@ describe('D7: PUT merge semantics — degraded forms rejected, explicit delete c
     });
     const r = m.handlePutTrimmcCard(auth, doc, { cardPath: join(dir, 'c.json') });
     assert.equal(r.statusCode, 400);
-    assert.match(String((r.body as { error: string }).error), /条目数据格式错误/);
+    assert.match((r.body as { error: string }).error, /条目数据格式错误/);
   });
 
   it('deleted_entry_ids explicitly removes an existing entry (merge delete channel)', async () => {

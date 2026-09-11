@@ -46,7 +46,7 @@ export function handleGetTrimmcCard(
     } catch (err) {
       console.warn(`[trimodel] trimmc-card entry '${id}' undecryptable:`, err instanceof Error ? err.message : err);
     }
-    const base = { provider: entry.provider, model: entry.model, enabled: entry.enabled, updated_at: entry.updated_at };
+    const base = { provider: entry.provider, model: entry.model, enabled: entry.enabled, updated_at: entry.updated_at, ...(entry.base_url ? { base_url: entry.base_url } : {}) };
     entries_decrypted[id] = { ...base, api_key: apiKey };
     entries_masked[id] = { ...base, masked: maskKey(apiKey) };
   }
@@ -96,7 +96,7 @@ export function handlePutTrimmcCard(
     for (const [id, entry] of Object.entries(card.provider_entries)) {
       const plain = (entry as CardEntry & { api_key?: unknown }).api_key;
       if (typeof plain === 'string' && plain && !plain.includes('*')) {
-        card.provider_entries[id] = buildEntry(entry.provider, entry.model, plain, entry.enabled);
+        card.provider_entries[id] = buildEntry(entry.provider, entry.model, plain, entry.enabled, (entry as CardEntry & { base_url?: string }).base_url);
       }
     }
   }

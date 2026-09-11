@@ -15,7 +15,6 @@ import { migrateKeysEncToCard } from '../src/secure-keys.js';
 import { loadCard } from '../src/trimmc-card.js';
 import { encrypt } from '../src/security/key-encryptor.js';
 import { MODEL_CATALOG } from '../src/model-catalog.js';
-let tcCardRef: unknown; let tcEntriesRef: unknown;
 
 const UI_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
 
@@ -34,7 +33,6 @@ function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders
       let call = 0;
       window.fetch = (async (url: string, init?: RequestInit) => {
         fetchLog.push({ url, init });
-        if (String(url).includes('trimmc-card')) console.log('[stub]', init?.method ?? 'GET', String(url).replace('http://127.0.0.1:3333',''), '| body =', String(init?.body ?? '').slice(0, 160));
         // window closed mid-flight (test teardown): resolve inert so no
         // render callback touches a dead document (unhandledRejection guard)
         if (window.closed) return { status: 0, json: async () => ({}), text: async () => '', headers: new Map() } as unknown as Response;
@@ -153,7 +151,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     (d.getElementById('token') as HTMLInputElement).value = 'tk-api';
     (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
     d.getElementById('conn-save').click();
-    await waitFor(() => d.getElementById('tc-fallback-tip').hidden === false);
+    await waitFor(() => !d.getElementById('tc-fallback-tip').hidden);
     assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied card + on-disk disabled current-use entry = fallback tip');
     assert.ok(d.getElementById('tc-fallback-tip').textContent.includes('已回落'), 'fallback wording');
   });
@@ -176,7 +174,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
     d.getElementById('conn-save').click();
     await waitFor(() => !!d.querySelector('[data-enable]'));
-    const sw = d.querySelector('[data-enable]') as HTMLInputElement | null;
+    const sw: HTMLInputElement | null = d.querySelector('[data-enable]');
     assert.ok(sw, 'entry row must render');
     sw.checked = false;
     sw.dispatchEvent(new dom.window.Event('change'));

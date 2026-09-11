@@ -24,7 +24,11 @@ const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 runtime f
 const CARD_FILE = join(REPO_ROOT, 'trimmc-card.json'); // E4 writes it via 保存卡片
 const API_TOKEN = 'ste-gate-token';
 const ADMIN_TOKEN = 'ste-admin-token';
-const CATALOG = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
+const CATALOG_SUBSETS: Record<string, string[]> = {
+  deepseek: ['deepseek-flash', 'deepseek-v4-pro'],
+  glm: ['GLM-5.3-Flash', 'GLM-5.3'],
+  trimetaverse: ['TMV'],
+};
 // E5 denylist：与 FSD trimmc-card.test.ts T3 源级清单同源（浏览器渲染面超集扫描）
 const BANNED_VOCABULARY = ['SSH', 'ssh', '隧道', 'tunnel', '推送卡', 'apply-to-machine'];
 
@@ -177,19 +181,24 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.context().close();
   });
 
-  it('E3: entry-form model dropdown carries the five official names byte-for-byte', async () => {
+  it('E3: cascade subset byte-for-byte per provider (CEO 裁定行为——全五名平铺断言退役)', async () => {
     const page = await freshPage();
     await page.fill('#token', API_TOKEN);
     await page.fill('#adminToken', ADMIN_TOKEN);
     await page.click('#conn-save');
     await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 6000 });
-    await page.click('#tc-open-add'); // form reveals → model select populates
-    await page.waitForFunction(
-      () => (document.querySelector('#tc-e-model') as HTMLSelectElement)?.options?.length === 5,
-      { timeout: 6000 },
-    );
-    const opts = await page.$eval('#tc-e-model', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
-    assert.deepEqual(opts, CATALOG);
+    await page.click('#tc-open-add');
+    const subsets: Record<string, string[]> = CATALOG_SUBSETS;
+    for (const [provider, expected] of Object.entries(subsets)) {
+      await page.selectOption('#tc-e-provider', provider);
+      await page.waitForFunction(
+        (v) => { const el = document.querySelector('#tc-e-model'); return el && JSON.stringify(Array.from((el as HTMLSelectElement).options).map((o) => o.value)) === JSON.stringify(v); },
+        expected,
+        { timeout: 6000 },
+      );
+      const opts = await page.$eval('#tc-e-model', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
+      assert.deepEqual(opts, expected, `provider=${provider} 级联子集须逐字节一致`);
+    }
     await page.context().close();
   });
 
@@ -202,7 +211,13 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.fill('#tc-conn', 'ste-gate-machine'); // 机器名称必填（保存前置校验，探针实证）
     await page.click('#tc-open-add');
     await page.fill('#tc-e-id', 'gate-ui-e2e');
+    await page.selectOption('#tc-e-provider', 'glm'); // cascade: provider first, then model options rebuild
+    await page.waitForFunction(
+      () => { const el = document.querySelector('#tc-e-model'); return el && Array.from((el as HTMLSelectElement).options).some((o) => o.value === 'GLM-5.3'); },
+      { timeout: 6000 },
+    );
     await page.selectOption('#tc-e-model', 'GLM-5.3');
+    await page.fill('#tc-e-baseurl', 'https://open.bigmodel.cn/api/anthropic'); // S10: 服务地址必填前置（①⑤生效证据）
     await page.fill('#tc-e-key', 'sk-gate-ui-e2e-key');
     await page.click('#tc-e-save'); // entry into local table
     await page.click('#tc-save'); // 保存卡片 → PUT /v1/config/trimmc-card
@@ -211,10 +226,11 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
       headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
     });
     assert.equal(res.status, 200);
-    const body = (await res.json()) as { card?: { provider_entries?: Record<string, { model?: string }> } };
+    const body = (await res.json()) as { card?: { provider_entries?: Record<string, { model?: string; base_url?: string }> } };
     const entries = body.card?.provider_entries ?? {};
     assert.ok(entries['gate-ui-e2e'], 'UI submit must persist the card entry server-side');
     assert.equal(entries['gate-ui-e2e']?.model, 'GLM-5.3');
+    assert.ok(entries['gate-ui-e2e']?.base_url, '服务地址随条目落库');
     await page.context().close();
   });
 

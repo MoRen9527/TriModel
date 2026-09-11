@@ -82,8 +82,9 @@ export interface ResolvedUpstream {
 export function resolveUpstream(model: string, cardPath?: string): ResolvedUpstream | null {
   const route = UPSTREAM_ROUTES.find((r) => r.matchModels.includes(model));
   if (!route) return null;
-  const baseUrl = route.baseUrl().replace(/\/+$/, '');
   const derived = deriveProviderKey(route.secureProvider, process.env[route.apiKeyEnv] ?? '', undefined, cardPath);
+  // D8: entry-level base_url (S5 derive) takes precedence over the route default
+  const baseUrl = (derived.base_url ?? route.baseUrl()).replace(/\/v1\/?$/, '').replace(/\/+$/, '');
   return { route, baseUrl, apiKey: derived.api_key };
 }
 
