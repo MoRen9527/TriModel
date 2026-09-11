@@ -240,20 +240,20 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.context().close();
   });
 
-  it('E7: wrong admin token → error panel renders 人话 guidance (no bare code)', async () => {
+  it('E7: wrong tokens → S10 real-validation state 已填入未验证 (never falsely 已连接 — anti-D2)', async () => {
     const page = await freshPage();
-    await page.fill('#token', API_TOKEN);
-    await page.fill('#adminToken', 'wrong-token');
+    await page.fill('#token', 'wrong-api');
+    await page.fill('#adminToken', 'wrong-admin');
     await page.click('#conn-save');
     await page.waitForFunction(
-      () => {
-        const el = document.querySelector('#error-card') as HTMLElement | null;
-        return el && !el.hidden && (el.textContent ?? '').length > 5;
-      },
-      { timeout: 6000 },
+      () => (document.querySelector('#conn-label')?.textContent || '').includes('未验证'),
+      undefined,
+      { timeout: 10000 },
     );
-    const text = await page.locator('#error-card').textContent();
-    assert.ok(/令牌不正确|请检查连接设置/.test(text ?? ''), `人话指引须渲染，实际: ${String(text).slice(0, 80)}`);
+    const label = await page.locator('#conn-label').textContent();
+    const dot = await page.locator('#conn-dot').getAttribute('class');
+    assert.ok(/未验证/.test(label ?? ''), `wrong tokens must not read 已连接，实际: ${label}`);
+    assert.ok((dot ?? '').includes('warn'), `dot=warn，实际: ${dot}`);
     await page.context().close();
   });
 
