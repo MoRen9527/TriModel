@@ -33,7 +33,7 @@ function schedule(partial: Partial<PolicySchedule>): PolicySchedule {
   return {
     id: 's1',
     target: 'daemon-default',
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-pro',
     windows: [{ start: '14:00', end: '18:00' }],
     timezone: 'Asia/Shanghai',
     enabled: true,
@@ -49,7 +49,7 @@ describe('policy: evaluatePolicy window boundaries', () => {
     const policy: PolicyShape = { version: '1', schedules: [schedule({})] };
     const hit = evaluatePolicy(shanghaiInstant(DAY, '14:00'), policy);
     assert.ok(hit);
-    assert.equal(hit.model, 'deepseek-chat');
+    assert.equal(hit.model, 'deepseek-v4-pro');
     assert.equal(hit.matched_schedule_id, 's1');
   });
 
@@ -65,34 +65,34 @@ describe('policy: evaluatePolicy window boundaries', () => {
       schedules: [
         schedule({
           id: 'workday-deepseek',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-pro',
           windows: [{ start: '14:00', end: '18:00' }],
           priority: 10,
         }),
         schedule({
           id: 'night-glm-early',
-          model: 'glm-5.3',
+          model: 'GLM-5.3',
           windows: [{ start: '00:00', end: '14:00' }],
           priority: 5,
         }),
         schedule({
           id: 'night-glm-late',
-          model: 'glm-5.3',
+          model: 'GLM-5.3',
           windows: [{ start: '18:00', end: '00:00' }],
           priority: 5,
         }),
       ],
     };
     // 17:59 → deepseek window
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '17:59'), policy)?.model, 'deepseek-chat');
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '17:59'), policy)?.model, 'deepseek-v4-pro');
     // 18:01 → overnight glm window (18:00-00:00)
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '18:01'), policy)?.model, 'glm-5.3');
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '18:01'), policy)?.model, 'GLM-5.3');
     // 13:59 → early glm window (00:00-14:00)
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '13:59'), policy)?.model, 'glm-5.3');
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '13:59'), policy)?.model, 'GLM-5.3');
     // 14:00 → deepseek window takes over (higher priority wins the overlap-free seam)
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '14:00'), policy)?.model, 'deepseek-chat');
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '14:00'), policy)?.model, 'deepseek-v4-pro');
     // 00:00 → early glm window (start inclusive)
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '00:00'), policy)?.model, 'glm-5.3');
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '00:00'), policy)?.model, 'GLM-5.3');
     // No uncovered gap across 24h: sample every 30 minutes, always a hit
     for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
       const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
@@ -106,8 +106,8 @@ describe('policy: evaluatePolicy window boundaries', () => {
     const policy: PolicyShape = {
       version: '1',
       schedules: [
-        schedule({ id: 'low', model: 'glm-5.3', windows: [{ start: '00:00', end: '23:59' }], priority: 1 }),
-        schedule({ id: 'high', model: 'deepseek-chat', windows: [{ start: '14:00', end: '18:00' }], priority: 10 }),
+        schedule({ id: 'low', model: 'GLM-5.3', windows: [{ start: '00:00', end: '23:59' }], priority: 1 }),
+        schedule({ id: 'high', model: 'deepseek-v4-pro', windows: [{ start: '14:00', end: '18:00' }], priority: 10 }),
       ],
     };
     assert.equal(evaluatePolicy(shanghaiInstant(DAY, '15:00'), policy)?.matched_schedule_id, 'high');
@@ -118,8 +118,8 @@ describe('policy: evaluatePolicy window boundaries', () => {
     const policy: PolicyShape = {
       version: '1',
       schedules: [
-        schedule({ id: 'first', model: 'glm-5.3', windows: [{ start: '14:00', end: '18:00' }], priority: 5 }),
-        schedule({ id: 'second', model: 'deepseek-chat', windows: [{ start: '15:00', end: '20:00' }], priority: 5 }),
+        schedule({ id: 'first', model: 'GLM-5.3', windows: [{ start: '14:00', end: '18:00' }], priority: 5 }),
+        schedule({ id: 'second', model: 'deepseek-v4-pro', windows: [{ start: '15:00', end: '20:00' }], priority: 5 }),
       ],
     };
     const hit = evaluatePolicy(shanghaiInstant(DAY, '16:00'), policy);
@@ -130,7 +130,7 @@ describe('policy: evaluatePolicy window boundaries', () => {
     const raw = {
       version: '1',
       schedules: [
-        schedule({ id: 'bad-window', model: 'glm-5.3', windows: [{ start: '25:00', end: '18:00' }] }),
+        schedule({ id: 'bad-window', model: 'GLM-5.3', windows: [{ start: '25:00', end: '18:00' }] }),
       ],
     };
     // Engine-level defense: window never matches, no throw (PUT 400 rejection covered above)
@@ -140,10 +140,10 @@ describe('policy: evaluatePolicy window boundaries', () => {
   it('U13a start == end is a zero-length window matching nothing; U13b reversed window means overnight', () => {
     const zero: PolicyShape = { version: '1', schedules: [schedule({ windows: [{ start: '18:00', end: '18:00' }] })] };
     assert.equal(evaluatePolicy(shanghaiInstant(DAY, '18:00'), zero), null);
-    const overnight: PolicyShape = { version: '1', schedules: [schedule({ model: 'glm-5.3', windows: [{ start: '20:00', end: '10:00' }] })] };
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '23:30'), overnight)?.model, 'glm-5.3');
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '00:30'), overnight)?.model, 'glm-5.3');
-    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '09:59'), overnight)?.model, 'glm-5.3');
+    const overnight: PolicyShape = { version: '1', schedules: [schedule({ model: 'GLM-5.3', windows: [{ start: '20:00', end: '10:00' }] })] };
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '23:30'), overnight)?.model, 'GLM-5.3');
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '00:30'), overnight)?.model, 'GLM-5.3');
+    assert.equal(evaluatePolicy(shanghaiInstant(DAY, '09:59'), overnight)?.model, 'GLM-5.3');
     assert.equal(evaluatePolicy(shanghaiInstant(DAY, '10:00'), overnight), null);
   });
 
@@ -164,7 +164,7 @@ describe('policy: save/load roundtrip (path override, repo root untouched)', () 
     const path = join(dir, 'policy.json');
     const policy: PolicyShape = {
       version: '1',
-      schedules: [schedule({ id: 'roundtrip', model: 'glm-5.3', windows: [{ start: '18:00', end: '00:00' }] })],
+      schedules: [schedule({ id: 'roundtrip', model: 'GLM-5.3', windows: [{ start: '18:00', end: '00:00' }] })],
     };
     savePolicy(policy, path);
     assert.ok(existsSync(path));
@@ -235,7 +235,7 @@ describe('policy: backward compatibility — no policy.json ⇒ env default', ()
     assert.equal(eff.source, 'env-default');
     assert.equal(eff.matched_schedule_id, null);
     assert.equal(eff.model, envDefaultModel());
-    assert.equal(eff.model, 'tmv-deepseek-v4-pro');
+    assert.equal(eff.model, 'deepseek-v4-pro');
   });
 
   it('GET /v1/config/keys without policy.json returns default_model equal to env default (pre-P1 behaviour)', async () => {
@@ -243,16 +243,16 @@ describe('policy: backward compatibility — no policy.json ⇒ env default', ()
     const result = handleGetKeys('Bearer test-token-lg035');
     assert.equal(result.statusCode, 200);
     const body = result.body as { default_model: string };
-    assert.equal(body.default_model, 'tmv-deepseek-v4-pro');
+    assert.equal(body.default_model, 'deepseek-v4-pro');
   });
 
-  it('keys hot-path switches with an active window: 14:00-18:00 policy deepseek-chat', async () => {
+  it('keys hot-path switches with an active window: 14:00-18:00 policy deepseek-v4-pro', async () => {
     const { handleGetKeys } = await import('../src/api/keys.js');
     const { evaluatePolicy } = await import('../src/policy.js');
-    const policy: PolicyShape = { version: '1', schedules: [schedule({ model: 'deepseek-chat' })] };
+    const policy: PolicyShape = { version: '1', schedules: [schedule({ model: 'deepseek-v4-pro' })] };
     // Direct hot-path parity assertion: the exact expression keys.ts uses.
     const hit = evaluatePolicy(new Date('2026-09-11T08:59:00Z'), policy); // 16:59 Shanghai
-    assert.equal(hit?.model, 'deepseek-chat');
+    assert.equal(hit?.model, 'deepseek-v4-pro');
     const miss = evaluatePolicy(new Date('2026-09-11T10:01:00Z'), policy); // 18:01 Shanghai
     assert.equal(miss, null);
     void handleGetKeys; // imported for parity with the endpoint contract

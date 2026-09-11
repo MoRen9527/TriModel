@@ -17,57 +17,51 @@
 import { effectiveModel, envDefaultModel, evaluatePolicy, loadPolicy } from './policy.js';
 import type { PolicyShape } from './policy.js';
 import { readSecureKeys } from './secure-keys.js';
+import { MODEL_CATALOG_LIST } from './model-catalog.js';
 import http from 'node:http';
 import https from 'node:https';
 
-// ── Upstream route table（映射表代码内常量）──
+// ── Upstream route table（官方名精确匹配，LG-035 增补标准化；tmv- 剥壳退役）──
 
 export interface UpstreamRoute {
-  readonly prefix: string;
-  /** Anthropic-compat base URL (no trailing slash; path /v1/messages appended). */
+  /** Official catalog names routed to this upstream (exact match). */
+  readonly matchModels: readonly string[];
+  /** Anthropic-compat base URL (no trailing slash; /v1/messages appended). */
   readonly baseUrl: () => string;
   /** Env var name holding the upstream API key. */
   readonly apiKeyEnv: string;
   /** keys.enc provider name (P2 secure store) overriding the env key. */
   readonly secureProvider: string;
-  /**
-   * Optional upstream model-name mapping (tmv-* registry canonical names are
-   * not understood by native endpoints — strip the registry shell):
-   * tmv-deepseek-v4-pro → deepseek-v4-pro.
-   */
-  readonly mapModelName?: (model: string) => string;
+  /** Route-table display label (health surface). */
+  readonly label: string;
 }
 
 export const UPSTREAM_ROUTES: readonly UpstreamRoute[] = [
   {
-    // Registry canonical names (env default family) — longest prefix first.
-    prefix: 'tmv-deepseek',
+    matchModels: ['deepseek-flash', 'deepseek-v4-pro'],
     // 现役实证：src/providers/deepseek-anthropic.ts 常量同源
     baseUrl: () => process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? 'https://api.deepseek.com/anthropic',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     secureProvider: 'deepseek',
-    mapModelName: (model) => model.replace(/^tmv-/, ''),
+    label: 'deepseek-anthropic',
   },
   {
-    prefix: 'deepseek',
-    baseUrl: () => process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? 'https://api.deepseek.com/anthropic',
-    apiKeyEnv: 'DEEPSEEK_API_KEY',
-    secureProvider: 'deepseek',
-  },
-  {
-    prefix: 'tmv-glm',
+    matchModels: ['GLM-5.3-Flash', 'GLM-5.3'],
     // GLM anthropic-compat 端点候实勘补全（bigmodel 兼容路径以 sg 实测为准，
     // P3-sg 切片 2 部署窗核对；GLM_API_KEY 见 .env.example 注释行）
     baseUrl: () => process.env.GLM_ANTHROPIC_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic',
     apiKeyEnv: 'GLM_API_KEY',
     secureProvider: 'glm',
-    mapModelName: (model) => model.replace(/^tmv-/, ''),
+    label: 'glm-anthropic',
   },
   {
-    prefix: 'glm',
-    baseUrl: () => process.env.GLM_ANTHROPIC_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic',
-    apiKeyEnv: 'GLM_API_KEY',
-    secureProvider: 'glm',
+    matchModels: ['TMV'],
+    // TriStaciss Anthropic-compatible relay（现役件 providers/trimetaverse.ts
+    // 同源；其 baseUrl 惯例带 /v1 尾——此处剥除后统一拼 /v1/messages）
+    baseUrl: () => (process.env.TRIMODEL_TRISTACISS_BASE_URL ?? 'http://127.0.0.1:8008/v1').replace(/\/v1\/?$/, '').replace(/\/+$/, ''),
+    apiKeyEnv: 'TRIMODEL_TRIMETAVERSE_API_KEY',
+    secureProvider: 'trimetaverse',
+    label: 'tristaciss-anthropic',
   },
 ];
 
@@ -78,7 +72,7 @@ export interface ResolvedUpstream {
 }
 
 /**
- * Prefix-route the (already rewritten) model to its upstream + key.
+ * Route the official catalog model to its upstream + key (exact match).
  *
  * Key resolution order (灰度前接线，2026-09-11): keys.enc (P2 secure store)
  * same-name provider api_key FIRST, env fallback second — COS 运维通道
@@ -87,7 +81,7 @@ export interface ResolvedUpstream {
  * (readSecureKeys fail-safe family — never throws).
  */
 export function resolveUpstream(model: string, keystorePath?: string): ResolvedUpstream | null {
-  const route = UPSTREAM_ROUTES.find((r) => model.startsWith(r.prefix));
+  const route = UPSTREAM_ROUTES.find((r) => r.matchModels.includes(model));
   if (!route) return null;
   const baseUrl = route.baseUrl().replace(/\/+$/, '');
   let apiKey = process.env[route.apiKeyEnv] ?? '';
@@ -140,13 +134,13 @@ export function rewriteMessagesBody(
     : { model: envDefaultModel(), matched_schedule_id: null, source: 'env-default' as const };
   const upstream = resolveUpstream(evaluation.model);
   if (!upstream) {
-    return { ok: false, code: 'no-upstream-route', error: `no upstream route for model '${evaluation.model}' (routes: ${UPSTREAM_ROUTES.map((r) => r.prefix + '*').join(', ')})` };
+    return { ok: false, code: 'no-upstream-route', error: `no upstream route for model '${evaluation.model}' (official catalog: ${MODEL_CATALOG_LIST})` };
   }
   if (!upstream.apiKey) {
     return { ok: false, code: 'no-api-key', error: `upstream key env ${upstream.route.apiKeyEnv} not configured` };
   }
-  // Registry-shell mapping: tmv-* names become native upstream names on the wire.
-  const wireModel = upstream.route.mapModelName ? upstream.route.mapModelName(evaluation.model) : evaluation.model;
+  // 官方名直通（mapModelName 剥壳逻辑随 tmv-* 退役，LG-035 增补）。
+  const wireModel = evaluation.model;
   doc.model = wireModel;
 
   return {
@@ -158,7 +152,7 @@ export function rewriteMessagesBody(
       from: originalModel,
       to: wireModel,
       matched_schedule_id: evaluation.matched_schedule_id,
-      upstream_prefix: upstream.route.prefix,
+      upstream_prefix: upstream.route.label,
     },
   };
 }

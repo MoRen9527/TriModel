@@ -178,13 +178,13 @@ describe('transition detector: value-change semantics + whitelist record (SEC re
 
   it('first observation records nothing; change records one line; same value records nothing', () => {
     const log = join(dir, 'transitions.jsonl');
-    const first = recordModelTransitionIfChanged({ model: 'glm-5.3', source: 'env-default', matched_schedule_id: null }, log);
+    const first = recordModelTransitionIfChanged({ model: 'GLM-5.3', source: 'env-default', matched_schedule_id: null }, log);
     assert.equal(first, null);
-    const t = recordModelTransitionIfChanged({ model: 'deepseek-chat', source: 'policy', matched_schedule_id: 's1' }, log);
+    const t = recordModelTransitionIfChanged({ model: 'deepseek-v4-pro', source: 'policy', matched_schedule_id: 's1' }, log);
     assert.ok(t);
-    assert.equal(t.from, 'glm-5.3');
-    assert.equal(t.to, 'deepseek-chat');
-    const again = recordModelTransitionIfChanged({ model: 'deepseek-chat', source: 'policy', matched_schedule_id: 's1' }, log);
+    assert.equal(t.from, 'GLM-5.3');
+    assert.equal(t.to, 'deepseek-v4-pro');
+    const again = recordModelTransitionIfChanged({ model: 'deepseek-v4-pro', source: 'policy', matched_schedule_id: 's1' }, log);
     assert.equal(again, null);
     // Exactly one JSONL line on disk
     const lines = readFileSync(log, 'utf-8').trim().split('\n');

@@ -16,6 +16,7 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { MODEL_CATALOG, MODEL_CATALOG_LIST } from './model-catalog.js';
 
 export interface PolicyWindow {
   start: string; // 'HH:MM' inclusive, Asia/Shanghai local time
@@ -45,9 +46,9 @@ export interface PolicyEvaluation {
 const SUPPORTED_TIMEZONE = 'Asia/Shanghai';
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-/** Env fallback shared with keys.ts (same resolution as keys.ts legacy const). */
+/** Env fallback shared with keys.ts（官方名，LG-035 增补标准化）。 */
 export function envDefaultModel(): string {
-  return process.env.TRIMODEL_DEFAULT_MODEL ?? 'tmv-deepseek-v4-pro';
+  return process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-v4-pro';
 }
 
 function toMinutes(hhmm: string): number {
@@ -119,6 +120,10 @@ export function validatePolicyShape(doc: unknown): string {
     if (typeof s.id !== 'string' || s.id.length === 0) return `schedules[${i}].id must be a non-empty string`;
     if (s.target !== 'daemon-default') return `schedules[${i}].target must be 'daemon-default'`;
     if (typeof s.model !== 'string' || s.model.length === 0) return `schedules[${i}].model must be a non-empty string`;
+    // LG-035 增补：model ∈ 恰五名目录（大小写精确）；旧名（tmv-* 等）显式 400 附列表。
+    if (!(MODEL_CATALOG as readonly string[]).includes(s.model)) {
+      return `schedules[${i}].model must be one of the official catalog: ${MODEL_CATALOG_LIST}`;
+    }
     if (!Array.isArray(s.windows) || s.windows.length === 0) {
       return `schedules[${i}].windows must be a non-empty array`;
     }

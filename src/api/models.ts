@@ -1,4 +1,7 @@
 // ── TriModel API: GET /v1/models handler ──
+// LG-035 增补（模型名标准化，CEO 令 2026-09-11）：恰五名，大小写精确，
+// /v1/models 输出逐字节=CEO 原文；单一定义点=src/model-catalog.ts。
+import { MODEL_CATALOG } from '../model-catalog.js';
 import type { ModelClient } from '../client.js';
 
 interface ModelItem {
@@ -20,8 +23,22 @@ interface ModelsResponse {
   data: ModelItem[];
 }
 
+const DISPLAY_NAMES: Record<string, string> = {
+  'deepseek-flash': 'DeepSeek Flash',
+  'deepseek-v4-pro': 'DeepSeek V4 Pro',
+  'GLM-5.3-Flash': 'GLM 5.3 Flash',
+  'GLM-5.3': 'GLM 5.3',
+  'TMV': 'TriMetaverse Platform',
+};
+
+function inferProvider(modelId: string): string {
+  if (modelId === 'TMV') return 'trimetaverse';
+  if (modelId.startsWith('GLM')) return 'glm';
+  return 'deepseek';
+}
+
 function inferCapabilities(modelId: string) {
-  const reasoning = modelId.includes('reasoner') || modelId.includes('v4-pro');
+  const reasoning = modelId.includes('v4-pro') || modelId === 'GLM-5.3';
   return {
     chat: true,
     streaming: true,
@@ -30,33 +47,12 @@ function inferCapabilities(modelId: string) {
   };
 }
 
-function inferDisplayName(modelId: string): string {
-  const map: Record<string, string> = {
-    'deepseek-v4-pro': 'DeepSeek V4 Pro',
-    'deepseek-chat': 'DeepSeek Chat',
-    'deepseek-reasoner': 'DeepSeek Reasoner',
-    'deepseek-v4-flash': 'DeepSeek V4 Flash',
-    'tmv-deepseek-chat': 'TriMetaverse DeepSeek Chat',
-    'tmv-deepseek-reasoner': 'TriMetaverse DeepSeek Reasoner',
-    'tmv-deepseek-v4-pro': 'TriMetaverse DeepSeek V4 Pro',
-    'tmv-deepseek-v4-flash': 'TriMetaverse DeepSeek V4 Flash',
-    'stealth/ox-alpha': 'Ox Alpha (OpenRouter)',
-  };
-  return map[modelId] ?? modelId;
-}
-
-function inferProvider(modelId: string): string {
-  if (modelId.startsWith('tmv-')) return 'trimetaverse';
-  if (modelId.startsWith('deepseek')) return 'deepseek';
-  return 'unknown';
-}
-
-export function handleModels(client: ModelClient): { statusCode: number; body: ModelsResponse } {
-  const modelIds = client.listModels();
-  const data: ModelItem[] = modelIds.map((id) => ({
+export function handleModels(_client: ModelClient): { statusCode: number; body: ModelsResponse } {
+  void _client; // catalog is now the single source (registry 拼合面退役)
+  const data: ModelItem[] = MODEL_CATALOG.map((id) => ({
     id,
     object: 'model',
-    display_name: inferDisplayName(id),
+    display_name: DISPLAY_NAMES[id] ?? id,
     provider: inferProvider(id),
     capabilities: inferCapabilities(id),
     created: 1735689600,

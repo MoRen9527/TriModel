@@ -1,9 +1,9 @@
-// ── LG-035 P3-sg slice 1: 3334 rewriting proxy tests ──
-// Covers: upstream route resolution (deepseek*/glm*/unmatched), body rewrite
-// correctness (policy window in/out, CC placeholder-model semantics, bad
-// JSON), forwarding fidelity (headers/body untouched except model + injected
-// auth), SSE streaming integrity (fragmented chunks pipe byte-for-byte),
-// 10MB connection-level defense, health surface (no key material), 405.
+// ── LG-035 P3-sg slice 1 + 增补(模型名标准化): 3334 rewriting proxy tests ──
+// Covers: upstream route resolution (official catalog exact match: deepseek /
+// GLM / TMV), body rewrite correctness (policy window in/out, CC placeholder-
+// model semantics, bad JSON), forwarding fidelity, SSE streaming integrity,
+// 10MB defense, health surface (no key material), 405, keys.enc-first key
+// resolution (灰度前接线).
 // Node18 compat: node:http servers + fetch client only.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,53 +20,88 @@ import { createProxyServer } from '../src/proxy-server.js';
 import { upsertSecureKey } from '../src/secure-keys.js';
 import type { PolicyShape } from '../src/policy.js';
 
-const ENV_DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'tmv-deepseek-v4-pro';
-
-describe('proxy: upstream route table (三案)', () => {
-  const ORIGINAL = { ds: process.env.DEEPSEEK_API_KEY, dsUrl: process.env.DEEPSEEK_ANTHROPIC_BASE_URL, glm: process.env.GLM_API_KEY };
+describe('proxy: upstream route table (official catalog exact match)', () => {
+  const ORIGINAL = {
+    ds: process.env.DEEPSEEK_API_KEY,
+    dsUrl: process.env.DEEPSEEK_ANTHROPIC_BASE_URL,
+    glm: process.env.GLM_API_KEY,
+    tmvKey: process.env.TRIMODEL_TRIMETAVERSE_API_KEY,
+    tmvUrl: process.env.TRIMODEL_TRISTACISS_BASE_URL,
+  };
 
   before(() => {
     process.env.DEEPSEEK_API_KEY = 'sk-ds-test';
     process.env.GLM_API_KEY = 'sk-glm-test';
+    process.env.TRIMODEL_TRIMETAVERSE_API_KEY = 'tmv-sk-test';
+    process.env.TRIMODEL_TRISTACISS_BASE_URL = 'http://127.0.0.1:8008/v1';
     delete process.env.DEEPSEEK_ANTHROPIC_BASE_URL;
   });
   after(() => {
-    if (ORIGINAL.ds === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = ORIGINAL.ds;
-    if (ORIGINAL.glm === undefined) delete process.env.GLM_API_KEY; else process.env.GLM_API_KEY = ORIGINAL.glm;
-    if (ORIGINAL.dsUrl === undefined) delete process.env.DEEPSEEK_ANTHROPIC_BASE_URL; else process.env.DEEPSEEK_ANTHROPIC_BASE_URL = ORIGINAL.dsUrl;
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    };
+    restore('DEEPSEEK_API_KEY', ORIGINAL.ds);
+    restore('DEEPSEEK_ANTHROPIC_BASE_URL', ORIGINAL.dsUrl);
+    restore('GLM_API_KEY', ORIGINAL.glm);
+    restore('TRIMODEL_TRIMETAVERSE_API_KEY', ORIGINAL.tmvKey);
+    restore('TRIMODEL_TRISTACISS_BASE_URL', ORIGINAL.tmvUrl);
   });
 
-  it('deepseek* (registry shell + native) → native anthropic endpoint + DEEPSEEK key', () => {
-    const viaRegistry = resolveUpstream('tmv-deepseek-v4-pro');
-    assert.equal(viaRegistry?.baseUrl, 'https://api.deepseek.com/anthropic');
-    assert.equal(viaRegistry?.apiKey, 'sk-ds-test');
-    assert.equal(viaRegistry?.route.prefix, 'tmv-deepseek');
-    assert.equal(viaRegistry?.route.mapModelName?.('tmv-deepseek-v4-pro'), 'deepseek-v4-pro');
-    const native = resolveUpstream('deepseek-v4-pro');
-    assert.equal(native?.route.prefix, 'deepseek');
-    assert.equal(native?.apiKey, 'sk-ds-test');
+  it('deepseek official names → native anthropic endpoint + DEEPSEEK key', () => {
+    for (const model of ['deepseek-v4-pro', 'deepseek-flash']) {
+      const up = resolveUpstream(model);
+      assert.equal(up?.baseUrl, 'https://api.deepseek.com/anthropic');
+      assert.equal(up?.apiKey, 'sk-ds-test');
+      assert.equal(up?.route.label, 'deepseek-anthropic');
+      assert.equal(up?.route.secureProvider, 'deepseek');
+    }
   });
 
-  it('glm* → GLM anthropic-compat endpoint + GLM key', () => {
-    const up = resolveUpstream('glm-5.3');
-    assert.equal(up?.baseUrl, 'https://open.bigmodel.cn/api/anthropic');
-    assert.equal(up?.apiKey, 'sk-glm-test');
-    assert.equal(up?.route.prefix, 'glm');
+  it('GLM official names → GLM anthropic-compat endpoint + GLM key', () => {
+    for (const model of ['GLM-5.3', 'GLM-5.3-Flash']) {
+      const up = resolveUpstream(model);
+      assert.equal(up?.baseUrl, 'https://open.bigmodel.cn/api/anthropic');
+      assert.equal(up?.apiKey, 'sk-glm-test');
+      assert.equal(up?.route.label, 'glm-anthropic');
+      assert.equal(up?.route.secureProvider, 'glm');
+    }
+  });
+
+  it('TMV → TriStaciss anthropic relay (base /v1 tail stripped) + platform key', () => {
+    const up = resolveUpstream('TMV');
+    assert.equal(up?.baseUrl, 'http://127.0.0.1:8008', '/v1 tail must be stripped before the shared /v1/messages append');
+    assert.equal(up?.apiKey, 'tmv-sk-test');
+    assert.equal(up?.route.label, 'tristaciss-anthropic');
+    assert.equal(up?.route.secureProvider, 'trimetaverse');
+  });
+
+  it('unmatched → null (proxy refuses rather than mis-routing keys)', () => {
+    assert.equal(resolveUpstream('mistral-large-x'), null);
+    assert.equal(resolveUpstream('tmv-deepseek-v4-pro'), null, 'retired tmv-* names have no route');
+    assert.equal(resolveUpstream('glm-5.3'), null, 'case-sensitive: lowercase glm-5.3 is not catalog');
+  });
+
+  it('unroutable effective model → no-upstream-route', () => {
+    const ORIGINAL_DEFAULT = process.env.TRIMODEL_DEFAULT_MODEL;
+    process.env.TRIMODEL_DEFAULT_MODEL = 'mistral-large-x';
+    try {
+      assert.equal(rewriteMessagesBody('{"model":"whatever","messages":[]}', new Date(), null).code, 'no-upstream-route');
+    } finally {
+      if (ORIGINAL_DEFAULT === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = ORIGINAL_DEFAULT;
+    }
   });
 
   it('灰度前接线: keys.enc same-provider key OVERRIDES env (secure-first resolution)', () => {
-    // upsertSecureKey via secure-keys write path; tmp keystore, repo untouched
     const dir = mkdtempSync(join(tmpdir(), 'trimodel-proxykey-test-'));
     try {
       const keystore = join(dir, 'keys.enc');
       upsertSecureKey('deepseek', 'sk-from-keysenc', undefined, keystore);
       process.env.DEEPSEEK_API_KEY = 'sk-from-env';
-      const up = resolveUpstream('tmv-deepseek-v4-pro', keystore);
+      const up = resolveUpstream('deepseek-v4-pro', keystore);
       assert.equal(up?.apiKey, 'sk-from-keysenc');
       // Other provider without keys.enc entry falls back to env
-      process.env.GLM_API_KEY = 'sk-glm-env';
-      const glm = resolveUpstream('glm-5.3', keystore);
-      assert.equal(glm?.apiKey, 'sk-glm-env');
+      const glm = resolveUpstream('GLM-5.3', keystore);
+      assert.equal(glm?.apiKey, 'sk-glm-test');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -76,9 +111,7 @@ describe('proxy: upstream route table (三案)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'trimodel-proxykey2-test-'));
     try {
       process.env.DEEPSEEK_API_KEY = 'sk-env-fallback';
-      // Absent keystore
       assert.equal(resolveUpstream('deepseek-v4-pro', join(dir, 'missing.enc'))?.apiKey, 'sk-env-fallback');
-      // Corrupted keystore (fail-safe family)
       const bad = join(dir, 'bad.enc');
       writeFileSync(bad, Buffer.from('garbage-not-aes-gcm'));
       assert.equal(resolveUpstream('deepseek-v4-pro', bad)?.apiKey, 'sk-env-fallback');
@@ -87,18 +120,9 @@ describe('proxy: upstream route table (三案)', () => {
     }
   });
 
-  it('unmatched prefix → null (no route, proxy refuses rather than mis-routing keys)', () => {
-    assert.equal(resolveUpstream('mistral-large-x'), null);
-  });
-
-  it('unroutable effective model → no-upstream-route (proxy refuses, never mis-sends keys)', () => {
-    const ORIGINAL_DEFAULT = process.env.TRIMODEL_DEFAULT_MODEL;
-    process.env.TRIMODEL_DEFAULT_MODEL = 'mistral-large-x';
-    try {
-      assert.equal(rewriteMessagesBody('{"model":"whatever","messages":[]}', new Date(), null).code, 'no-upstream-route');
-    } finally {
-      if (ORIGINAL_DEFAULT === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = ORIGINAL_DEFAULT;
-    }
+  it('route table: three upstream groups over the five-name catalog', () => {
+    assert.deepEqual(UPSTREAM_ROUTES.map((r) => r.label), ['deepseek-anthropic', 'glm-anthropic', 'tristaciss-anthropic']);
+    assert.deepEqual(UPSTREAM_ROUTES.flatMap((r) => r.matchModels).sort(), ['GLM-5.3', 'GLM-5.3-Flash', 'TMV', 'deepseek-flash', 'deepseek-v4-pro']);
   });
 });
 
@@ -112,25 +136,29 @@ describe('proxy: body rewrite correctness', () => {
   it('policy window hit: model rewritten to schedule model + route follows', () => {
     const glmWindow: PolicyShape = {
       version: '1',
-      schedules: [{ id: 'glm-win', target: 'daemon-default', model: 'glm-5.3', windows: [{ start: '00:00', end: '23:59' }], timezone: 'Asia/Shanghai', enabled: true, priority: 10 }],
+      schedules: [{ id: 'glm-win', target: 'daemon-default', model: 'GLM-5.3', windows: [{ start: '00:00', end: '23:59' }], timezone: 'Asia/Shanghai', enabled: true, priority: 10 }],
     };
     const out = rewriteMessagesBody('{"model":"cc-placeholder","messages":[{"role":"user","content":"hi"}],"max_tokens":100}', new Date(), glmWindow);
     assert.equal(out.code, 'ok');
     const body = JSON.parse(out.body!) as { model: string };
-    assert.equal(body.model, 'glm-5.3');
-    assert.equal(out.upstream?.route.prefix, 'glm');
+    assert.equal(body.model, 'GLM-5.3');
+    assert.equal(out.upstream?.route.label, 'glm-anthropic');
     assert.equal(out.rewriteLog?.from, 'cc-placeholder');
     assert.equal(out.rewriteLog?.matched_schedule_id, 'glm-win');
   });
 
-  it('no policy: falls back to env default model (registry shell stripped on the wire)', () => {
-    const out = rewriteMessagesBody('{"model":"cc-placeholder","messages":[]}', new Date(), null);
-    assert.equal(out.code, 'ok');
-    // Env default = tmv-deepseek-v4-pro → wire name deepseek-v4-pro
-    assert.equal((JSON.parse(out.body!) as { model: string }).model, 'deepseek-v4-pro');
-    assert.equal(out.upstream?.route.prefix, 'tmv-deepseek');
-    assert.equal(out.rewriteLog?.matched_schedule_id, null);
-    assert.equal(out.rewriteLog?.to, 'deepseek-v4-pro');
+  it('no policy: falls back to official env default (deepseek-v4-pro)', () => {
+    const ORIGINAL_DEFAULT = process.env.TRIMODEL_DEFAULT_MODEL;
+    delete process.env.TRIMODEL_DEFAULT_MODEL;
+    try {
+      const out = rewriteMessagesBody('{"model":"cc-placeholder","messages":[]}', new Date(), null);
+      assert.equal(out.code, 'ok');
+      assert.equal((JSON.parse(out.body!) as { model: string }).model, 'deepseek-v4-pro');
+      assert.equal(out.upstream?.route.label, 'deepseek-anthropic');
+      assert.equal(out.rewriteLog?.matched_schedule_id, null);
+    } finally {
+      if (ORIGINAL_DEFAULT === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = ORIGINAL_DEFAULT;
+    }
   });
 
   it('CC placeholder model semantics: whatever CC sends is overridden server-side', () => {
@@ -147,14 +175,10 @@ describe('proxy: body rewrite correctness', () => {
     delete process.env.GLM_API_KEY;
     const glmWindow: PolicyShape = {
       version: '1',
-      schedules: [{ id: 'g', target: 'daemon-default', model: 'glm-5.3', windows: [{ start: '00:00', end: '23:59' }], timezone: 'Asia/Shanghai', enabled: true, priority: 1 }],
+      schedules: [{ id: 'g', target: 'daemon-default', model: 'GLM-5.3', windows: [{ start: '00:00', end: '23:59' }], timezone: 'Asia/Shanghai', enabled: true, priority: 1 }],
     };
     assert.equal(rewriteMessagesBody('{"model":"x"}', new Date(), glmWindow).code, 'no-api-key');
     if (ORIGINAL_GLM === undefined) delete process.env.GLM_API_KEY; else process.env.GLM_API_KEY = ORIGINAL_GLM;
-  });
-
-  it('route table: longest-prefix-first registry+native pairs (候实勘补全注记在案)', () => {
-    assert.deepEqual(UPSTREAM_ROUTES.map((r) => r.prefix), ['tmv-deepseek', 'deepseek', 'tmv-glm', 'glm']);
   });
 });
 
@@ -165,7 +189,6 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
   let proxyPort = 0;
   const ORIGINAL = { dsUrl: process.env.DEEPSEEK_ANTHROPIC_BASE_URL, dsKey: process.env.DEEPSEEK_API_KEY };
 
-  // What the mock upstream last received (for fidelity assertions).
   let lastSeen: { headers: IncomingMessage['headers']; body: string } | null = null;
 
   const SSE_FULL = [
@@ -177,7 +200,6 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
 
   before(async () => {
     process.env.DEEPSEEK_API_KEY = 'mock-ds-key';
-    // Mock upstream: asserts-side recording + SSE fragmentation (3 delayed chunks)
     mockUpstream = createServer((req: IncomingMessage, res: ServerResponse) => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
@@ -189,7 +211,6 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
           let i = 0;
           const timer = setInterval(() => {
             if (i < SSE_FULL.length) {
-              // Fragmented write: two SSE events per chunk, byte-level burst
               res.write(SSE_FULL.slice(i, i + 2));
               i += 2;
             } else {
@@ -228,7 +249,6 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
     assert.equal(res.status, 200);
     const json = await res.json() as { echo_model: string };
     assert.equal(json.echo_model, 'deepseek-v4-pro');
-    // Fidelity: mock received exactly the rewritten body + injected auth
     assert.ok(lastSeen);
     assert.equal((JSON.parse(lastSeen.body) as { model: string }).model, 'deepseek-v4-pro');
     assert.equal(lastSeen.headers['x-api-key'], 'mock-ds-key');

@@ -67,7 +67,7 @@ async function handler(req: import('node:http').IncomingMessage, res: import('no
         ok: true,
         service: 'trimodel-proxy',
         policy_effective: evaluation,
-        upstream_routes: UPSTREAM_ROUTES.map((r) => ({ prefix: `${r.prefix}*`, baseUrl: r.baseUrl(), apiKeyEnv: r.apiKeyEnv, key_configured: Boolean(process.env[r.apiKeyEnv]) })),
+        upstream_routes: UPSTREAM_ROUTES.map((r) => ({ label: r.label, models: r.matchModels, baseUrl: r.baseUrl(), apiKeyEnv: r.apiKeyEnv, key_configured: Boolean(process.env[r.apiKeyEnv]) })),
         last_upstream_status: lastUpstreamStatus,
         recent_rewrites: rewriteLog.slice(-REWRITE_LOG_LIMIT),
       }));
