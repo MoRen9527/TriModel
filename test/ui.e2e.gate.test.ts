@@ -20,6 +20,7 @@ const pw = await import('playwright-core').then((m) => m).catch(() => null);
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY_FILE = join(REPO_ROOT, 'policy.json');
+const CARD_FILE = join(REPO_ROOT, 'trimmc-card.json'); // E4 writes it via 保存卡片
 const API_TOKEN = 'ste-gate-token';
 const ADMIN_TOKEN = 'ste-admin-token';
 const CATALOG = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
@@ -57,7 +58,7 @@ let server: ChildProcess | null = null;
 let browser: Browser | null = null;
 let port = 0;
 let workDir = '';
-const snap = { policy: null as string | null };
+const snap = { policy: null as string | null, card: null as string | null };
 
 function freePort(): Promise<number> {
   return new Promise((resolveP, reject) => {
@@ -107,7 +108,9 @@ async function waitHealth(timeoutMs = 10000): Promise<void> {
 describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP_REASON }, () => {
   before(async () => {
     snap.policy = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
+    snap.card = existsSync(CARD_FILE) ? readFileSync(CARD_FILE, 'utf-8') : null;
     rmSync(POLICY_FILE, { force: true });
+    rmSync(CARD_FILE, { force: true });
     workDir = mkdtempSync(join(tmpdir(), 'ste-ui-e2e-'));
     port = await freePort();
     server = bootServer(false); // phase 1: E1 first-launch (empty-token) surface
@@ -122,6 +125,8 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     rmSync(workDir, { recursive: true, force: true });
     if (snap.policy === null) rmSync(POLICY_FILE, { force: true });
     else writeFileSync(POLICY_FILE, snap.policy, 'utf-8');
+    if (snap.card === null) rmSync(CARD_FILE, { force: true });
+    else writeFileSync(CARD_FILE, snap.card, 'utf-8');
   });
 
   async function freshPage(waitMs = 600): Promise<Page> {
@@ -136,7 +141,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
   it('E1 (empty-token first launch): settings auto-expanded + guide visible + data panels disabled + idle dot', async () => {
     const page = await freshPage(800);
     assert.equal(await page.$eval('#conn-settings', (el) => (el as HTMLDetailsElement).open), true, '连接设置自动展开（boot 源码语义①）');
-    assert.equal(await page.$eval('#conn-guide', (el) => el.hidden), false, '引导可见');
+    assert.equal(await page.$eval('#conn-guide', (el) => (el as HTMLElement).hidden), false, '引导可见');
     const guide = await page.locator('#conn-guide').textContent();
     assert.ok(/首次使用/.test(guide ?? ''), '引导文案内容在位');
     assert.ok(((await page.locator('#conn-dot').getAttribute('class')) ?? '').includes('idle'), '连接点=idle');
@@ -242,7 +247,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.click('#conn-save');
     await page.waitForFunction(
       () => {
-        const el = document.querySelector('#error-card');
+        const el = document.querySelector('#error-card') as HTMLElement | null;
         return el && !el.hidden && (el.textContent ?? '').length > 5;
       },
       { timeout: 6000 },
