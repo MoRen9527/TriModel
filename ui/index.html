@@ -25,6 +25,7 @@
   button { cursor: pointer; }
   button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
   button.danger { color: #dc2626; border-color: #dc2626; }
+  button.eye { border: none; background: transparent; cursor: pointer; font-size: 15px; }
   .row-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
   .row-form label { font-size: 12px; color: #666; }
   .kv { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; font-size: 13px; }
@@ -43,8 +44,10 @@
   <div class="row-form" style="margin:0 0 12px">
     <label>API Token（GET /v1/config/keys，仅存本浏览器）</label>
     <input id="token" type="password" placeholder="TRIMODEL_API_TOKEN" style="width:220px">
+    <button id="token-eye" class="eye" title="切换输入可见性（仅当前输入值）">👁</button>
     <label>Admin Token（密钥写面）</label>
     <input id="adminToken" type="password" placeholder="TRIMODEL_ADMIN_TOKEN" style="width:220px">
+    <button id="admin-eye" class="eye" title="切换输入可见性（仅当前输入值）">👁</button>
     <button id="refreshNow">刷新对读</button>
   </div>
   <div class="kv" id="effective"></div>
@@ -61,7 +64,7 @@
       <option value="trimetaverse">trimetaverse</option>
     </select>
     <label>api_key</label><input id="k-key" type="password" placeholder="sk-..." style="width:260px" autocomplete="off">
-    <button id="k-eye" title="切换输入可见性（仅当前输入值；已存密钥仍只显尾 4 位）" style="border:none;background:transparent;cursor:pointer;font-size:15px">👁</button>
+    <button id="k-eye" class="eye" title="切换输入可见性（仅当前输入值；已存密钥仍只显尾 4 位）">👁</button>
     <label>base_url（可选）</label><input id="k-baseurl" placeholder="https://..." style="width:220px">
     <button class="primary" id="saveKey">保存（加密落 keys.enc）</button>
   </div>
@@ -140,14 +143,20 @@ async function refreshSecureStatus() {
   el.innerHTML = rows.map(([k, v]) => '<b>' + k + '</b><span>' + v + '</span>').join('');
 }
 
-// ── 眼睛切换钮（CEO 15:55 增补）：仅切换正在输入值的可见性（password↔text）；
-// 已存储密钥展示不受影响——status 页签保持尾 4 位 masked，无任何读回路径。──
-$('k-eye').onclick = () => {
-  const input = $('k-key');
-  const reveal = input.type === 'password';
-  input.type = reveal ? 'text' : 'password';
-  $('k-eye').textContent = reveal ? '🚫' : '👁';
-};
+// ── 眼睛切换钮（CEO 15:55 增补，16:15 扩大至全部打星输入位）：仅切换正在
+// 输入值的可见性（password↔text）；已存储密钥/token 展示不受影响——status
+// 页签保持尾 4 位 masked，无任何读回路径。三框独立 id，复用同一 helper。──
+function wireEyeToggle(inputId, eyeId) {
+  $(eyeId).onclick = () => {
+    const input = $(inputId);
+    const reveal = input.type === 'password';
+    input.type = reveal ? 'text' : 'password';
+    $(eyeId).textContent = reveal ? '🚫' : '👁';
+  };
+}
+wireEyeToggle('k-key', 'k-eye');
+wireEyeToggle('token', 'token-eye');
+wireEyeToggle('adminToken', 'admin-eye');
 
 $('saveKey').onclick = async () => {
   const provider = $('k-provider').value;
