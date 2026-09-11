@@ -20,6 +20,7 @@ const pw = await import('playwright-core').then((m) => m).catch(() => null);
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY_FILE = join(REPO_ROOT, 'policy.json');
+const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 runtime file
 const CARD_FILE = join(REPO_ROOT, 'trimmc-card.json'); // E4 writes it via 保存卡片
 const API_TOKEN = 'ste-gate-token';
 const ADMIN_TOKEN = 'ste-admin-token';
@@ -55,10 +56,11 @@ const SKIP_REASON = !pw
     : `SKIP (env-gate): chromium unavailable — tried TRIMODEL_E2E_CHROMIUM override then ${join(process.env.LOCALAPPDATA ?? '<LOCALAPPDATA unset>', 'ms-playwright')}/chromium-*/chrome-win(64)/chrome.exe; install via npx playwright install chromium`;
 
 let server: ChildProcess | null = null;
+let snapLocal: string | null = null; // S11 policies/local.json
 let browser: Browser | null = null;
 let port = 0;
 let workDir = '';
-const snap = { policy: null as string | null, card: null as string | null };
+const snap = { policy: null as string | null, card: null as string | null, local: null as string | null };
 
 function freePort(): Promise<number> {
   return new Promise((resolveP, reject) => {
@@ -108,8 +110,10 @@ async function waitHealth(timeoutMs = 10000): Promise<void> {
 describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP_REASON }, () => {
   before(async () => {
     snap.policy = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
+    snapLocal = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
     snap.card = existsSync(CARD_FILE) ? readFileSync(CARD_FILE, 'utf-8') : null;
     rmSync(POLICY_FILE, { force: true });
+    rmSync(POLICY_LOCAL, { force: true });
     rmSync(CARD_FILE, { force: true });
     workDir = mkdtempSync(join(tmpdir(), 'ste-ui-e2e-'));
     port = await freePort();
@@ -125,6 +129,8 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     rmSync(workDir, { recursive: true, force: true });
     if (snap.policy === null) rmSync(POLICY_FILE, { force: true });
     else writeFileSync(POLICY_FILE, snap.policy, 'utf-8');
+    if (snapLocal === null) rmSync(POLICY_LOCAL, { force: true });
+    else writeFileSync(POLICY_LOCAL, snapLocal, 'utf-8');
     if (snap.card === null) rmSync(CARD_FILE, { force: true });
     else writeFileSync(CARD_FILE, snap.card, 'utf-8');
   });

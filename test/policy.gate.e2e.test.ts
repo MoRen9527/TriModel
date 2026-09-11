@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY_FILE = join(REPO_ROOT, 'policy.json');
+const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 runtime file
 const TRANS_LOG = join(REPO_ROOT, 'model-transitions.jsonl'); // P2 runtime file: this suite's GETs record transitions
 const TOKEN = 'ste-gate-token';
 
@@ -27,6 +28,7 @@ let poller: ChildProcess | null = null;
 let port = 0;
 let workDir = '';
 let snapshot: string | null = null; // prior policy.json content (null = absent)
+let snapLocal: string | null = null; // S11 policies/local.json
 let snapLog: string | null = null; // prior model-transitions.jsonl content (null = absent)
 
 interface PollEvent { type: string; defaultModel?: string; envModel?: string; error?: string }
@@ -145,8 +147,10 @@ function waitForEvent(pred: (e: PollEvent) => boolean, timeoutMs: number, label:
 describe('GATE L3+anchor③: E2E full chain + daemon real-chain poll (single lifecycle)', () => {
   before(async () => {
     snapshot = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
+    snapLocal = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
     snapLog = existsSync(TRANS_LOG) ? readFileSync(TRANS_LOG, 'utf-8') : null;
-    rmSync(POLICY_FILE, { force: true }); // deterministic init: pre-policy env default
+    rmSync(POLICY_FILE, { force: true });
+    rmSync(POLICY_LOCAL, { force: true }); // deterministic init: pre-policy env default
     rmSync(TRANS_LOG, { force: true });
     workDir = mkdtempSync(join(tmpdir(), 'ste-gate-'));
     port = await freePort();
@@ -202,6 +206,8 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     // snapshot-restore protocol: leave repo root exactly as found
     if (snapshot === null) rmSync(POLICY_FILE, { force: true });
     else writeFileSync(POLICY_FILE, snapshot, 'utf-8');
+    if (snapLocal === null) rmSync(POLICY_LOCAL, { force: true });
+    else writeFileSync(POLICY_LOCAL, snapLocal, 'utf-8');
     if (snapLog === null) rmSync(TRANS_LOG, { force: true });
     else writeFileSync(TRANS_LOG, snapLog, 'utf-8');
   });
