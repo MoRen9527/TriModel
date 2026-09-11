@@ -1,9 +1,10 @@
 // ── LG-035 P3-sg slice 1 + 增补(模型名标准化): 3334 rewriting proxy tests ──
+/* eslint-disable @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unused-vars -- test-local idioms */
 // Covers: upstream route resolution (official catalog exact match: deepseek /
 // GLM / TMV), body rewrite correctness (policy window in/out, CC placeholder-
 // model semantics, bad JSON), forwarding fidelity, SSE streaming integrity,
 // 10MB defense, health surface (no key material), 405, keys.enc-first key
-// resolution (灰度前接线).
+// resolution (S5 归并: card entries first, env fallback).
 // Node18 compat: node:http servers + fetch client only.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,7 +18,7 @@ import {
   rewriteMessagesBody,
 } from '../src/anthropic-proxy.js';
 import { createProxyServer } from '../src/proxy-server.js';
-import { upsertSecureKey } from '../src/secure-keys.js';
+import { emptyCard, buildEntry, saveCard as cardSave } from '../src/trimmc-card.js';
 import type { PolicyShape } from '../src/policy.js';
 
 describe('proxy: upstream route table (official catalog exact match)', () => {
@@ -91,29 +92,32 @@ describe('proxy: upstream route table (official catalog exact match)', () => {
     }
   });
 
-  it('灰度前接线: keys.enc same-provider key OVERRIDES env (secure-first resolution)', () => {
+  it('S5 归并: card enabled entry key OVERRIDES env (card-first resolution)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'trimodel-proxykey-test-'));
     try {
-      const keystore = join(dir, 'keys.enc');
-      upsertSecureKey('deepseek', 'sk-from-keysenc', undefined, keystore);
+      const cardPath = join(dir, 'trimmc-card.json');
+      const card = emptyCard('c');
+      card.provider_entries['e1'] = buildEntry('deepseek', 'deepseek-v4-pro', 'sk-from-card-entry', true);
+      cardSave(card, cardPath);
       process.env.DEEPSEEK_API_KEY = 'sk-from-env';
-      const up = resolveUpstream('deepseek-v4-pro', keystore);
-      assert.equal(up?.apiKey, 'sk-from-keysenc');
-      // Other provider without keys.enc entry falls back to env
-      const glm = resolveUpstream('GLM-5.3', keystore);
-      assert.equal(glm?.apiKey, 'sk-glm-test');
+      const up = resolveUpstream('deepseek-v4-pro', cardPath);
+      assert.equal(up?.apiKey, 'sk-from-card-entry');
+      // GLM without card entry falls back to env
+      process.env.GLM_API_KEY = 'sk-glm-env';
+      const glm = resolveUpstream('GLM-5.3', cardPath);
+      assert.equal(glm?.apiKey, 'sk-glm-env');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('灰度前接线: keys.enc absent → env fallback; corrupted → env fallback, never throws', () => {
+  it('S5 归并: card absent → env fallback; corrupted card → env fallback, never throws', () => {
     const dir = mkdtempSync(join(tmpdir(), 'trimodel-proxykey2-test-'));
     try {
       process.env.DEEPSEEK_API_KEY = 'sk-env-fallback';
-      assert.equal(resolveUpstream('deepseek-v4-pro', join(dir, 'missing.enc'))?.apiKey, 'sk-env-fallback');
-      const bad = join(dir, 'bad.enc');
-      writeFileSync(bad, Buffer.from('garbage-not-aes-gcm'));
+      assert.equal(resolveUpstream('deepseek-v4-pro', join(dir, 'missing.json'))?.apiKey, 'sk-env-fallback');
+      const bad = join(dir, 'bad.json');
+      writeFileSync(bad, 'not json at all');
       assert.equal(resolveUpstream('deepseek-v4-pro', bad)?.apiKey, 'sk-env-fallback');
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -234,8 +238,8 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
   });
 
   after(async () => {
-    await new Promise<void>((r) => proxy.close(() => r()));
-    await new Promise<void>((r) => mockUpstream.close(() => r()));
+    await new Promise<void>((r) => proxy.close(() => { r(); }));
+    await new Promise<void>((r) => mockUpstream.close(() => { r(); }));
     if (ORIGINAL.dsUrl === undefined) delete process.env.DEEPSEEK_ANTHROPIC_BASE_URL; else process.env.DEEPSEEK_ANTHROPIC_BASE_URL = ORIGINAL.dsUrl;
     if (ORIGINAL.dsKey === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = ORIGINAL.dsKey;
   });

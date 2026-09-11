@@ -72,102 +72,50 @@ describe('secure-keys: roundtrip + fail-safe (path override)', () => {
   it('keystoreExists + selfCheckKeystore do not throw on absent/corrupt store', () => {
     assert.equal(keystoreExists(join(dir, 'nope.enc')), false);
     const bad = join(dir, 'bad.enc');
-    assert.doesNotThrow(() => selfCheckKeystore(bad));
+    assert.doesNotThrow(() => { selfCheckKeystore(bad); });
   });
 });
 
-describe('secure plane API: fail-closed admin auth + validation + masked status', () => {
+describe('S5 退役面: PUT secure → 410; status → migration indicator', () => {
   const ORIGINAL_ADMIN = process.env.TRIMODEL_ADMIN_TOKEN;
-  let dir: string;
-
-  before(() => { dir = mkdtempSync(join(tmpdir(), 'trimodel-secureapi-test-')); });
+  before(() => { process.env.TRIMODEL_ADMIN_TOKEN = 'admin-tc'; });
   after(() => {
-    if (ORIGINAL_ADMIN === undefined) delete process.env.TRIMODEL_ADMIN_TOKEN;
-    else process.env.TRIMODEL_ADMIN_TOKEN = ORIGINAL_ADMIN;
-    rmSync(dir, { recursive: true, force: true });
+    if (ORIGINAL_ADMIN === undefined) delete process.env.TRIMODEL_ADMIN_TOKEN; else process.env.TRIMODEL_ADMIN_TOKEN = ORIGINAL_ADMIN;
   });
 
-  it('QB1 fail-closed: TRIMODEL_ADMIN_TOKEN unset ⇒ 503 disabled (no body processing)', async () => {
+  it('PUT /v1/config/keys/secure retired: always 410 + human guidance (S5)', async () => {
+    const { handlePutSecureKeys } = await import('../src/api/keys.js');
+    const gone = handlePutSecureKeys('Bearer admin-tc', JSON.stringify({ provider: 'deepseek', api_key: 'sk-x' }));
+    assert.equal(gone.statusCode, 410);
+    assert.ok(JSON.stringify(gone.body).includes('模型信息'), 'retirement message must point at the card entry form');
+  });
+
+  it('status: 503 fail-closed / 401 wrong / 200 migration indicator (S5 semantics)', async () => {
+    const { handleSecureKeysStatus } = await import('../src/api/keys.js');
+    const ORIGINAL = process.env.TRIMODEL_ADMIN_TOKEN;
     delete process.env.TRIMODEL_ADMIN_TOKEN;
-    const { handlePutSecureKeys, handleSecureKeysStatus } = await import('../src/api/keys.js');
-    const put = handlePutSecureKeys('Bearer whatever', '{"provider":"deepseek","api_key":"sk-x"}', { keystorePath: join(dir, 'k.enc') });
-    assert.equal(put.statusCode, 503);
-    const status = handleSecureKeysStatus('Bearer whatever', { keystorePath: join(dir, 'k.enc') });
-    assert.equal(status.statusCode, 503);
-  });
-
-  it('admin token set: wrong/missing token ⇒ 401; correct token + valid body ⇒ 200 masked', async () => {
-    process.env.TRIMODEL_ADMIN_TOKEN = 'admin-secret-lg035';
-    const { handlePutSecureKeys } = await import('../src/api/keys.js');
-    const keystore = join(dir, 'k.enc');
-    assert.equal(handlePutSecureKeys(undefined, '{"provider":"deepseek","api_key":"sk-x"}', { keystorePath: keystore }).statusCode, 401);
-    assert.equal(handlePutSecureKeys('Bearer wrong', '{"provider":"deepseek","api_key":"sk-x"}', { keystorePath: keystore }).statusCode, 401);
-
-    const ok = handlePutSecureKeys(
-      'Bearer admin-secret-lg035',
-      JSON.stringify({ provider: 'deepseek', api_key: 'sk-live-999888777666', base_url: 'https://api.deepseek.com/v1' }),
-      { keystorePath: keystore },
-    );
+    assert.equal(handleSecureKeysStatus('Bearer x').statusCode, 503);
+    process.env.TRIMODEL_ADMIN_TOKEN = 'admin-tc';
+    assert.equal(handleSecureKeysStatus('Bearer wrong').statusCode, 401);
+    const ok = handleSecureKeysStatus('Bearer admin-tc');
     assert.equal(ok.statusCode, 200);
-    assert.equal((ok.body as { masked: string }).masked, '****7666');
-    assert.equal(JSON.stringify(ok.body).includes('sk-live-999888777666'), false, 'plaintext must never be echoed');
+    const body = ok.body as { legacy_present: boolean; migrated: boolean; card_present: boolean; message: string };
+    assert.equal(typeof body.legacy_present, 'boolean');
+    assert.equal(typeof body.migrated, 'boolean');
+    assert.ok(body.message.length > 0);
+    process.env.TRIMODEL_ADMIN_TOKEN = ORIGINAL;
   });
 
-  it('PUT validation: unknown provider / empty key / bad JSON / empty body ⇒ 400', async () => {
-    process.env.TRIMODEL_ADMIN_TOKEN = 'admin-secret-lg035';
-    const { handlePutSecureKeys } = await import('../src/api/keys.js');
-    const keystore = join(dir, 'k.enc');
-    const auth = 'Bearer admin-secret-lg035';
-    assert.equal(handlePutSecureKeys(auth, undefined, { keystorePath: keystore }).statusCode, 400);
-    assert.equal(handlePutSecureKeys(auth, 'not json', { keystorePath: keystore }).statusCode, 400);
-    assert.equal(handlePutSecureKeys(auth, JSON.stringify({ provider: 'nope', api_key: 'sk-x' }), { keystorePath: keystore }).statusCode, 400);
-    assert.equal(handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: '' }), { keystorePath: keystore }).statusCode, 400);
-  });
-
-  it('F1-P2: masked-tail values are rejected (echo pollution guard); real keys pass', async () => {
-    process.env.TRIMODEL_ADMIN_TOKEN = 'admin-secret-lg035';
-    const { handlePutSecureKeys } = await import('../src/api/keys.js');
-    const keystore = join(dir, 'k.enc');
-    const auth = 'Bearer admin-secret-lg035';
-    // Masked api_key value → 400
-    const maskedKey = handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: '****7666' }), { keystorePath: keystore });
-    assert.equal(maskedKey.statusCode, 400);
-    assert.ok(JSON.stringify(maskedKey.body).includes('masked value rejected'));
-    // Masked base_url value → 400
-    const maskedUrl = handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: 'sk-real-key-1', base_url: 'https://****/v1' }), { keystorePath: keystore });
-    assert.equal(maskedUrl.statusCode, 400);
-    // Normal key still passes and lands in the store
-    const ok = handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: 'sk-real-key-1' }), { keystorePath: keystore });
-    assert.equal(ok.statusCode, 200);
-    assert.equal(readSecureKeys(keystore)?.providers.deepseek.api_key, 'sk-real-key-1');
-  });
-
-  it('status endpoint: provider list + masked tails only, no api_key field anywhere', async () => {
-    process.env.TRIMODEL_ADMIN_TOKEN = 'admin-secret-lg035';
-    const { handlePutSecureKeys, handleSecureKeysStatus } = await import('../src/api/keys.js');
-    // Dedicated keystore: F1-P2 test above overwrites 'deepseek' in k.enc —
-    // this assertion needs its own store to stay order-independent.
-    const keystore = join(dir, 'status.enc');
-    handlePutSecureKeys(
-      'Bearer admin-secret-lg035',
-      JSON.stringify({ provider: 'deepseek', api_key: 'sk-live-999888777666' }),
-      { keystorePath: keystore },
-    );
-    const status = handleSecureKeysStatus('Bearer admin-secret-lg035', { keystorePath: keystore });
-    assert.equal(status.statusCode, 200);
-    const text = JSON.stringify(status.body);
-    assert.equal(text.includes('sk-live-999888777666'), false, 'no plaintext in status');
-    assert.ok(text.includes('****7666'));
-    const providers = (status.body as { providers: Array<{ provider: string; masked: string }> }).providers;
-    assert.equal(providers[0].provider, 'deepseek');
-    assert.equal(providers[0].masked, '****7666');
-    assert.equal((providers[0] as unknown as Record<string, unknown>).api_key, undefined);
-  });
-
-  it('no GET /v1/config/keys/secure route exists (404 by dispatch)', async () => {
-    const { dispatch } = await import('../src/api/routes.js');
-    const result = await dispatch({} as never, 'GET', '/v1/config/keys/secure', {});
-    assert.equal(result.statusCode, 404);
+  it('F1-P2 masked-echo guard lives on the card plane now: masked api_key never hydrates', async () => {
+    const { handlePutTrimmcCard } = await import('../src/api/trimmc-card.js');
+    const { emptyCard } = await import('../src/trimmc-card.js');
+    const doc = {
+      ...emptyCard('c'),
+      provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key: '****7666', enabled: true, updated_at: 'x' } },
+      rules: [],
+    };
+    const res = handlePutTrimmcCard('Bearer admin-tc', JSON.stringify(doc), { cardPath: join(tmpdir(), 'no-such-dir-guard', 'c.json') });
+    assert.equal(res.statusCode, 400, 'masked value → no ciphertext → structural 400 (echo pollution cannot land)');
   });
 });
 

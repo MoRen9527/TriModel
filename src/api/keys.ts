@@ -1,12 +1,16 @@
 // ── TriModel API: Key distribution endpoints ──
 // GET /v1/config/keys — Returns provider keys for client consumption
 // POST /v1/config/keys/refresh — Admin-only force refresh of key cache
-// PUT /v1/config/keys/secure — Write one provider key → keys.enc (LG-035 P2 B)
-// GET /v1/config/keys/secure/status — provider name list + masked tails only
-// (NO GET /v1/config/keys/secure: plaintext never leaves the server.)
+// PUT /v1/config/keys/secure — RETIRED (LG-035 S5): 410 Gone, keys live in
+//   TriMMC card entries now (auto-migrated from keys.enc at boot).
+// GET /v1/config/keys/secure/status — legacy-migration indicator.
 import { effectiveModel } from '../policy.js';
 import { recordModelTransitionIfChanged } from '../transition.js';
-import { KNOWN_PROVIDERS, maskKey, readSecureKeys, upsertSecureKey } from '../secure-keys.js';
+import { deriveProviderKeys } from '../key-source.js';
+import { cardExists } from '../trimmc-card.js';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
 interface ProviderKey {
   api_key: string;
@@ -44,12 +48,12 @@ function computeExpiresAt(_unused: number): string {
 }
 
 /**
- * Read provider keys: env vars first, then keys.enc overlay (LG-035 P2 B).
- * keys.enc present ⇒ same-name provider entries OVERRIDE the env L1 keys;
- * .env remains the bootstrap fallback when keys.enc is absent. A broken
- * keystore degrades to env keys (fail-safe family, see secure-keys.ts).
+ * Read provider keys (S5 归并读链): trimmc-card enabled entries derived per
+ * vendor (latest updated_at) OVERRIDE env L1 keys; .env is the final
+ * bootstrap fallback. keys.enc retired from the read chain (migrated at
+ * boot). Fail-safe: card absent/corrupt → env (deriveProviderKeys).
  */
-function readKeys(keystorePath?: string): Record<string, ProviderKey> {
+function readKeys(cardPath?: string): Record<string, ProviderKey> {
   const keys: Record<string, ProviderKey> = {};
 
   // L1: DeepSeek direct
@@ -88,18 +92,14 @@ function readKeys(keystorePath?: string): Record<string, ProviderKey> {
     };
   }
 
-  // keys.enc overlay (P2 B): same-name providers override env keys
-  const secure = readSecureKeys(keystorePath);
-  if (secure) {
-    for (const [provider, entry] of Object.entries(secure.providers)) {
-      keys[provider] = {
-        api_key: entry.api_key,
-        ...(entry.base_url ? { base_url: entry.base_url } : {}),
-      };
-    }
+  // keys.enc overlay retired (S5) — card entries derive over env instead.
+  const derived = deriveProviderKeys(keys, cardPath);
+  const merged: Record<string, ProviderKey> = {};
+  for (const [provider, k] of Object.entries(derived)) {
+    merged[provider] = { api_key: k.api_key, ...(k.base_url ? { base_url: k.base_url } : {}) };
   }
 
-  return keys;
+  return merged;
 }
 
 // ── LG-035 P2 B: secure write plane ──
@@ -107,80 +107,53 @@ function readKeys(keystorePath?: string): Record<string, ProviderKey> {
 // TRIMODEL_ADMIN_TOKEN; unset ⇒ 503 disabled (write plane off by default),
 // set ⇒ Bearer strict check. Distinct from the keys-read TRIMODEL_API_TOKEN.
 
-interface SecureKeyPutBody {
-  provider?: unknown;
-  api_key?: unknown;
-  base_url?: unknown;
-}
 
 export function handlePutSecureKeys(
-  authHeader: string | undefined,
-  rawBody: string | undefined,
-  opts?: { keystorePath?: string },
+  _authHeader: string | undefined,
+  _rawBody: string | undefined,
+  _opts?: { keystorePath?: string },
 ): { statusCode: number; body: Record<string, unknown> } {
-  const adminToken = process.env.TRIMODEL_ADMIN_TOKEN ?? '';
-  if (!adminToken) {
-    return { statusCode: 503, body: { error: 'secure key write plane disabled: TRIMODEL_ADMIN_TOKEN not configured (fail-closed)' } };
-  }
-  const authError = requireBearer(adminToken, authHeader);
-  if (authError) return authError;
-
-  if (rawBody === undefined || rawBody.trim() === '') {
-    return { statusCode: 400, body: { error: 'request body required (JSON provider key document)' } };
-  }
-  let doc: SecureKeyPutBody;
-  try {
-    doc = JSON.parse(rawBody) as SecureKeyPutBody;
-  } catch (err) {
-    return { statusCode: 400, body: { error: `invalid JSON: ${err instanceof Error ? err.message : String(err)}` } };
-  }
-
-  const provider = typeof doc.provider === 'string' ? doc.provider : '';
-  const apiKey = typeof doc.api_key === 'string' ? doc.api_key : '';
-  const baseUrl = typeof doc.base_url === 'string' && doc.base_url.length > 0 ? doc.base_url : undefined;
-  if (!(KNOWN_PROVIDERS as readonly string[]).includes(provider)) {
-    return { statusCode: 400, body: { error: `provider must be one of: ${KNOWN_PROVIDERS.join(', ')}` } };
-  }
-  if (!apiKey) {
-    return { statusCode: 400, body: { error: 'api_key must be a non-empty string' } };
-  }
-  // F1-P2 (CTO 2026-09-11): masked-tail values ('****xxxx') must never be
-  // stored as real keys — depth-in-depth guard against echo pollution
-  // (user pastes the masked display back into the form → silent bad key).
-  if (apiKey.includes('*') || (baseUrl !== undefined && baseUrl.includes('*'))) {
-    return { statusCode: 400, body: { error: 'masked value rejected — 疑似回显污染：masked 尾 4 位展示值不是真实密钥，请填入完整原始键' } };
-  }
-
-  try {
-    upsertSecureKey(provider, apiKey, baseUrl, opts?.keystorePath);
-  } catch (err) {
-    return { statusCode: 500, body: { error: `failed to persist keys.enc: ${err instanceof Error ? err.message : String(err)}` } };
-  }
-  // Masked tail only — plaintext never echoed back.
-  return { statusCode: 200, body: { ok: true, provider, masked: maskKey(apiKey), base_url: baseUrl ?? null } };
+  // S5 退役（LG-035 UI 重设计）：410 Gone + 人话指引。密钥活源=TriMMC 卡条目
+  // （keys.enc 已 boot 自动迁移）；sg 侧运维通道=条目表单录入。
+  void _authHeader;
+  void _rawBody;
+  void _opts;
+  return {
+    statusCode: 410,
+    body: { error: '此功能已升级：请在「模型信息」条目中录入密钥（旧密钥已在启动时自动迁移，无需重复录入）' },
+  };
 }
 
 export function handleSecureKeysStatus(
   authHeader: string | undefined,
-  opts?: { keystorePath?: string },
+  opts?: { cardPath?: string },
 ): { statusCode: number; body: Record<string, unknown> } {
   const adminToken = process.env.TRIMODEL_ADMIN_TOKEN ?? '';
   if (!adminToken) {
-    return { statusCode: 503, body: { error: 'secure key plane disabled: TRIMODEL_ADMIN_TOKEN not configured (fail-closed)' } };
+    return { statusCode: 503, body: { error: '管理写面未启用：请先在服务端配置管理令牌' } };
   }
   const authError = requireBearer(adminToken, authHeader);
   if (authError) return authError;
 
-  const secure = readSecureKeys(opts?.keystorePath);
-  const providers = secure
-    ? Object.entries(secure.providers).map(([provider, entry]) => ({
-        provider,
-        masked: maskKey(entry.api_key),
-        base_url: entry.base_url ?? null,
-        updated_at: entry.updated_at,
-      }))
-    : [];
-  return { statusCode: 200, body: { object: 'config.keys.secure.status', providers, keystore_present: secure !== null } };
+  // S5: status = legacy migration indicator (keys.enc retired from read chain)
+  const here = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const legacyPresent = existsSync(join(here, 'keys.enc'));
+  const migratedPresent = existsSync(join(here, 'keys.enc.migrated'));
+  const cardPresent = cardExists(opts?.cardPath ?? undefined);
+  return {
+    statusCode: 200,
+    body: {
+      object: 'config.keys.secure.status',
+      legacy_present: legacyPresent,
+      migrated: migratedPresent,
+      card_present: cardPresent,
+      message: legacyPresent
+        ? '检测到旧密钥文件，将在服务重启时自动迁入模型条目'
+        : migratedPresent
+          ? '旧密钥已自动迁入「模型信息」条目'
+          : '无旧密钥文件；密钥请在「模型信息」条目中录入',
+    },
+  };
 }
 
 function requireBearer(expected: string, authHeader: string | undefined): { statusCode: 401; body: { error: string } } | null {

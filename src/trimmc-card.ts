@@ -33,6 +33,10 @@ export interface CardEntry {
   api_key_encrypted: string; // base64(encrypt(api_key))
   enabled: boolean;
   updated_at: string;
+  /** S5 迁移标记：keys.enc 一次性迁移合成的条目。 */
+  auto_imported?: boolean;
+  /** S5 派生面：条目级 base_url（选填）。 */
+  base_url?: string;
 }
 
 export interface CardRuleRef {
@@ -112,8 +116,7 @@ export function decryptEntries(doc: TrimmcCardDocument): Record<string, Decrypte
     } catch (err) {
       console.warn(`[trimodel] trimmc-card entry '${id}' undecryptable:`, err instanceof Error ? err.message : err);
     }
-    const { api_key_encrypted: _enc, ...rest } = entry;
-    out[id] = { ...rest, api_key: apiKey };
+    out[id] = { provider: entry.provider, model: entry.model, enabled: entry.enabled, updated_at: entry.updated_at, ...(entry.auto_imported ? { auto_imported: true } : {}), ...(entry.base_url ? { base_url: entry.base_url } : {}), api_key: apiKey };
   }
   return out;
 }

@@ -14,9 +14,9 @@
 // Node18 compat (slice-1 A): uses only node:http / node:https / node:url /
 // node:path — no fetch streaming, no Node-20-only APIs.
 // (fetch 流管道弃用=18 稳定性优先，CTO 令文钦定 node:https request。)
-import { effectiveModel, envDefaultModel, evaluatePolicy, loadPolicy } from './policy.js';
+import { envDefaultModel, evaluatePolicy, loadPolicy } from './policy.js';
 import type { PolicyShape } from './policy.js';
-import { readSecureKeys } from './secure-keys.js';
+import { deriveProviderKey } from './key-source.js';
 import { MODEL_CATALOG_LIST } from './model-catalog.js';
 import http from 'node:http';
 import https from 'node:https';
@@ -74,21 +74,17 @@ export interface ResolvedUpstream {
 /**
  * Route the official catalog model to its upstream + key (exact match).
  *
- * Key resolution order (灰度前接线，2026-09-11): keys.enc (P2 secure store)
- * same-name provider api_key FIRST, env fallback second — COS 运维通道
- * （SSH 隧道→UI→secure 写面）写入后下一请求即生效零重启（readSecureKeys
- * 逐调用读文件，零缓存）。keys.enc absent/corrupted ⇒ env fallback
- * (readSecureKeys fail-safe family — never throws).
+ * Key resolution order (S5 归并): TriMMC card enabled entries (latest per
+ * vendor) FIRST, env fallback second — readSecureKeys/keys.enc retired from
+ * the chain (boot-migrated). Fail-safe: card absent/corrupt/undecryptable ⇒
+ * env (deriveProviderKey, never throws).
  */
-export function resolveUpstream(model: string, keystorePath?: string): ResolvedUpstream | null {
+export function resolveUpstream(model: string, cardPath?: string): ResolvedUpstream | null {
   const route = UPSTREAM_ROUTES.find((r) => r.matchModels.includes(model));
   if (!route) return null;
   const baseUrl = route.baseUrl().replace(/\/+$/, '');
-  let apiKey = process.env[route.apiKeyEnv] ?? '';
-  const secure = readSecureKeys(keystorePath);
-  const secureKey = secure?.providers[route.secureProvider]?.api_key;
-  if (secureKey) apiKey = secureKey;
-  return { route, baseUrl, apiKey };
+  const derived = deriveProviderKey(route.secureProvider, process.env[route.apiKeyEnv] ?? '', undefined, cardPath);
+  return { route, baseUrl, apiKey: derived.api_key };
 }
 
 // ── Body rewrite ──
@@ -195,7 +191,7 @@ export function forwardToUpstream(opts: ForwardOptions): Promise<http.IncomingMe
           'content-length': String(payload.length),
         },
       },
-      (res) => resolvePromise(res),
+      (res) => { resolvePromise(res); },
     );
     req.on('error', reject);
     req.end(payload);

@@ -14,12 +14,82 @@
 import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { hostname } from 'node:os';
 import { decrypt, encrypt } from './security/key-encryptor.js';
+import { loadCard, saveCard } from './trimmc-card.js';
 
 export interface SecureKeyEntry {
   api_key: string;
   base_url?: string;
   updated_at: string;
+}
+
+// ── LG-035 UI 重设计 S5：keys.enc 一次性迁移（→trimmc-card 合成条目）──
+// 合成映射（spec 定稿）：deepseek→deepseek-v4-pro / glm→GLM-5.3 /
+// trimetaverse→TMV；条目标记 auto_imported。幂等 = .migrated 存在即跳过。
+// 密文直接搬运（同机器指纹同加密域，无需解密重加密——解密失败亦可迁）。
+
+export interface MigrationResult {
+  migrated: boolean;
+  imported: string[];
+  reason?: 'already-migrated' | 'no-legacy' | 'undecryptable' | 'empty';
+}
+
+const MIGRATION_MODEL_MAP: Record<string, string> = {
+  deepseek: 'deepseek-v4-pro',
+  glm: 'GLM-5.3',
+  trimetaverse: 'TMV',
+};
+
+export function migrateKeysEncToCard(
+  cardPath?: string,
+  loadOverride?: () => SecureKeysDocument | null,
+  legacyPathOverride?: string,
+): MigrationResult {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const legacy = legacyPathOverride ?? resolve(here, '..', 'keys.enc');
+  const migrated = `${legacy}.migrated`;
+  if (existsSync(migrated)) return { migrated: false, imported: [], reason: 'already-migrated' };
+  if (!existsSync(legacy)) return { migrated: false, imported: [], reason: 'no-legacy' };
+
+  const readDoc = loadOverride ?? (() => readSecureKeys());
+  const doc = readDoc();
+  if (!doc) return { migrated: false, imported: [], reason: 'undecryptable' };
+
+  // Load-or-create the card, then merge synthetic entries (ciphertext moved
+  // verbatim — same machine fingerprint, same encryption domain).
+  let card = loadCard(cardPath);
+  if (!card) {
+    card = {
+      version: 2,
+      machine: { name: hostname() },
+      connection: { name: 'auto-import' },
+      provider_entries: {},
+      rules: [],
+      status: { state: 'pending', at: new Date().toISOString() },
+      reserved: { quota_switch: null, instances_group: null, env_tag: null },
+    };
+  }
+  const imported: string[] = [];
+  const now = new Date().toISOString();
+  for (const [provider, entry] of Object.entries(doc.providers)) {
+    const model = MIGRATION_MODEL_MAP[provider];
+    if (!model) continue;
+    const entryId = `auto:${provider}`;
+    card.provider_entries[entryId] = {
+      provider,
+      model,
+      api_key_encrypted: entry.api_key, // verbatim ciphertext
+      enabled: true,
+      updated_at: now,
+      auto_imported: true,
+    };
+    imported.push(entryId);
+  }
+  saveCard(card, cardPath);
+  renameSync(legacy, migrated);
+  console.log(`[trimodel] keys.enc migrated to card entries: ${imported.join(', ') || '(none)'}; legacy renamed to keys.enc.migrated`);
+  return { migrated: imported.length > 0, imported, reason: imported.length > 0 ? undefined : 'empty' };
 }
 
 export interface SecureKeysDocument {

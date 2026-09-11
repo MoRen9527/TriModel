@@ -3,145 +3,153 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TriModel 策略面 · default-model 调度</title>
+<title>TriModel 模型配置</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --border: #d4d4d8; --bg-subtle: #fafafa; --fg: #18181b; --fg-dim: #71717a;
+    --ok: #16a34a; --warn: #d97706; --err: #dc2626; --idle: #71717a;
+    --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --border: #3f3f46; --bg-subtle: #18181b; --fg: #fafafa; --fg-dim: #a1a1aa;
+      --ok: #22c55e; --warn: #f59e0b; --err: #ef4444; --idle: #a1a1aa; --accent: #3b82f6; }
+  }
   * { box-sizing: border-box; }
-  body {
-    font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
-    margin: 0 auto; padding: 24px 16px 48px; max-width: 960px;
-  }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: #666; margin-bottom: 20px; }
-  section { border: 1px solid #ccc3; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-  h2 { font-size: 15px; margin: 0 0 12px; }
+  body { font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0 auto; padding: 20px 16px 48px; max-width: 980px; color: var(--fg); }
+  h1 { font-size: 19px; margin: 0; display: inline; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; vertical-align: middle; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.idle { background: var(--idle); }
+  .sub { color: var(--fg-dim); font-size: 12.5px; }
+  section, details.zone { border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+  .card-main { border: 1.5px solid var(--border); background: var(--bg-subtle); }
+  .zone-local { border: 1px solid var(--border); background: transparent; }
+  h2 { font-size: 14.5px; margin: 0 0 10px; }
+  h3 { font-size: 13.5px; margin: 14px 0 8px; }
   table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid #ccc3; padding: 6px 8px; text-align: left; font-size: 13px; }
-  th { background: #8881; }
-  input, select, button {
-    font: inherit; padding: 4px 8px; border: 1px solid #8886; border-radius: 4px;
-    background: transparent; color: inherit;
-  }
+  th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; font-size: 13px; }
+  th { background: var(--bg-subtle); }
+  input, select, button { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: inherit; }
   button { cursor: pointer; }
-  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-  button.danger { color: #dc2626; border-color: #dc2626; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--err); border-color: var(--err); }
   button.eye { border: none; background: transparent; cursor: pointer; font-size: 15px; }
-  .row-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
-  .row-form label { font-size: 12px; color: #666; }
-  .kv { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; font-size: 13px; }
+  .row-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .row-form label { font-size: 12px; color: var(--fg-dim); }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 13px; }
   .kv b { font-weight: 600; }
-  .ok { color: #16a34a; } .warn { color: #d97706; } .err { color: #dc2626; }
-  #msg { margin-top: 10px; font-size: 13px; min-height: 20px; white-space: pre-wrap; }
-  code { background: #8882; padding: 1px 5px; border-radius: 3px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .idle { color: var(--idle); }
+  .badge { display: inline-block; padding: 1px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; }
+  .badge.pending { color: var(--warn); border: 1px solid var(--warn); }
+  .badge.applied { color: var(--ok); border: 1px solid var(--ok); }
+  .badge.failed { color: var(--err); border: 1px solid var(--err); }
+  .badge.none { color: var(--idle); border: 1px solid var(--idle); }
+  .msg { margin-top: 8px; font-size: 13px; min-height: 18px; white-space: pre-wrap; }
+  .error-panel { border: 1px solid var(--err); border-radius: 6px; padding: 8px 12px; margin-top: 8px; font-size: 13px; }
+  .guide { border: 1px dashed var(--warn); border-radius: 6px; padding: 8px 12px; margin-top: 8px; color: var(--warn); font-size: 13px; }
+  .disabled-panel { opacity: 0.45; pointer-events: none; user-select: none; }
+  code { background: var(--bg-subtle); padding: 1px 5px; border-radius: 3px; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--fg-dim); }
+  form.card-form { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 10px; max-width: 460px; }
+  form.card-form .field { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; align-items: center; margin-bottom: 8px; }
+  form.card-form .field label { font-size: 12.5px; color: var(--fg-dim); text-align: right; }
+  .switch { position: relative; width: 34px; height: 18px; appearance: none; background: var(--idle); border-radius: 9px; cursor: pointer; transition: background .15s; }
+  .switch:checked { background: var(--ok); }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch:checked::after { left: 18px; }
 </style>
 </head>
 <body>
-<h1>TriModel 策略面</h1>
-<div class="sub">default-model 时间窗调度（Asia/Shanghai；start 含 / end 不含）· LG-035 P1</div>
+<h1>TriModel 模型配置</h1><span id="conn-dot" class="dot idle" title="连接状态"></span><span id="conn-label" class="sub"></span>
 
-<section>
-  <h2>当前生效值对读</h2>
-  <div class="row-form" style="margin:0 0 12px">
-    <label>API Token（GET /v1/config/keys，仅存本浏览器）</label>
-    <input id="token" type="password" placeholder="TRIMODEL_API_TOKEN" style="width:220px">
-    <button id="token-eye" class="eye" title="切换输入可见性（仅当前输入值）">👁</button>
-    <label>Admin Token（密钥写面）</label>
-    <input id="adminToken" type="password" placeholder="TRIMODEL_ADMIN_TOKEN" style="width:220px">
-    <button id="admin-eye" class="eye" title="切换输入可见性（仅当前输入值）">👁</button>
-    <button id="refreshNow">刷新对读</button>
+<!-- ═══ 页头·连接设置（S1：令牌唯一入口；首启自动展开+引导）═══ -->
+<details id="conn-settings" open>
+  <summary>连接设置</summary>
+  <div id="conn-guide" class="guide" hidden>首次使用：请填入 API 令牌与管理令牌（向管理员获取），填完点「连接」。</div>
+  <div class="row-form">
+    <label>API 令牌</label><input id="token" type="password" placeholder="TRIMODEL_API_TOKEN" style="width:220px" autocomplete="off">
+    <button id="token-eye" class="eye">👁</button>
+    <label>管理令牌</label><input id="adminToken" type="password" placeholder="TRIMODEL_ADMIN_TOKEN" style="width:220px" autocomplete="off">
+    <button id="admin-eye" class="eye">👁</button>
+    <button class="primary" id="conn-save">连接</button>
   </div>
+</details>
+
+<!-- ═══ 状态条（S1：零输入控件，只读）═══ -->
+<section>
+  <h2>当前生效</h2>
+  <div id="error-status" class="error-panel" hidden></div>
   <div class="kv" id="effective"></div>
+  <div class="row-form"><button id="refreshNow">刷新</button></div>
 </section>
 
-<section>
-  <h2>TriMMC 机器栏 <span id="tc-badge" class="warn"></span></h2>
-  <div class="kv" id="tc-head" style="margin-bottom:12px"></div>
+<!-- ═══ 【TriMMC 信息】主卡（S1 主位：实线+云图标+「保存后待应用」）═══ -->
+<section class="card-main">
+  <h2>☁ 【TriMMC 信息】 <span id="tc-badge" class="badge none">未配置</span></h2>
+  <div class="sub" style="margin:-6px 0 10px">保存后待应用</div>
+  <div id="error-card" class="error-panel" hidden></div>
 
-  <h2 style="font-size:13px">子栏一 · 连接</h2>
+  <h3>机器信息</h3>
   <div class="row-form">
-    <label>连接名称（必填）</label><input id="tc-conn" placeholder="本机连接名" style="width:220px">
-    <details style="margin-left:8px"><summary class="sub" style="cursor:pointer">连接档案（预置，只读）</summary>
-      <div class="sub" id="tc-conn-profile">machine.json 预置档案（当前版本仅展示）</div>
-    </details>
+    <label>名称（必填）</label><input id="tc-conn" placeholder="本机名称" style="width:200px">
+    <details><summary>连接档案（预置，只读）</summary><div class="sub" id="tc-profile">machine.json 预置档案（当前版本仅展示）</div></details>
   </div>
 
-  <h2 style="font-size:13px;margin-top:14px">子栏二 · 候选池条目</h2>
-  <table id="tc-entries"><thead><tr><th>id</th><th>厂商</th><th>模型</th><th>API Key</th><th>enabled</th><th>操作</th></tr></thead><tbody id="tc-entry-body"></tbody></table>
-  <div class="row-form">
-    <label>条目 id</label><input id="tc-e-id" placeholder="entry-1" style="width:90px">
-    <label>厂商</label><select id="tc-e-provider"><option>deepseek</option><option>glm</option><option>trimetaverse</option></select>
-    <label>模型</label><select id="tc-e-model" style="width:160px"></select>
-    <label>API Key</label><input id="tc-e-key" type="password" placeholder="sk-..." style="width:180px" autocomplete="off"><button id="tc-e-eye" class="eye">👁</button>
-    <label><input id="tc-e-enabled" type="checkbox" checked> enabled</label>
-    <button id="tc-e-add">添加 / 覆盖</button>
-    <span class="sub">密钥加密落卡（at-rest 密文）；删除被规则引用的条目会被 400 拒绝（防悬挂）</span>
-  </div>
+  <h3>模型信息</h3>
+  <div id="tc-error-entries" class="error-panel" hidden></div>
+  <table id="tc-entries"><thead><tr><th>条目名</th><th>厂商</th><th>模型</th><th>密钥</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-entry-body"></tbody></table>
+  <div id="tc-empty-entries" class="sub" style="margin-top:8px">暂无条目。点「添加模型条目」录入第一个模型的密钥。</div>
+  <div class="row-form"><button id="tc-open-add">添加模型条目</button></div>
 
-  <h2 style="font-size:13px;margin-top:14px">子栏三 · 当前使用与固定规则</h2>
-  <div class="kv" id="tc-current" style="margin-bottom:8px"></div>
+  <form class="card-form" id="tc-form" hidden>
+    <h3 id="tc-form-title">添加模型条目</h3>
+    <div class="field"><label>条目名（必填）</label><input id="tc-e-id" placeholder="例如 主力-deepseek"></div>
+    <div class="field"><label>厂商</label><select id="tc-e-provider"><option>deepseek</option><option>glm</option><option>trimetaverse</option></select></div>
+    <div class="field"><label>模型</label><select id="tc-e-model"></select><div id="tc-model-error" class="error-panel" style="grid-column:2" hidden></div></div>
+    <div class="field"><label>API Key（必填）</label><input id="tc-e-key" type="password" placeholder="sk-..." autocomplete="off" style="width:100%"><button type="button" id="tc-e-eye" class="eye">👁</button></div>
+    <details class="field" style="grid-column:1/-1"><summary class="sub">高级（base_url，选填）</summary><input id="tc-e-baseurl" placeholder="https://...（留空用默认）" style="width:100%"></details>
+    <div class="row-form">
+      <button type="button" class="primary" id="tc-e-save">保存条目</button>
+      <button type="button" id="tc-e-cancel">取消</button>
+      <span class="sub">密钥加密保存在本机卡片中</span>
+    </div>
+  </form>
+
+  <h3>模型切换策略</h3>
   <div class="row-form">
-    <label>固定规则条目</label><select id="tc-r-entry" style="width:180px"></select>
-    <button id="tc-r-apply">选为固定使用（写入策略）</button>
-    <button id="tc-r-clear">清除固定规则</button>
+    <label>当前使用</label><select id="tc-r-entry" style="width:260px"></select>
+    <span class="sub">保存卡片后随卡片一起应用</span>
   </div>
+  <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin-top:6px" hidden></div>
+  <div class="sub" style="margin-top:6px">按时段/额度自动切换将于后续版本提供</div>
+
   <div class="row-form">
     <button class="primary" id="tc-save">保存卡片</button>
-    <button id="tc-reload">从服务器重载</button>
-    <span class="sub">按时段/额度自动切换将于后续版本提供</span>
+    <button id="tc-reload">重新读取</button>
+    <span id="tc-dirty" class="sub"></span>
   </div>
-  <div id="tc-msg" style="margin-top:8px;font-size:13px;min-height:18px"></div>
+  <div id="tc-msg" class="msg"></div>
 </section>
 
-<section>
-  <h2>密钥管理（keys.enc · 只写不读回）</h2>
-  <div class="row-form">
-    <label>provider</label>
-    <select id="k-provider">
-      <option value="deepseek">deepseek</option>
-      <option value="anthropic">anthropic</option>
-      <option value="openai">openai</option>
-      <option value="trimetaverse">trimetaverse</option>
-    </select>
-    <label>api_key</label><input id="k-key" type="password" placeholder="sk-..." style="width:260px" autocomplete="off">
-    <button id="k-eye" class="eye" title="切换输入可见性（仅当前输入值；已存密钥仍只显尾 4 位）">👁</button>
-    <label>base_url（可选）</label><input id="k-baseurl" placeholder="https://..." style="width:220px">
-    <button class="primary" id="saveKey">保存（加密落 keys.enc）</button>
+<!-- ═══ 【本机策略（高级）】折叠区（S1：灰调+显示器图标+「本机改动即时生效」）═══ -->
+<details class="zone-local" id="local-zone">
+  <summary>🖥 【本机策略（高级）】 — 本机改动即时生效</summary>
+  <div style="padding-top:10px">
+    <h3>策略列表（policy.json）</h3>
+    <div id="error-policy" class="error-panel" hidden></div>
+    <table id="policy-table"><thead><tr><th>id</th><th>模型</th><th>时段</th><th>类型</th><th>启用</th><th>优先级</th></tr></thead><tbody id="policy-body"></tbody></table>
+    <div class="sub" style="margin-top:6px">本机策略的编辑请通过配置接口进行（本区只读展示）。</div>
+    <h3>密钥状态</h3>
+    <div class="kv" id="key-status"></div>
   </div>
-  <div id="secureStatus" class="kv" style="margin-top:12px"></div>
-  <div class="sub" style="margin-top:6px">明文永不回显：状态仅显示 provider 名单+尾 4 位。写面 fail-closed——服务端未配置 TRIMODEL_ADMIN_TOKEN 时返回 503 disabled。</div>
-</section>
-
-<section>
-  <h2>策略列表（policy.json）</h2>
-  <table id="schedTable">
-    <thead><tr><th>id</th><th>model</th><th>窗口</th><th>enabled</th><th>priority</th><th>操作</th></tr></thead>
-    <tbody id="schedBody"></tbody>
-  </table>
-  <div class="row-form">
-    <label>id</label><input id="f-id" placeholder="workday-deepseek" style="width:150px">
-    <label>model</label><select id="f-model" style="width:220px"></select>
-    <label>窗口</label><input id="f-start" value="14:00" style="width:70px"> –
-    <input id="f-end" value="18:00" style="width:70px">
-    <label>priority</label><input id="f-priority" type="number" value="10" style="width:70px">
-    <label><input id="f-enabled" type="checkbox" checked> enabled</label>
-    <button class="primary" id="addSched">添加 / 更新（按 id 覆盖）</button>
-  </div>
-  <div class="row-form">
-    <button id="savePolicy">保存到服务器（PUT /v1/config/policy）</button>
-    <button id="reloadPolicy">从服务器重载（丢弃本地改动）</button>
-    <span class="sub" id="dirty"></span>
-  </div>
-  <div id="msg"></div>
-</section>
+</details>
 
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
 const TZ = 'Asia/Shanghai';
-let policy = { version: '1', schedules: [] };
-let dirty = false;
 
-function msg(text, cls) { $('msg').textContent = text || ''; $('msg').className = cls || ''; }
+function msg(el, text, cls) { const n = $(el); n.textContent = text || ''; n.hidden = !text; if (cls) n.className = cls; }
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -149,42 +157,138 @@ async function api(path, opts) {
   return { status: res.status, body };
 }
 
-function authHeaders() {
-  const t = $('token').value.trim();
-  return t ? { authorization: 'Bearer ' + t } : {};
+/** S6：HTTP 状态→人话（用户面零 HTTP 码/env 名/黑话；细节进 console）。 */
+function humanize(status, serverMsg) {
+  console.warn('[trimodel-ui]', status, serverMsg);
+  if (status === 503) return '管理写面未启用：请先在服务端配置管理令牌';
+  if (status === 401) return '令牌不正确或未填写，请检查连接设置';
+  if (status === 410) return '此功能已升级：请在「模型信息」条目中录入密钥';
+  if (status === 0 || status >= 500) return '无法连接配置服务，请确认服务已启动后点重试';
+  return serverMsg && !/^HTTP|invalid|must be|missing/i.test(serverMsg) ? serverMsg : '操作未成功，请检查填写内容后重试';
 }
 
-function adminHeaders() {
-  const t = $('adminToken').value.trim();
-  return { 'content-type': 'application/json', ...(t ? { authorization: 'Bearer ' + t } : {}) };
+function apiToken() { return $('token').value.trim(); }
+function adminToken() { return $('adminToken').value.trim(); }
+function authHeaders() { const t = apiToken(); return t ? { authorization: 'Bearer ' + t } : {}; }
+function adminHeaders() { const t = adminToken(); return { 'content-type': 'application/json', ...(t ? { authorization: 'Bearer ' + t } : {}) }; }
+
+function renderConnState() {
+  const dot = $('conn-dot'), label = $('conn-label');
+  if (!apiToken() && !adminToken()) { dot.className = 'dot idle'; label.textContent = '未连接'; return; }
+  if (apiToken() && adminToken()) { dot.className = 'dot ok'; label.textContent = '已连接'; }
+  else { dot.className = 'dot warn'; label.textContent = '缺少管理令牌（卡片功能不可用）'; }
 }
 
-// ── 密钥管理：PUT secure（Admin Bearer）+ 状态（masked 尾 4）──
-async function refreshSecureStatus() {
-  const r = await api('/v1/config/keys/secure/status', { headers: adminHeaders() });
-  const el = $('secureStatus');
-  if (r.status === 503) {
-    el.innerHTML = '<b>写面状态</b><span class="warn">503 disabled（服务端未配置 TRIMODEL_ADMIN_TOKEN）</span>';
+// ── S3 首启链：读 localStorage → 有令牌拉数据 → 无令牌禁用+引导展开 ──
+async function boot() {
+  $('token').value = localStorage.getItem('trimodel_ui_token') || '';
+  $('adminToken').value = localStorage.getItem('trimodel_ui_admin_token') || '';
+  wireEyeToggle('token', 'token-eye');
+  wireEyeToggle('adminToken', 'admin-eye');
+  wireEyeToggle('tc-e-key', 'tc-e-eye');
+  renderConnState();
+  if (!apiToken() && !adminToken()) {
+    // ①⑤根治：全数据面板禁用态+自动展开连接设置+引导
+    $('conn-settings').open = true;
+    $('conn-guide').hidden = false;
+    setDataPanelsDisabled(true);
     return;
   }
-  if (r.status === 401) {
-    el.innerHTML = '<b>写面状态</b><span class="err">401（Admin Token 不符）</span>';
-    return;
-  }
-  if (r.status !== 200) {
-    el.innerHTML = '<b>写面状态</b><span class="err">HTTP ' + r.status + '</span>';
-    return;
-  }
-  const rows = [['keystore_present', String(r.body.keystore_present)]];
-  (r.body.providers || []).forEach((p) => {
-    rows.push([p.provider, p.masked + '（' + (p.base_url || '默认 base_url') + '，' + p.updated_at + '）']);
+  setDataPanelsDisabled(false);
+  await refreshAll();
+}
+
+function setDataPanelsDisabled(disabled) {
+  for (const id of ['tc-conn', 'tc-open-add', 'tc-save', 'tc-reload', 'tc-r-entry', 'refreshNow']) $(id).disabled = disabled;
+  document.querySelectorAll('.card-main, #local-zone').forEach((el) => el.classList.toggle('disabled-panel', disabled));
+}
+
+function failPanel(panelId, text) {
+  const el = $(panelId);
+  el.innerHTML = text + ' <button class="primary" data-retry>重试</button>';
+  el.hidden = false;
+  el.querySelector('[data-retry]').onclick = () => refreshAll();
+}
+
+$('conn-save').onclick = async () => {
+  localStorage.setItem('trimodel_ui_token', apiToken());
+  localStorage.setItem('trimodel_ui_admin_token', adminToken());
+  $('conn-guide').hidden = true;
+  $('conn-settings').open = false;
+  renderConnState();
+  setDataPanelsDisabled(false);
+  // ⑤根治：令牌保存→自动重拉全部数据（去静默）
+  await refreshAll();
+};
+
+// ── 状态条 + 策略列表 + 密钥状态 ──
+async function refreshAll() {
+  renderConnState();
+  await Promise.all([refreshEffective(), loadPolicyZone(), refreshKeyStatus(), loadTrimmc()]);
+  await fillModelSelect();
+}
+
+async function refreshEffective() {
+  const r = await api('/v1/config/policy').catch(() => ({ status: 0, body: {} }));
+  if (r.status !== 200) { failPanel('error-status', humanize(r.status, r.body.error)); return; }
+  msg('error-status', '');
+  const e = r.body.effective || {};
+  const keys = await api('/v1/config/keys', { headers: authHeaders() });
+  const actual = keys.status === 200 ? keys.body.default_model : '(不可得)';
+  $('effective').innerHTML =
+    '<b>当前模型</b><span>' + (e.model ?? '-') + '</span>' +
+    '<b>来源</b><span>' + (e.source === 'policy' ? '策略' : '默认配置') + '</span>' +
+    '<b>一致性</b><span>' + (actual === e.model ? '<span class="ok">✓ 一致</span>' : '<span class="err">✗ 不一致</span>') + '</span>';
+}
+
+async function loadPolicyZone() {
+  const r = await api('/v1/config/policy').catch(() => ({ status: 0, body: {} }));
+  if (r.status !== 200) { failPanel('error-policy', humanize(r.status, r.body.error)); return; }
+  msg('error-policy', '');
+  const tb = $('policy-body');
+  tb.innerHTML = '';
+  (r.body.policy?.schedules || []).forEach((s) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td><code></code></td><td></td><td></td><td></td><td></td><td></td>';
+    tr.children[0].firstChild.textContent = s.id;
+    tr.children[1].textContent = s.model;
+    tr.children[2].textContent = s.type === 'fixed' ? '（固定）' : (s.windows || []).map((w) => w.start + '–' + w.end).join(' + ');
+    tr.children[3].textContent = s.type === 'fixed' ? '固定' : '时段';
+    tr.children[4].textContent = s.enabled ? '✓' : '✗';
+    tr.children[5].textContent = String(s.priority);
+    tb.appendChild(tr);
   });
-  el.innerHTML = rows.map(([k, v]) => '<b>' + k + '</b><span>' + v + '</span>').join('');
 }
 
-// ── 眼睛切换钮（CEO 15:55 增补，16:15 扩大至全部打星输入位）：仅切换正在
-// 输入值的可见性（password↔text）；已存储密钥/token 展示不受影响——status
-// 页签保持尾 4 位 masked，无任何读回路径。三框独立 id，复用同一 helper。──
+async function refreshKeyStatus() {
+  const r = await api('/v1/config/keys/secure/status', { headers: adminHeaders() });
+  const el = $('key-status');
+  if (r.status !== 200) { el.innerHTML = '<b>状态</b><span>' + humanize(r.status, r.body.error) + '</span>'; return; }
+  el.innerHTML = '<b>状态</b><span>' + (r.body.message || '-') + '</span>';
+}
+
+// ── 模型下拉（S3.1：失败=错误空态+重试钮，禁静默空下拉）──
+async function fillModelSelect() {
+  const sel = $('tc-e-model');
+  sel.innerHTML = '';
+  const r = await api('/v1/models').catch(() => ({ status: 0, body: {} }));
+  if (r.status !== 200 || !Array.isArray(r.body.data) || r.body.data.length === 0) {
+    const err = $('tc-model-error');
+    err.textContent = '模型列表读取失败';
+    err.innerHTML = '模型列表读取失败 <button class="primary" data-retry>重试</button>';
+    err.hidden = false;
+    err.querySelector('[data-retry]').onclick = fillModelSelect;
+    return;
+  }
+  $('tc-model-error').hidden = true;
+  r.body.data.forEach((m) => {
+    const o = document.createElement('option');
+    o.value = m.id; o.textContent = m.id + '（' + (m.display_name || '') + '）';
+    sel.appendChild(o);
+  });
+}
+
+// ── 眼睛切换（三处输入框复用；仅当前输入值可见性）──
 function wireEyeToggle(inputId, eyeId) {
   $(eyeId).onclick = () => {
     const input = $(inputId);
@@ -193,280 +297,181 @@ function wireEyeToggle(inputId, eyeId) {
     $(eyeId).textContent = reveal ? '🚫' : '👁';
   };
 }
-wireEyeToggle('k-key', 'k-eye');
-wireEyeToggle('token', 'token-eye');
-wireEyeToggle('adminToken', 'admin-eye');
 
-$('saveKey').onclick = async () => {
-  const provider = $('k-provider').value;
-  const apiKey = $('k-key').value.trim();
-  const baseUrl = $('k-baseurl').value.trim();
-  if (!apiKey) return msg('api_key 必填', 'err');
-  const r = await api('/v1/config/keys/secure', {
-    method: 'PUT',
-    headers: adminHeaders(),
-    body: JSON.stringify({ provider, api_key: apiKey, ...(baseUrl ? { base_url: baseUrl } : {}) }),
-  });
-  $('k-key').value = '';
-  if (r.status === 200) {
-    msg('已保存 provider=' + r.body.provider + '（' + r.body.masked + '）→ keys.enc；下一次 keys 拉取即生效', 'ok');
-    refreshSecureStatus();
-    refreshEffective();
-  } else {
-    msg('保存失败 HTTP ' + r.status + '：' + (r.body.error || ''), 'err');
-  }
-};
-
-// ── effective 对读：GET policy（无鉴权）+ GET keys（Bearer API token）──
-async function refreshEffective() {
-  localStorage.setItem('trimodel_ui_token', $('token').value);
-  localStorage.setItem('trimodel_ui_admin_token', $('adminToken').value);
-  const out = [];
-  const p = await api('/v1/config/policy');
-  if (p.status === 200) {
-    const e = p.body.effective || {};
-    out.push(['policy.effective.model', e.model + '（source=' + e.source + ', matched=' + (e.matched_schedule_id ?? '∅') + '）']);
-    out.push(['policy_file_present', String(p.body.policy_file_present)]);
-  } else {
-    out.push(['GET /v1/config/policy', 'HTTP ' + p.status]);
-  }
-  const k = await api('/v1/config/keys', { headers: authHeaders() });
-  if (k.status === 200) {
-    out.push(['keys.default_model', k.body.default_model]);
-    out.push(['两源一致', k.body.default_model === (p.body.effective || {}).model ? '✓ 一致' : '✗ 不一致']);
-  } else {
-    out.push(['GET /v1/config/keys', 'HTTP ' + k.status + '（检查 token）']);
-  }
-  $('effective').innerHTML = out.map(([k2, v]) => '<b>' + k2 + '</b><span>' + v + '</span>').join('');
-}
-
-// ── 策略列表渲染 ──
-function render() {
-  const tb = $('schedBody');
-  tb.innerHTML = '';
-  policy.schedules.forEach((s, i) => {
-    const tr = document.createElement('tr');
-    const wins = (s.windows || []).map((w) => w.start + '–' + w.end).join(' + ');
-    tr.innerHTML =
-      '<td><code></code></td><td></td><td></td><td></td><td></td>' +
-      '<td><button data-act="edit">编辑</button> <button data-act="del" class="danger">删除</button></td>';
-    tr.children[0].firstChild.textContent = s.id;
-    tr.children[1].textContent = s.model;
-    tr.children[2].textContent = wins;
-    tr.children[3].textContent = s.enabled ? '✓' : '✗';
-    tr.children[4].textContent = String(s.priority);
-    tr.querySelector('[data-act=edit]').onclick = () => {
-      $('f-id').value = s.id; $('f-model').value = s.model;
-      $('f-start').value = s.windows[0] ? s.windows[0].start : '00:00';
-      $('f-end').value = s.windows[0] ? s.windows[0].end : '00:00';
-      $('f-priority').value = s.priority; $('f-enabled').checked = s.enabled;
-    };
-    tr.querySelector('[data-act=del]').onclick = () => {
-      policy.schedules.splice(i, 1); dirty = true; render(); markDirty();
-    };
-    tb.appendChild(tr);
-  });
-  $('dirty').textContent = dirty ? '（有未保存改动）' : '';
-}
-
-function markDirty() { $('dirty').textContent = dirty ? '（有未保存改动）' : ''; }
-
-$('addSched').onclick = () => {
-  const id = $('f-id').value.trim();
-  const model = $('f-model').value;
-  const start = $('f-start').value.trim(), end = $('f-end').value.trim();
-  if (!id || !model) return msg('id 与 model 必填', 'err');
-  if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) return msg('窗口格式须为 HH:MM', 'err');
-  const existing = policy.schedules.findIndex((s) => s.id === id);
-  const entry = {
-    id, target: 'daemon-default', model,
-    windows: [{ start, end }],
-    timezone: TZ, enabled: $('f-enabled').checked,
-    priority: Number($('f-priority').value) || 0,
-  };
-  if (existing >= 0) policy.schedules[existing] = entry; else policy.schedules.push(entry);
-  dirty = true; render(); markDirty();
-  msg('已加入本地列表（id=' + id + '）；保存到服务器后才生效', 'warn');
-};
-
-$('savePolicy').onclick = async () => {
-  const r = await api('/v1/config/policy', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(policy),
-  });
-  if (r.status === 200) {
-    dirty = false; markDirty(); msg('已保存：' + JSON.stringify(r.body.effective), 'ok');
-    refreshEffective();
-  } else {
-    msg('保存失败 HTTP ' + r.status + '：' + (r.body.error || ''), 'err');
-  }
-};
-
-$('reloadPolicy').onclick = async () => { dirty = false; await loadAll(); msg('已从服务器重载', 'ok'); };
-$('refreshNow').onclick = refreshEffective;
-
-async function loadModels() {
-  const r = await api('/v1/models');
-  const sel = $('f-model');
-  sel.innerHTML = '';
-  if (r.status === 200 && Array.isArray(r.body.data)) {
-    r.body.data.forEach((m) => {
-      const o = document.createElement('option');
-      o.value = m.id; o.textContent = m.id + '（' + (m.display_name || '') + '）';
-      sel.appendChild(o);
-    });
-  } else {
-    msg('GET /v1/models 失败（HTTP ' + r.status + '），下拉为空', 'err');
-  }
-}
-
-async function loadAll() {
-  const r = await api('/v1/config/policy');
-  if (r.status === 200 && r.body.policy) policy = r.body.policy;
-  render();
-  refreshEffective();
-}
-
-// ── TriMMC 机器栏（三子栏）——卡片域：候选池+引用清单；固定规则运行语义
-// 全存 policy.json（type:fixed，id=trimmc:<entry_id>）＝引擎真源唯一；
-// 卡片文件无裁决语义。无应用/推送按钮——保存即 pending，COS 回写状态。──
+// ═══ TriMMC 信息卡（S2 交互唯一模式 + S4 只写卡片→待应用）═══
 let tcCard = null;
-let tcEntries = {}; // id -> {provider, model, enabled, api_key_encrypted?, api_key?(明文仅新条目)}
+let tcEntries = {};
+let tcEditingId = null;
+const FALLBACK_TIP = '已回落：条目 X 已停用';
 
-function tcMsg(t, cls) { $('tc-msg').textContent = t || ''; $('tc-msg').className = cls || ''; }
+function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { n.textContent = ''; }, 6000); }
 
-function tcRenderHead() {
-  const card = tcCard;
-  const state = card ? card.status.state : 'pending';
-  const badge = $('tc-badge');
-  badge.textContent = state;
-  badge.className = state === 'applied' ? 'ok' : state === 'failed' ? 'err' : 'warn';
-  $('tc-head').innerHTML = card
-    ? '<b>机名</b><span>' + (card.machine?.name || '-') + '</span><b>状态</b><span>' + state + '</span><b>最近应用时间</b><span>' + (card.status.at || '-') + '</span>' + (card.status.error ? '<b>错误</b><span class="err">' + card.status.error + '</span>' : '')
-    : '<b>状态</b><span>无卡片（保存后创建）</span>';
+function tcBadge() {
+  const b = $('tc-badge');
+  const state = tcCard ? tcCard.status.state : null;
+  if (!tcCard) { b.textContent = '未配置'; b.className = 'badge none'; return; }
+  const map = { pending: ['待应用', 'pending'], applied: ['已生效', 'applied'], failed: ['失败', 'failed'] };
+  const [text, cls] = map[state] ?? ['未配置', 'none'];
+  b.textContent = state === 'failed' && tcCard.status.error ? '失败：' + tcCard.status.error : text;
+  b.className = 'badge ' + cls;
 }
 
-function tcRenderEntries(maskedById) {
+function tcRender() {
+  tcBadge();
   const tb = $('tc-entry-body');
   tb.innerHTML = '';
-  Object.entries(tcEntries).forEach(([id, e]) => {
-    const m = maskedById && maskedById[id] ? maskedById[id].masked : (e.api_key_encrypted ? '****（密文）' : '****');
+  const ids = Object.keys(tcEntries);
+  $('tc-empty-entries').hidden = ids.length > 0;
+  ids.forEach((id) => {
+    const e = tcEntries[id];
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td><code></code></td><td></td><td></td><td></td><td></td><td><button class="danger" data-del>删除</button></td>';
-    tr.children[0].firstChild.textContent = id;
+    tr.innerHTML =
+      '<td></td><td></td><td></td><td></td>' +
+      '<td><input type="checkbox" class="switch" data-enable></td>' +
+      '<td><button data-edit style="margin-right:4px">编辑</button><button class="danger" data-del>删除</button></td>';
+    tr.children[0].textContent = id;
     tr.children[1].textContent = e.provider;
     tr.children[2].textContent = e.model;
-    tr.children[3].textContent = m;
-    tr.children[4].textContent = e.enabled ? '✓' : '✗';
+    tr.children[3].textContent = e.api_key_encrypted ? '••••（已加密保存）' : '（未保存）';
+    const sw = tr.querySelector('[data-enable]');
+    sw.checked = !!e.enabled;
+    // S2.3：已存条目行内可切启用
+    sw.onchange = () => {
+      e.enabled = sw.checked;
+      const currentId = ($('tc-r-entry').value || '').replace(/^entry:/, '');
+      if (!e.enabled && currentId === id) {
+        $('tc-fallback-tip').textContent = FALLBACK_TIP.replace('条目 X', '条目 ' + id);
+        $('tc-fallback-tip').hidden = false;
+      }
+      tcMarkDirty();
+    };
+    tr.querySelector('[data-edit]').onclick = () => tcOpenForm(id);
     tr.querySelector('[data-del]').onclick = () => {
-      const referenced = (tcCard?.rules || []).some((r) => r.entry_id === id);
-      if (referenced) return tcMsg('条目 ' + id + ' 被规则引用，先清除固定规则再删（服务端亦会 400 防悬挂）', 'err');
+      if (($('tc-r-entry').value || '') === 'entry:' + id) {
+        tcMsg('该条目正被切换策略使用，请先改选其他模型', 'err');
+        return;
+      }
       delete tcEntries[id];
-      tcRefreshRuleSelect();
-      tcMsg('已从本地卡片移除 ' + id + '（保存后生效）', 'warn');
-      tcRenderEntries(maskedById);
+      tcRefreshCurrentSelect();
+      tcRender();
+      tcMarkDirty();
     };
     tb.appendChild(tr);
   });
-  tcRefreshRuleSelect();
+  tcRefreshCurrentSelect();
 }
 
-function tcRefreshRuleSelect() {
+function tcRefreshCurrentSelect() {
   const sel = $('tc-r-entry');
   sel.innerHTML = '';
-  Object.keys(tcEntries).forEach((id) => {
+  const enabledIds = Object.keys(tcEntries).filter((id) => tcEntries[id].enabled);
+  if (enabledIds.length === 0) {
     const o = document.createElement('option');
-    o.value = id; o.textContent = id + '（' + tcEntries[id].model + '）';
+    o.textContent = '暂无可用条目，请先在模型信息中添加并启用';
+    o.value = ''; o.disabled = true; o.selected = true;
+    sel.appendChild(o);
+    return;
+  }
+  enabledIds.forEach((id) => {
+    const o = document.createElement('option');
+    o.value = 'entry:' + id;
+    o.textContent = id + '（' + tcEntries[id].model + '）';
     sel.appendChild(o);
   });
+  // 回显卡片已存意图
+  const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
+  if (rule && enabledIds.includes(rule.entry_id)) sel.value = 'entry:' + rule.entry_id;
 }
 
-async function loadTrimmc() {
-  const r = await api('/v1/config/trimmc-card', { headers: adminHeaders() });
-  if (r.status === 503) { tcRenderHead(); tcMsg('卡片面 503 disabled（服务端未配置 TRIMODEL_ADMIN_TOKEN）', 'err'); return; }
-  if (r.status === 401) { tcMsg('卡片面 401（Admin Token 不符）', 'err'); return; }
-  if (r.status !== 200) { tcMsg('GET card HTTP ' + r.status, 'err'); return; }
-  tcCard = r.body.card_file_present ? r.body.card : null;
-  tcEntries = tcCard ? JSON.parse(JSON.stringify(tcCard.provider_entries || {})) : {};
-  if (tcCard && !tcCard.connection) tcCard.connection = { name: '' };
-  $('tc-conn').value = tcCard?.connection?.name || '';
-  tcRenderHead();
-  tcRenderEntries(r.body.entries_masked);
-  const cur = await api('/v1/config/policy');
-  if (cur.status === 200) {
-    const e = cur.body.effective;
-    $('tc-current').innerHTML = '<b>当前使用</b><span>' + e.model + '（source=' + e.source + ', matched=' + (e.matched_schedule_id ?? '无') + '）</span>';
-  }
-}
+function tcMarkDirty() { $('tc-dirty').textContent = '（有未保存改动，保存后待应用）'; }
 
-$('tc-e-add').onclick = () => {
-  const id = $('tc-e-id').value.trim();
-  const model = $('tc-e-model').value;
-  const key = $('tc-e-key').value.trim();
-  if (!id) return tcMsg('条目 id 必填', 'err');
-  if (!key) return tcMsg('API Key 必填', 'err');
-  if (key.includes('*')) return tcMsg('masked 展示值不是真实密钥（回显污染防护）', 'err');
-  tcEntries[id] = { provider: $('tc-e-provider').value, model, enabled: $('tc-e-enabled').checked, api_key: key };
+function tcOpenForm(editId) {
+  tcEditingId = editId ?? null;
+  $('tc-form-title').textContent = editId ? '编辑条目 ' + editId : '添加模型条目';
+  $('tc-e-id').value = editId ?? '';
+  $('tc-e-id').disabled = !!editId; // 无覆盖语义：编辑=更新该条目，名不可改
+  $('tc-e-provider').value = editId ? tcEntries[editId].provider : 'deepseek';
   $('tc-e-key').value = '';
-  tcRenderEntries();
-  tcMsg('条目 ' + id + ' 已入本地卡片（保存后服务端加密落盘）', 'warn');
-};
+  $('tc-e-baseurl').value = editId ? (tcEntries[editId].base_url ?? '') : '';
+  $('tc-form').hidden = false;
+}
 
-wireEyeToggle('tc-e-key', 'tc-e-eye');
+$('tc-open-add').onclick = () => tcOpenForm(null);
+$('tc-e-cancel').onclick = () => { $('tc-form').hidden = true; };
+
+$('tc-e-save').onclick = () => {
+  const id = $('tc-e-id').value.trim();
+  const key = $('tc-e-key').value.trim();
+  const baseUrl = $('tc-e-baseurl').value.trim();
+  if (!id) return tcMsg('请填写条目名', 'err');
+  if (key.includes('*')) return tcMsg('检测到占位符，请输入真实密钥', 'err');
+  if (tcEditingId) {
+    // 编辑：保留原密文，除非填了新密钥
+    tcEntries[id] = {
+      ...tcEntries[id],
+      provider: $('tc-e-provider').value, model: $('tc-e-model').value,
+      enabled: tcEntries[id].enabled,
+      ...(key ? { api_key: key, api_key_encrypted: undefined } : {}),
+      ...(baseUrl ? { base_url: baseUrl } : { base_url: undefined }),
+    };
+  } else {
+    if (!key) return tcMsg('请填写 API Key', 'err');
+    tcEntries[id] = { provider: $('tc-e-provider').value, model: $('tc-e-model').value, api_key: key, enabled: true, ...(baseUrl ? { base_url: baseUrl } : {}) };
+  }
+  $('tc-form').hidden = true;
+  tcRender();
+  tcMarkDirty();
+  tcMsg('条目已加入本地卡片，点「保存卡片」生效（保存后待应用）', 'warn');
+};
 
 $('tc-save').onclick = async () => {
   const name = $('tc-conn').value.trim();
-  if (!name) return tcMsg('连接名称必填（子栏一）', 'err');
+  if (!name) return tcMsg('请先填写机器信息中的名称', 'err');
   const doc = {
     version: 2,
     machine: { name: tcCard?.machine?.name || '' },
     connection: { name },
     provider_entries: tcEntries,
-    rules: tcCard?.rules || [],
+    // S4：固定规则意图随卡片保存（当前使用下拉），COS 应用时落 sg 侧策略
+    rules: Object.keys(tcEntries).length && $('tc-r-entry').value
+      ? [{ rule_id: 'trimmc:' + $('tc-r-entry').value.replace('entry:', ''), type: 'fixed', entry_id: $('tc-r-entry').value.replace('entry:', '') }]
+      : [],
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
   const r = await api('/v1/config/trimmc-card', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(doc) });
-  if (r.status === 200) { tcMsg('卡片已保存（status=pending，候 COS 回写 applied/failed）', 'ok'); loadTrimmc(); }
-  else tcMsg('保存失败 HTTP ' + r.status + '：' + (r.body.error || ''), 'err');
+  if (r.status !== 200) return tcMsg(humanize(r.status, r.body.error), 'err');
+  $('tc-dirty').textContent = '';
+  tcMsg('卡片已保存，等待应用（应用完成后状态变为「已生效」）', 'ok');
+  await loadTrimmc();
 };
 
-$('tc-reload').onclick = () => loadTrimmc().then(() => tcMsg('已重载', 'ok'));
+$('tc-reload').onclick = () => loadTrimmc().then(() => tcMsg('已重新读取', 'ok'));
 
-$('tc-r-apply').onclick = async () => {
-  const entryId = $('tc-r-entry').value;
-  if (!entryId || !tcEntries[entryId]) return tcMsg('先选候选池条目', 'err');
-  const cur = await api('/v1/config/policy');
-  if (cur.status !== 200) return tcMsg('GET policy 失败', 'err');
-  const schedules = (cur.body.policy?.schedules || []).filter((s) => !String(s.id).startsWith('trimmc:'));
-  schedules.push({
-    id: 'trimmc:' + entryId, target: 'daemon-default', model: tcEntries[entryId].model,
-    windows: [], timezone: 'Asia/Shanghai', enabled: true, priority: 100, type: 'fixed',
-  });
-  const put = await api('/v1/config/policy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: '1', schedules }) });
-  if (put.status !== 200) return tcMsg('写固定规则失败：' + (put.body.error || ''), 'err');
-  tcCard = tcCard || { machine: { name: '' }, connection: { name: $('tc-conn').value }, status: { state: 'pending', at: new Date().toISOString() } };
-  tcCard.rules = (tcCard.rules || []).filter((r2) => r2.entry_id !== entryId);
-  tcCard.rules.push({ rule_id: 'trimmc:' + entryId, type: 'fixed', entry_id: entryId });
-  tcMsg('固定规则已写入策略（entry=' + entryId + '→' + tcEntries[entryId].model + '）；3334 下一请求即生效', 'ok');
-  loadTrimmc();
-};
+async function loadTrimmc() {
+  if (!adminToken()) { tcBadge(); return; }
+  const r = await api('/v1/config/trimmc-card', { headers: adminHeaders() });
+  if (r.status !== 200) { failPanel('error-card', humanize(r.status, r.body.error)); tcBadge(); return; }
+  msg('error-card', '');
+  tcCard = r.body.card_file_present ? r.body.card : null;
+  tcEntries = tcCard ? JSON.parse(JSON.stringify(tcCard.provider_entries || {})) : {};
+  $('tc-dirty').textContent = '';
+  // S3 数据绑定硬规则：不覆盖用户正在输入的字段（空时才从卡回填）
+  if (!$('tc-conn').value) $('tc-conn').value = tcCard?.connection?.name || '';
+  tcRender();
+  // 停用回落黄提示（S2.4）
+  const rule = (tcCard?.rules || []).find((r2) => r2.type === 'fixed');
+  if (rule && (!tcEntries[rule.entry_id] || !tcEntries[rule.entry_id].enabled)) {
+    $('tc-fallback-tip').textContent = FALLBACK_TIP.replace('条目 X', '条目 ' + rule.entry_id);
+    $('tc-fallback-tip').hidden = false;
+  } else {
+    $('tc-fallback-tip').hidden = true;
+  }
+}
 
-$('tc-r-clear').onclick = async () => {
-  const cur = await api('/v1/config/policy');
-  if (cur.status !== 200) return tcMsg('GET policy 失败', 'err');
-  const schedules = (cur.body.policy?.schedules || []).filter((s) => !String(s.id).startsWith('trimmc:'));
-  const put = await api('/v1/config/policy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: '1', schedules }) });
-  if (put.status !== 200) return tcMsg('清除失败：' + (put.body.error || ''), 'err');
-  if (tcCard) tcCard.rules = [];
-  tcMsg('固定规则已清除（回落时段规则/env default）', 'ok');
-  loadTrimmc();
-};
+$('refreshNow').onclick = () => refreshAll();
 
-$('token').value = localStorage.getItem('trimodel_ui_token') || '';
-$('adminToken').value = localStorage.getItem('trimodel_ui_admin_token') || '';
-loadModels().then(loadAll).then(refreshSecureStatus).then(loadTrimmc);
+boot();
 </script>
 </body>
 </html>

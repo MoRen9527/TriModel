@@ -12,7 +12,7 @@ import { extname, join, normalize, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createModelClient, readConfig } from './index.js';
 import { dispatch } from './api/routes.js';
-import { selfCheckKeystore } from './secure-keys.js';
+import { migrateKeysEncToCard } from './secure-keys.js';
 
 const HOST = process.env.TRIMODEL_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.TRIMODEL_PORT ?? 3333);
@@ -79,9 +79,12 @@ function readRawBody(req: import('node:http').IncomingMessage): Promise<string> 
 }
 
 async function main(): Promise<void> {
-  // Keystore boot self-check (LG-035 P2 B): loud report when keys.enc exists
-  // but is undecryptable, instead of silent env fallback on first read.
-  selfCheckKeystore();
+  // S5 one-shot migration: keys.enc → TriMMC card synthetic entries
+  // (auto_imported), then keys.enc renamed to keys.enc.migrated (幂等).
+  const migration = migrateKeysEncToCard();
+  if (migration.reason && migration.reason !== 'no-legacy') {
+    console.log(`[trimodel] keys.enc migration: ${migration.reason} (imported: ${migration.imported.join(', ') || 'none'})`);
+  }
 
   // Single ModelClient instance, initialized at startup, reused for the server lifetime
   const client = createModelClient(readConfig());

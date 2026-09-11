@@ -1,4 +1,5 @@
 // ── LG-035 TriMMC 栏 tests ──
+/* eslint-disable @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unused-vars -- test-local idioms */
 // Covers: card state machine (save→pending / status write-back applied|failed
 // / invalid state 400 / no-card 404), fixed-rule engine semantics (always-match
 // + priority over window), quota whitelist rejection, dangling-reference 400,
@@ -197,7 +198,7 @@ describe('T3: UI — card DOM channel-vocabulary absence (通道词汇零出现)
       assert.equal(html.includes(banned), false, `channel vocabulary '${banned}' must not appear in the card UI`);
     }
     // Card section has no apply/push button (保存卡片=COS 拉取语义，非推送)
-    const cardSection = html.slice(html.indexOf('TriMMC 机器栏'), html.indexOf('密钥管理（keys.enc'));
+    const cardSection = html.slice(html.indexOf('【TriMMC 信息】'), html.indexOf('【本机策略（高级）】'));
     assert.equal(cardSection.includes('id="tc-push"'), false);
     assert.ok(cardSection.includes('按时段/额度自动切换将于后续版本提供'), 'reserved-capability copy must be present');
   });

@@ -9,7 +9,7 @@
 // Bearer) / 200 — same family as the P2 secure key plane.
 import { loadCard, saveCard, emptyCard, validateCard, CARD_STATES, buildEntry } from '../trimmc-card.js';
 import type { TrimmcCardDocument, CardState, CardEntry } from '../trimmc-card.js';
-import { decrypt, encrypt } from '../security/key-encryptor.js';
+import { decrypt } from '../security/key-encryptor.js';
 import { maskKey } from '../secure-keys.js';
 
 function requireAdmin(authHeader: string | undefined): { statusCode: 503 | 401; body: Record<string, unknown> } | null {
