@@ -41,11 +41,31 @@
 <section>
   <h2>当前生效值对读</h2>
   <div class="row-form" style="margin:0 0 12px">
-    <label>API Token（GET /v1/config/keys 鉴权用，仅存本浏览器）</label>
-    <input id="token" type="password" placeholder="TRIMODEL_API_TOKEN" style="width:260px">
+    <label>API Token（GET /v1/config/keys，仅存本浏览器）</label>
+    <input id="token" type="password" placeholder="TRIMODEL_API_TOKEN" style="width:220px">
+    <label>Admin Token（密钥写面）</label>
+    <input id="adminToken" type="password" placeholder="TRIMODEL_ADMIN_TOKEN" style="width:220px">
     <button id="refreshNow">刷新对读</button>
   </div>
   <div class="kv" id="effective"></div>
+</section>
+
+<section>
+  <h2>密钥管理（keys.enc · 只写不读回）</h2>
+  <div class="row-form">
+    <label>provider</label>
+    <select id="k-provider">
+      <option value="deepseek">deepseek</option>
+      <option value="anthropic">anthropic</option>
+      <option value="openai">openai</option>
+      <option value="trimetaverse">trimetaverse</option>
+    </select>
+    <label>api_key</label><input id="k-key" type="password" placeholder="sk-..." style="width:260px" autocomplete="off">
+    <label>base_url（可选）</label><input id="k-baseurl" placeholder="https://..." style="width:220px">
+    <button class="primary" id="saveKey">保存（加密落 keys.enc）</button>
+  </div>
+  <div id="secureStatus" class="kv" style="margin-top:12px"></div>
+  <div class="sub" style="margin-top:6px">明文永不回显：状态仅显示 provider 名单+尾 4 位。写面 fail-closed——服务端未配置 TRIMODEL_ADMIN_TOKEN 时返回 503 disabled。</div>
 </section>
 
 <section>
@@ -91,9 +111,58 @@ function authHeaders() {
   return t ? { authorization: 'Bearer ' + t } : {};
 }
 
-// ── effective 对读：GET policy（无鉴权）+ GET keys（Bearer token）──
+function adminHeaders() {
+  const t = $('adminToken').value.trim();
+  return { 'content-type': 'application/json', ...(t ? { authorization: 'Bearer ' + t } : {}) };
+}
+
+// ── 密钥管理：PUT secure（Admin Bearer）+ 状态（masked 尾 4）──
+async function refreshSecureStatus() {
+  const r = await api('/v1/config/keys/secure/status', { headers: adminHeaders() });
+  const el = $('secureStatus');
+  if (r.status === 503) {
+    el.innerHTML = '<b>写面状态</b><span class="warn">503 disabled（服务端未配置 TRIMODEL_ADMIN_TOKEN）</span>';
+    return;
+  }
+  if (r.status === 401) {
+    el.innerHTML = '<b>写面状态</b><span class="err">401（Admin Token 不符）</span>';
+    return;
+  }
+  if (r.status !== 200) {
+    el.innerHTML = '<b>写面状态</b><span class="err">HTTP ' + r.status + '</span>';
+    return;
+  }
+  const rows = [['keystore_present', String(r.body.keystore_present)]];
+  (r.body.providers || []).forEach((p) => {
+    rows.push([p.provider, p.masked + '（' + (p.base_url || '默认 base_url') + '，' + p.updated_at + '）']);
+  });
+  el.innerHTML = rows.map(([k, v]) => '<b>' + k + '</b><span>' + v + '</span>').join('');
+}
+
+$('saveKey').onclick = async () => {
+  const provider = $('k-provider').value;
+  const apiKey = $('k-key').value.trim();
+  const baseUrl = $('k-baseurl').value.trim();
+  if (!apiKey) return msg('api_key 必填', 'err');
+  const r = await api('/v1/config/keys/secure', {
+    method: 'PUT',
+    headers: adminHeaders(),
+    body: JSON.stringify({ provider, api_key: apiKey, ...(baseUrl ? { base_url: baseUrl } : {}) }),
+  });
+  $('k-key').value = '';
+  if (r.status === 200) {
+    msg('已保存 provider=' + r.body.provider + '（' + r.body.masked + '）→ keys.enc；下一次 keys 拉取即生效', 'ok');
+    refreshSecureStatus();
+    refreshEffective();
+  } else {
+    msg('保存失败 HTTP ' + r.status + '：' + (r.body.error || ''), 'err');
+  }
+};
+
+// ── effective 对读：GET policy（无鉴权）+ GET keys（Bearer API token）──
 async function refreshEffective() {
   localStorage.setItem('trimodel_ui_token', $('token').value);
+  localStorage.setItem('trimodel_ui_admin_token', $('adminToken').value);
   const out = [];
   const p = await api('/v1/config/policy');
   if (p.status === 200) {
@@ -202,7 +271,8 @@ async function loadAll() {
 }
 
 $('token').value = localStorage.getItem('trimodel_ui_token') || '';
-loadModels().then(loadAll);
+$('adminToken').value = localStorage.getItem('trimodel_ui_admin_token') || '';
+loadModels().then(loadAll).then(refreshSecureStatus);
 </script>
 </body>
 </html>

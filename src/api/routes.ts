@@ -3,7 +3,7 @@
 import type { ModelClient } from '../client.js';
 import { handleHealth } from './health.js';
 import { handleModels } from './models.js';
-import { handleGetKeys, handleRefreshKeys } from './keys.js';
+import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeysStatus } from './keys.js';
 import { handleGetPolicy, handlePutPolicy } from './policy.js';
 
 export type RouteResult = {
@@ -44,6 +44,21 @@ export async function dispatch(
   if (url === '/v1/config/keys/refresh' && method === 'POST') {
     const auth = headers['authorization'];
     const result = handleRefreshKeys(auth);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // PUT /v1/config/keys/secure — Bearer-protected provider key write (P2 B);
+  // no GET counterpart exists by design (no plaintext read-back).
+  if (url === '/v1/config/keys/secure' && method === 'PUT') {
+    const auth = headers['authorization'];
+    const result = handlePutSecureKeys(auth, rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // GET /v1/config/keys/secure/status — masked tails only (Bearer)
+  if (url === '/v1/config/keys/secure/status' && method === 'GET') {
+    const auth = headers['authorization'];
+    const result = handleSecureKeysStatus(auth);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 

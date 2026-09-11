@@ -12,3 +12,5 @@ coverage/
 trimodel.log
 trimodel.err.log
 policy.json
+keys.enc
+keys.enc.tmp
