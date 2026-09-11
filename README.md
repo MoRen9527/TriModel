@@ -84,7 +84,13 @@ See `.env.example` for the full list. Key variables:
 
 ## Development
 
-- **Node.js**: >= 20
+- **Node.js**: >= 18.20.0（LG-035 P3-sg 切片 1 自 20 放宽；现役开发环境 20+，兼容底线 18.20.0——src 零 Node-20-only API 实勘 2026-09-11）
 - **TypeScript**: 5.x ESM (`"type": "module"`)
 - **Test Runner**: Node.js native (`node --test`)
 - **CI**: GitHub Actions (lint + type-check + test + build on push/PR)
+
+## Deployment (sg)
+
+- 部署面归 COS（LG-035 P3-sg 切片 2）；工程侧两项部署验证（P3-sg 切片 1 定）：
+  1. `--test-concurrency` 旗标在 Node 18.20.8 的支持性候 sg 实测（`node --test --test-concurrency=1` 一次即知）；不支持则部署 profile 的 test 命令摘旗（本地保留旗标，不影响产物）。
+  2. `npm run build` 后在 sg 以部署 Node 版本 `node -e "import('file://.../dist/src/index.js').then(()=>console.log('ok'))"` 冒烟（构建产物 18 可加载性自证）。
