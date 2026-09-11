@@ -94,3 +94,4 @@ See `.env.example` for the full list. Key variables:
 - 部署面归 COS（LG-035 P3-sg 切片 2）；工程侧两项部署验证（P3-sg 切片 1 定）：
   1. `--test-concurrency` 旗标在 Node 18.20.8 的支持性候 sg 实测（`node --test --test-concurrency=1` 一次即知）；不支持则部署 profile 的 test 命令摘旗（本地保留旗标，不影响产物）。
   2. `npm run build` 后在 sg 以部署 Node 版本 `node -e "import('file://.../dist/src/index.js').then(()=>console.log('ok'))"` 冒烟（构建产物 18 可加载性自证）。
+  3. **卡路径钉死（D9）**：trimmc-card.json 解析序=`TRIMODEL_CARD_FILE` env → `process.cwd()/trimmc-card.json` → legacy dist 邻接（只读，boot 迁移改名式搬至规范位）。systemd unit **必须钉 WorkingDirectory=仓根**，否则卡落 cwd 漂移位。

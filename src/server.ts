@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { createModelClient, readConfig } from './index.js';
 import { dispatch } from './api/routes.js';
 import { migrateKeysEncToCard } from './secure-keys.js';
+import { migrateLegacyDistCard } from './trimmc-card.js';
 import { migrateLegacyPolicy } from './policy.js';
 
 const HOST = process.env.TRIMODEL_HOST ?? '127.0.0.1';
@@ -83,6 +84,11 @@ async function main(): Promise<void> {
   // S5 one-shot migration: keys.enc → TriMMC card synthetic entries
   // (auto_imported), then keys.enc renamed to keys.enc.migrated (幂等).
   migrateLegacyPolicy();
+  // D9: legacy dist-adjacent card → canonical cwd path (rename-style, idempotent)
+  const cardMigration = migrateLegacyDistCard();
+  if (cardMigration.reason && cardMigration.reason !== 'no-legacy') {
+    console.log(`[trimodel] card migration: ${cardMigration.reason}`);
+  }
   const migration = migrateKeysEncToCard();
   if (migration.reason && migration.reason !== 'no-legacy') {
     console.log(`[trimodel] keys.enc migration: ${migration.reason} (imported: ${migration.imported.join(', ') || 'none'})`);

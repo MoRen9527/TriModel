@@ -101,11 +101,6 @@ export function handlePutTrimmcCard(
     }
   }
 
-  const validationError = validateCard(doc);
-  if (validationError) {
-    return { statusCode: 400, body: { error: `trimmc card validation failed: ${validationError}` } };
-  }
-
   // 合并基底：既有卡（provider_entries 保留未被本次 PUT 提及的条目）
   const existing = loadCard(opts?.cardPath);
   const base = existing ?? emptyCard('');
@@ -124,6 +119,13 @@ export function handlePutTrimmcCard(
       if (typeof id === 'string') delete merged.provider_entries[id];
     }
     merged.deleted_entry_ids = card.deleted_entry_ids.filter((id): id is string => typeof id === 'string');
+  }
+  // D9 校验序重构：validate 对合并后终态（镜像引用经合并解析；真悬挂——
+  // 既不在传入也不在既有——仍 400 人话）。原「对传入文档孤立校验」错层
+  // 即 f2 谜题第二半：引用既有条目的规则被误判悬挂。
+  const validationError = validateCard(merged);
+  if (validationError) {
+    return { statusCode: 400, body: { error: `trimmc card validation failed: ${validationError}` } };
   }
   try {
     saveCard(merged, opts?.cardPath);

@@ -57,9 +57,49 @@ export interface TrimmcCardDocument {
   deleted_entry_ids?: string[];
 }
 
-function cardPaths(): string[] {
+// ── D9 路径规范化（预走查 f2 谜题根修）──
+// 旧实现按 import.meta.url 解析（dev=仓根 / compiled=dist 邻接）→ 编译运行
+// 时读写落 dist/trimmc-card.json（f2 态实证）。新候选序：
+//   1. TRIMODEL_CARD_FILE env（显式钉死）
+//   2. process.cwd()/trimmc-card.json（规范位——systemd WorkingDirectory 钉仓根）
+//   3. legacy dist 邻接（只读兼容；boot 迁移器改名式搬至规范位）
+// 读兼容 legacy，写仅规范位。
+
+export const CARD_FILE_ENV = 'TRIMODEL_CARD_FILE';
+
+export function canonicalCardPath(): string {
+  const env = process.env[CARD_FILE_ENV]?.trim();
+  if (env) return resolve(env);
+  return resolve(process.cwd(), 'trimmc-card.json');
+}
+
+/** Legacy location: adjacent to the compiled dist/src (or dev src) directory. */
+export function legacyCardPath(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  return [resolve(here, '..', 'trimmc-card.json'), resolve(here, '..', '..', 'trimmc-card.json')];
+  return resolve(here, '..', 'trimmc-card.json');
+}
+
+function candidateCardPaths(): string[] {
+  const env = process.env[CARD_FILE_ENV]?.trim();
+  if (env) return [resolve(env)];
+  return [canonicalCardPath(), legacyCardPath()];
+}
+
+/**
+ * D9 boot one-shot migration: legacy dist-adjacent card → canonical cwd path
+ * (rename-style, keys.enc family). Idempotent: skips when canonical exists or
+ * legacy absent.
+ */
+export function migrateLegacyDistCard(legacyOverride?: string, canonicalOverride?: string): { migrated: boolean; reason?: 'already-canonical' | 'no-legacy' } {
+  const legacy = legacyOverride ?? legacyCardPath();
+  const canonical = canonicalOverride ?? canonicalCardPath();
+  if (existsSync(canonical)) return { migrated: false, reason: 'already-canonical' };
+  if (!existsSync(legacy)) return { migrated: false, reason: 'no-legacy' };
+  // D6 同族：目标目录首存自建（canonical 的父目录可能尚不存在）
+  mkdirSync(dirname(canonical), { recursive: true });
+  renameSync(legacy, canonical);
+  console.log(`[trimodel] legacy card migrated: ${legacy} → ${canonical}`);
+  return { migrated: true };
 }
 
 export function emptyCard(connectionName = ''): TrimmcCardDocument {
@@ -76,7 +116,7 @@ export function emptyCard(connectionName = ''): TrimmcCardDocument {
 
 /** Read + decrypt entries. Absent file → null; corrupt → null (fail-safe). */
 export function loadCard(pathOverride?: string): TrimmcCardDocument | null {
-  const candidates = pathOverride ? [pathOverride] : cardPaths();
+  const candidates = pathOverride ? [pathOverride] : candidateCardPaths();
   for (const path of candidates) {
     if (!existsSync(path)) continue;
     try {
@@ -93,7 +133,8 @@ export function loadCard(pathOverride?: string): TrimmcCardDocument | null {
 }
 
 export function saveCard(doc: TrimmcCardDocument, pathOverride?: string): void {
-  const target = pathOverride ?? cardPaths()[0];
+  // D9: writes go to the canonical path only (pathOverride = test seam).
+  const target = pathOverride ?? canonicalCardPath();
   // D6 同族：目标目录可能不存在（fresh 卡/测试注入路径）——首存自建。
   mkdirSync(dirname(target), { recursive: true });
   const tmp = `${target}.tmp`;
@@ -102,8 +143,8 @@ export function saveCard(doc: TrimmcCardDocument, pathOverride?: string): void {
 }
 
 export function cardExists(pathOverride?: string): boolean {
-  const candidates = pathOverride ? [pathOverride] : cardPaths();
-  return candidates.some((p) => existsSync(p));
+  const candidates = pathOverride ? [pathOverride] : candidateCardPaths();
+  return candidates.some((p: string) => existsSync(p));
 }
 
 /** GET-side view: entries with api_key decrypted (never consumed by UI). */
