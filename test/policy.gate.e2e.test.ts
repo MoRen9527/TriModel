@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY_FILE = join(REPO_ROOT, 'policy.json');
+const TRANS_LOG = join(REPO_ROOT, 'model-transitions.jsonl'); // P2 runtime file: this suite's GETs record transitions
 const TOKEN = 'ste-gate-token';
 
 let server: ChildProcess | null = null;
@@ -26,6 +27,7 @@ let poller: ChildProcess | null = null;
 let port = 0;
 let workDir = '';
 let snapshot: string | null = null; // prior policy.json content (null = absent)
+let snapLog: string | null = null; // prior model-transitions.jsonl content (null = absent)
 
 interface PollEvent { type: string; defaultModel?: string; envModel?: string; error?: string }
 const events: PollEvent[] = [];
@@ -143,7 +145,9 @@ function waitForEvent(pred: (e: PollEvent) => boolean, timeoutMs: number, label:
 describe('GATE L3+anchor③: E2E full chain + daemon real-chain poll (single lifecycle)', () => {
   before(async () => {
     snapshot = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
+    snapLog = existsSync(TRANS_LOG) ? readFileSync(TRANS_LOG, 'utf-8') : null;
     rmSync(POLICY_FILE, { force: true }); // deterministic init: pre-policy env default
+    rmSync(TRANS_LOG, { force: true });
     workDir = mkdtempSync(join(tmpdir(), 'ste-gate-'));
     port = await freePort();
     server = bootServer(port);
@@ -198,6 +202,8 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     // snapshot-restore protocol: leave repo root exactly as found
     if (snapshot === null) rmSync(POLICY_FILE, { force: true });
     else writeFileSync(POLICY_FILE, snapshot, 'utf-8');
+    if (snapLog === null) rmSync(TRANS_LOG, { force: true });
+    else writeFileSync(TRANS_LOG, snapLog, 'utf-8');
   });
 
   it('anchor③-a: daemon initial pull reflects pre-policy env default (real chain, stubs annotated)', async () => {
