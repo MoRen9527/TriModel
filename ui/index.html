@@ -54,6 +54,45 @@
 </section>
 
 <section>
+  <h2>TriMMC 机器栏 <span id="tc-badge" class="warn"></span></h2>
+  <div class="kv" id="tc-head" style="margin-bottom:12px"></div>
+
+  <h2 style="font-size:13px">子栏一 · 连接</h2>
+  <div class="row-form">
+    <label>连接名称（必填）</label><input id="tc-conn" placeholder="本机连接名" style="width:220px">
+    <details style="margin-left:8px"><summary class="sub" style="cursor:pointer">连接档案（预置，只读）</summary>
+      <div class="sub" id="tc-conn-profile">machine.json 预置档案（当前版本仅展示）</div>
+    </details>
+  </div>
+
+  <h2 style="font-size:13px;margin-top:14px">子栏二 · 候选池条目</h2>
+  <table id="tc-entries"><thead><tr><th>id</th><th>厂商</th><th>模型</th><th>API Key</th><th>enabled</th><th>操作</th></tr></thead><tbody id="tc-entry-body"></tbody></table>
+  <div class="row-form">
+    <label>条目 id</label><input id="tc-e-id" placeholder="entry-1" style="width:90px">
+    <label>厂商</label><select id="tc-e-provider"><option>deepseek</option><option>glm</option><option>trimetaverse</option></select>
+    <label>模型</label><select id="tc-e-model" style="width:160px"></select>
+    <label>API Key</label><input id="tc-e-key" type="password" placeholder="sk-..." style="width:180px" autocomplete="off"><button id="tc-e-eye" class="eye">👁</button>
+    <label><input id="tc-e-enabled" type="checkbox" checked> enabled</label>
+    <button id="tc-e-add">添加 / 覆盖</button>
+    <span class="sub">密钥加密落卡（at-rest 密文）；删除被规则引用的条目会被 400 拒绝（防悬挂）</span>
+  </div>
+
+  <h2 style="font-size:13px;margin-top:14px">子栏三 · 当前使用与固定规则</h2>
+  <div class="kv" id="tc-current" style="margin-bottom:8px"></div>
+  <div class="row-form">
+    <label>固定规则条目</label><select id="tc-r-entry" style="width:180px"></select>
+    <button id="tc-r-apply">选为固定使用（写入策略）</button>
+    <button id="tc-r-clear">清除固定规则</button>
+  </div>
+  <div class="row-form">
+    <button class="primary" id="tc-save">保存卡片</button>
+    <button id="tc-reload">从服务器重载</button>
+    <span class="sub">按时段/额度自动切换将于后续版本提供</span>
+  </div>
+  <div id="tc-msg" style="margin-top:8px;font-size:13px;min-height:18px"></div>
+</section>
+
+<section>
   <h2>密钥管理（keys.enc · 只写不读回）</h2>
   <div class="row-form">
     <label>provider</label>
@@ -289,9 +328,145 @@ async function loadAll() {
   refreshEffective();
 }
 
+// ── TriMMC 机器栏（三子栏）——卡片域：候选池+引用清单；固定规则运行语义
+// 全存 policy.json（type:fixed，id=trimmc:<entry_id>）＝引擎真源唯一；
+// 卡片文件无裁决语义。无应用/推送按钮——保存即 pending，COS 回写状态。──
+let tcCard = null;
+let tcEntries = {}; // id -> {provider, model, enabled, api_key_encrypted?, api_key?(明文仅新条目)}
+
+function tcMsg(t, cls) { $('tc-msg').textContent = t || ''; $('tc-msg').className = cls || ''; }
+
+function tcRenderHead() {
+  const card = tcCard;
+  const state = card ? card.status.state : 'pending';
+  const badge = $('tc-badge');
+  badge.textContent = state;
+  badge.className = state === 'applied' ? 'ok' : state === 'failed' ? 'err' : 'warn';
+  $('tc-head').innerHTML = card
+    ? '<b>机名</b><span>' + (card.machine?.name || '-') + '</span><b>状态</b><span>' + state + '</span><b>最近应用时间</b><span>' + (card.status.at || '-') + '</span>' + (card.status.error ? '<b>错误</b><span class="err">' + card.status.error + '</span>' : '')
+    : '<b>状态</b><span>无卡片（保存后创建）</span>';
+}
+
+function tcRenderEntries(maskedById) {
+  const tb = $('tc-entry-body');
+  tb.innerHTML = '';
+  Object.entries(tcEntries).forEach(([id, e]) => {
+    const m = maskedById && maskedById[id] ? maskedById[id].masked : (e.api_key_encrypted ? '****（密文）' : '****');
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td><code></code></td><td></td><td></td><td></td><td></td><td><button class="danger" data-del>删除</button></td>';
+    tr.children[0].firstChild.textContent = id;
+    tr.children[1].textContent = e.provider;
+    tr.children[2].textContent = e.model;
+    tr.children[3].textContent = m;
+    tr.children[4].textContent = e.enabled ? '✓' : '✗';
+    tr.querySelector('[data-del]').onclick = () => {
+      const referenced = (tcCard?.rules || []).some((r) => r.entry_id === id);
+      if (referenced) return tcMsg('条目 ' + id + ' 被规则引用，先清除固定规则再删（服务端亦会 400 防悬挂）', 'err');
+      delete tcEntries[id];
+      tcRefreshRuleSelect();
+      tcMsg('已从本地卡片移除 ' + id + '（保存后生效）', 'warn');
+      tcRenderEntries(maskedById);
+    };
+    tb.appendChild(tr);
+  });
+  tcRefreshRuleSelect();
+}
+
+function tcRefreshRuleSelect() {
+  const sel = $('tc-r-entry');
+  sel.innerHTML = '';
+  Object.keys(tcEntries).forEach((id) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = id + '（' + tcEntries[id].model + '）';
+    sel.appendChild(o);
+  });
+}
+
+async function loadTrimmc() {
+  const r = await api('/v1/config/trimmc-card', { headers: adminHeaders() });
+  if (r.status === 503) { tcRenderHead(); tcMsg('卡片面 503 disabled（服务端未配置 TRIMODEL_ADMIN_TOKEN）', 'err'); return; }
+  if (r.status === 401) { tcMsg('卡片面 401（Admin Token 不符）', 'err'); return; }
+  if (r.status !== 200) { tcMsg('GET card HTTP ' + r.status, 'err'); return; }
+  tcCard = r.body.card_file_present ? r.body.card : null;
+  tcEntries = tcCard ? JSON.parse(JSON.stringify(tcCard.provider_entries || {})) : {};
+  if (tcCard && !tcCard.connection) tcCard.connection = { name: '' };
+  $('tc-conn').value = tcCard?.connection?.name || '';
+  tcRenderHead();
+  tcRenderEntries(r.body.entries_masked);
+  const cur = await api('/v1/config/policy');
+  if (cur.status === 200) {
+    const e = cur.body.effective;
+    $('tc-current').innerHTML = '<b>当前使用</b><span>' + e.model + '（source=' + e.source + ', matched=' + (e.matched_schedule_id ?? '无') + '）</span>';
+  }
+}
+
+$('tc-e-add').onclick = () => {
+  const id = $('tc-e-id').value.trim();
+  const model = $('tc-e-model').value;
+  const key = $('tc-e-key').value.trim();
+  if (!id) return tcMsg('条目 id 必填', 'err');
+  if (!key) return tcMsg('API Key 必填', 'err');
+  if (key.includes('*')) return tcMsg('masked 展示值不是真实密钥（回显污染防护）', 'err');
+  tcEntries[id] = { provider: $('tc-e-provider').value, model, enabled: $('tc-e-enabled').checked, api_key: key };
+  $('tc-e-key').value = '';
+  tcRenderEntries();
+  tcMsg('条目 ' + id + ' 已入本地卡片（保存后服务端加密落盘）', 'warn');
+};
+
+wireEyeToggle('tc-e-key', 'tc-e-eye');
+
+$('tc-save').onclick = async () => {
+  const name = $('tc-conn').value.trim();
+  if (!name) return tcMsg('连接名称必填（子栏一）', 'err');
+  const doc = {
+    version: 2,
+    machine: { name: tcCard?.machine?.name || '' },
+    connection: { name },
+    provider_entries: tcEntries,
+    rules: tcCard?.rules || [],
+    status: { state: 'pending', at: new Date().toISOString() },
+    reserved: { quota_switch: null, instances_group: null, env_tag: null },
+  };
+  const r = await api('/v1/config/trimmc-card', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(doc) });
+  if (r.status === 200) { tcMsg('卡片已保存（status=pending，候 COS 回写 applied/failed）', 'ok'); loadTrimmc(); }
+  else tcMsg('保存失败 HTTP ' + r.status + '：' + (r.body.error || ''), 'err');
+};
+
+$('tc-reload').onclick = () => loadTrimmc().then(() => tcMsg('已重载', 'ok'));
+
+$('tc-r-apply').onclick = async () => {
+  const entryId = $('tc-r-entry').value;
+  if (!entryId || !tcEntries[entryId]) return tcMsg('先选候选池条目', 'err');
+  const cur = await api('/v1/config/policy');
+  if (cur.status !== 200) return tcMsg('GET policy 失败', 'err');
+  const schedules = (cur.body.policy?.schedules || []).filter((s) => !String(s.id).startsWith('trimmc:'));
+  schedules.push({
+    id: 'trimmc:' + entryId, target: 'daemon-default', model: tcEntries[entryId].model,
+    windows: [], timezone: 'Asia/Shanghai', enabled: true, priority: 100, type: 'fixed',
+  });
+  const put = await api('/v1/config/policy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: '1', schedules }) });
+  if (put.status !== 200) return tcMsg('写固定规则失败：' + (put.body.error || ''), 'err');
+  tcCard = tcCard || { machine: { name: '' }, connection: { name: $('tc-conn').value }, status: { state: 'pending', at: new Date().toISOString() } };
+  tcCard.rules = (tcCard.rules || []).filter((r2) => r2.entry_id !== entryId);
+  tcCard.rules.push({ rule_id: 'trimmc:' + entryId, type: 'fixed', entry_id: entryId });
+  tcMsg('固定规则已写入策略（entry=' + entryId + '→' + tcEntries[entryId].model + '）；3334 下一请求即生效', 'ok');
+  loadTrimmc();
+};
+
+$('tc-r-clear').onclick = async () => {
+  const cur = await api('/v1/config/policy');
+  if (cur.status !== 200) return tcMsg('GET policy 失败', 'err');
+  const schedules = (cur.body.policy?.schedules || []).filter((s) => !String(s.id).startsWith('trimmc:'));
+  const put = await api('/v1/config/policy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: '1', schedules }) });
+  if (put.status !== 200) return tcMsg('清除失败：' + (put.body.error || ''), 'err');
+  if (tcCard) tcCard.rules = [];
+  tcMsg('固定规则已清除（回落时段规则/env default）', 'ok');
+  loadTrimmc();
+};
+
 $('token').value = localStorage.getItem('trimodel_ui_token') || '';
 $('adminToken').value = localStorage.getItem('trimodel_ui_admin_token') || '';
-loadModels().then(loadAll).then(refreshSecureStatus);
+loadModels().then(loadAll).then(refreshSecureStatus).then(loadTrimmc);
 </script>
 </body>
 </html>

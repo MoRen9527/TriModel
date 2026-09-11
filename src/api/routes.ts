@@ -4,6 +4,7 @@ import type { ModelClient } from '../client.js';
 import { handleHealth } from './health.js';
 import { handleModels } from './models.js';
 import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeysStatus } from './keys.js';
+import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus } from './trimmc-card.js';
 import { handleGetPolicy, handlePutPolicy } from './policy.js';
 
 export type RouteResult = {
@@ -73,6 +74,20 @@ export async function dispatch(
   // pending adjudication item noted in src/api/policy.ts)
   if (url === '/v1/config/policy' && method === 'PUT') {
     const result = handlePutPolicy(rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // TriMMC card (LG-035 T1): admin fail-closed trio
+  if (url === '/v1/config/trimmc-card' && method === 'GET') {
+    const result = handleGetTrimmcCard(headers['authorization']);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+  if (url === '/v1/config/trimmc-card' && method === 'PUT') {
+    const result = handlePutTrimmcCard(headers['authorization'], rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+  if (url === '/v1/config/trimmc-card/status' && method === 'PUT') {
+    const result = handlePutTrimmcCardStatus(headers['authorization'], rawBody);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 

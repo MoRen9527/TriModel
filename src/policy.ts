@@ -31,6 +31,12 @@ export interface PolicySchedule {
   timezone: 'Asia/Shanghai';
   enabled: boolean;
   priority: number; // higher number wins when multiple windows match
+  /**
+   * LG-035 TriMMC 栏（T2）：'window'=P1 时段语义（缺省，向后兼容）；'fixed'=
+   * 无时间条件恒匹配（priority 降序遍历中恒中，压过更低优先级的时段规则）。
+   * 'quota' 为 schema 级预留——运行时显式拒绝（validatePolicyShape 400）。
+   */
+  type?: 'window' | 'fixed';
 }
 
 export interface PolicyShape {
@@ -99,6 +105,11 @@ export function evaluatePolicy(
     .filter((s) => s && s.enabled)
     .sort((a, b) => b.priority - a.priority);
   for (const schedule of enabled) {
+    // T2: 'fixed' schedules have no time condition — they always match at
+    // their priority position (恒中压时段). Same evaluatePolicy, 零双轨.
+    if (schedule.type === 'fixed') {
+      return { model: schedule.model, matched_schedule_id: schedule.id };
+    }
     if (schedule.timezone !== SUPPORTED_TIMEZONE) continue; // P1: single-TZ support
     const hhmm = hhmmInZone(now, schedule.timezone);
     if (Array.isArray(schedule.windows) && schedule.windows.some((w) => windowMatches(hhmm, w))) {
@@ -125,9 +136,12 @@ export function validatePolicyShape(doc: unknown): string {
       return `schedules[${i}].model must be one of the official catalog: ${MODEL_CATALOG_LIST}`;
     }
     if (!Array.isArray(s.windows) || s.windows.length === 0) {
-      return `schedules[${i}].windows must be a non-empty array`;
+      // T2: 'fixed' schedules have no time condition — windows not required.
+      if (s.type !== 'fixed') {
+        return `schedules[${i}].windows must be a non-empty array`;
+      }
     }
-    for (const [j, w] of (s.windows as unknown[]).entries()) {
+    for (const [j, w] of (Array.isArray(s.windows) ? (s.windows as unknown[]) : []).entries()) {
       if (typeof w !== 'object' || w === null) return `schedules[${i}].windows[${j}] must be an object`;
       const win = w as Record<string, unknown>;
       if (typeof win.start !== 'string' || !TIME_RE.test(win.start)) {
@@ -144,6 +158,11 @@ export function validatePolicyShape(doc: unknown): string {
       }
     }
     if (s.timezone !== SUPPORTED_TIMEZONE) return `schedules[${i}].timezone must be '${SUPPORTED_TIMEZONE}' (P1)`;
+    // T2: type whitelist — absent = 'window' (P1 back-compat); 'quota' is
+    // schema-reserved and explicitly rejected at runtime (400).
+    if (s.type !== undefined && s.type !== 'window' && s.type !== 'fixed') {
+      return `schedules[${i}].type must be 'window' | 'fixed' (absent defaults to 'window'); 'quota' is reserved and not accepted`;
+    }
     if (typeof s.enabled !== 'boolean') return `schedules[${i}].enabled must be a boolean`;
     if (typeof s.priority !== 'number' || !Number.isFinite(s.priority)) {
       return `schedules[${i}].priority must be a finite number`;

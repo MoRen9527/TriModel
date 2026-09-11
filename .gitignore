@@ -15,3 +15,5 @@ policy.json
 keys.enc
 keys.enc.tmp
 model-transitions.jsonl
+trimmc-card.json
+trimmc-card.json.tmp
