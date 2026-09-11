@@ -17,3 +17,6 @@ keys.enc.tmp
 model-transitions.jsonl
 trimmc-card.json
 trimmc-card.json.tmp
+test/artifacts/
+policies/
+policies/*.tmp

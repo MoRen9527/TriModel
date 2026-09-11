@@ -14,7 +14,7 @@
 // Node18 compat (slice-1 A): uses only node:http / node:https / node:url /
 // node:path — no fetch streaming, no Node-20-only APIs.
 // (fetch 流管道弃用=18 稳定性优先，CTO 令文钦定 node:https request。)
-import { envDefaultModel, evaluatePolicy, loadPolicy } from './policy.js';
+import { DEFAULT_MACHINE, envDefaultModel, evaluatePolicy, loadPolicyForMachine, sanitizeMachine } from './policy.js';
 import type { PolicyShape } from './policy.js';
 import { deriveProviderKey } from './key-source.js';
 import { MODEL_CATALOG_LIST } from './model-catalog.js';
@@ -114,6 +114,7 @@ export function rewriteMessagesBody(
   rawBody: string,
   now: Date = new Date(),
   policyOverride?: PolicyShape | null,
+  machine: string = DEFAULT_MACHINE,
 ): RewriteOutcome {
   let doc: { model?: unknown } & Record<string, unknown>;
   try {
@@ -123,7 +124,7 @@ export function rewriteMessagesBody(
   }
 
   const originalModel = typeof doc.model === 'string' ? doc.model : '(none)';
-  const policy = policyOverride !== undefined ? policyOverride : loadPolicy();
+  const policy = policyOverride !== undefined ? policyOverride : loadPolicyForMachine(sanitizeMachine(machine));
   const hit = evaluatePolicy(now, policy);
   const evaluation = hit
     ? { model: hit.model, matched_schedule_id: hit.matched_schedule_id, source: 'policy' as const }

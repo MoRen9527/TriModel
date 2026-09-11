@@ -13,8 +13,8 @@
 // - P1 candidate-domain note: NO authentication on policy write path by design
 //   (admin-token enforcement is a pending adjudication item; the config-plane
 //   server binds 127.0.0.1 only). See src/api/policy.ts.
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { dirname, resolve } from 'path';
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { MODEL_CATALOG, MODEL_CATALOG_LIST } from './model-catalog.js';
 
@@ -176,13 +176,68 @@ export function validatePolicyShape(doc: unknown): string {
   return '';
 }
 
-function candidatePolicyPaths(): string[] {
-  // Same layout logic as config.ts dotenv resolution:
-  //   src/policy.ts    → ../policy.json   (dev repo root)
-  //   dist/src/policy.js → ../../policy.json (compiled repo root)
-  const here = dirname(fileURLToPath(import.meta.url));
-  return [resolve(here, '..', 'policy.json'), resolve(here, '..', '..', 'policy.json')];
+// ── S11 按机分域（LG-035 复走查⑧架构裁决）：策略作用域=TriMMC 卡目标机 ──
+// 存储 policies/<machine>.json（machine 规范化小写连字符；本机=固定名 local）。
+// boot 幂等迁移：现存 policy.json → policies/local.json（改名式，keys.enc 族）。
+// 引擎零双轨：evaluatePolicy 纯函数不动，evaluateForMachine = 单函数按机求值
+// （逐调用读对应机文档，零缓存零重启语义）。
+
+export const DEFAULT_MACHINE = 'local';
+
+/** machine 名规范化：小写连字符（非法字符折叠为 '-'，空 → local）。 */
+export function sanitizeMachine(machine: string): string {
+  const clean = machine.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  return clean || DEFAULT_MACHINE;
 }
+
+let policiesDirOverride: string | null = null;
+
+/** Test seam: redirect the policies/ directory (repo root untouched in tests). */
+export function setPoliciesDirForTest(dir: string | null): void {
+  policiesDirOverride = dir;
+}
+
+function policiesDir(): string {
+  if (policiesDirOverride) return policiesDirOverride;
+  const here = dirname(fileURLToPath(import.meta.url));
+  return resolve(here, '..', 'policies');
+}
+
+export function policyPathForMachine(machine: string): string {
+  return join(policiesDir(), `${sanitizeMachine(machine)}.json`);
+}
+
+/** Read one machine's policy document. Absent/corrupt → null (fail-safe). */
+export function loadPolicyForMachine(machine: string = DEFAULT_MACHINE): PolicyShape | null {
+  return loadPolicy(policyPathForMachine(machine));
+}
+
+export function savePolicyForMachine(machine: string, doc: PolicyShape): void {
+  const target = policyPathForMachine(machine);
+  const tmp = `${target}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}
+`, 'utf-8');
+  renameSync(tmp, target);
+}
+
+/** Single-engine per-machine evaluation (S11.2: 机为参数，非多实例引擎). */
+export function evaluateForMachine(machine: string, now: Date = new Date()): PolicyEvaluation | null {
+  return evaluatePolicy(now, loadPolicyForMachine(machine));
+}
+
+/** Boot one-shot migration: legacy repo-root policy.json → policies/local.json. */
+export function migrateLegacyPolicy(): { migrated: boolean; reason?: 'already-local' | 'no-legacy' | 'already-migrated' } {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const legacy = resolve(here, '..', 'policy.json');
+  const local = policyPathForMachine(DEFAULT_MACHINE);
+  if (existsSync(local)) return { migrated: false, reason: 'already-local' };
+  if (!existsSync(legacy)) return { migrated: false, reason: 'no-legacy' };
+  if (!existsSync(dirname(local))) mkdirSync(dirname(local), { recursive: true });
+  renameSync(legacy, local);
+  console.log(`[trimodel] legacy policy.json migrated to policies/local.json`);
+  return { migrated: true };
+}
+
 
 /**
  * Load policy.json from the TriModel repo root. Returns null when the file is
@@ -190,7 +245,7 @@ function candidatePolicyPaths(): string[] {
  * must keep serving the env default when policy storage is broken).
  */
 export function loadPolicy(pathOverride?: string): PolicyShape | null {
-  const candidates = pathOverride ? [pathOverride] : candidatePolicyPaths();
+  const candidates = pathOverride ? [pathOverride] : [policyPathForMachine(DEFAULT_MACHINE)];
   for (const path of candidates) {
     let text: string;
     try {
@@ -216,7 +271,7 @@ export function loadPolicy(pathOverride?: string): PolicyShape | null {
 
 /** Atomically persist the policy (tmp + rename). Default target: repo root. */
 export function savePolicy(policy: PolicyShape, pathOverride?: string): void {
-  const target = pathOverride ?? candidatePolicyPaths()[0];
+  const target = pathOverride ?? policyPathForMachine(DEFAULT_MACHINE);
   const tmp = `${target}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(policy, null, 2)}\n`, 'utf-8');
   renameSync(tmp, target);

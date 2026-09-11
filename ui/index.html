@@ -34,6 +34,7 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.danger { color: var(--err); border-color: var(--err); }
   button.eye { border: none; background: transparent; cursor: pointer; font-size: 15px; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; background: var(--idle); border-color: var(--idle); color: #fff; }
   .row-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
   .row-form label { font-size: 12px; color: var(--fg-dim); }
   .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 13px; }
@@ -99,15 +100,15 @@
   <div id="tc-error-entries" class="error-panel" hidden></div>
   <table id="tc-entries"><thead><tr><th>条目名</th><th>厂商</th><th>模型</th><th>密钥</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-entry-body"></tbody></table>
   <div id="tc-empty-entries" class="sub" style="margin-top:8px">暂无条目。点「添加模型条目」录入第一个模型的密钥。</div>
-  <div class="row-form"><button id="tc-open-add">添加模型条目</button></div>
+  <div class="row-form"><button id="tc-open-add" title="先连接后可用（未连接时禁用）">添加模型条目</button><span class="sub" id="tc-add-hint" hidden>先连接后可用</span></div>
 
   <form class="card-form" id="tc-form" hidden>
     <h3 id="tc-form-title">添加模型条目</h3>
     <div class="field"><label>条目名（必填）</label><input id="tc-e-id" placeholder="例如 主力-deepseek"></div>
-    <div class="field"><label>厂商</label><select id="tc-e-provider"><option>deepseek</option><option>glm</option><option>trimetaverse</option></select></div>
+    <div class="field"><label>供应商</label><select id="tc-e-provider"><option value="deepseek">deepseek</option><option value="glm">glm</option><option value="trimetaverse">trimetaverse</option></select></div>
     <div class="field"><label>模型</label><select id="tc-e-model"></select><div id="tc-model-error" class="error-panel" style="grid-column:2" hidden></div></div>
     <div class="field"><label>API Key（必填）</label><input id="tc-e-key" type="password" placeholder="sk-..." autocomplete="off" style="width:100%"><button type="button" id="tc-e-eye" class="eye">👁</button></div>
-    <details class="field" style="grid-column:1/-1"><summary class="sub">高级（base_url，选填）</summary><input id="tc-e-baseurl" placeholder="https://...（留空用默认）" style="width:100%"></details>
+    <div class="field"><label>服务地址（必填）</label><input id="tc-e-baseurl" placeholder="https://..." style="width:100%"><span id="tc-baseurl-warn" class="sub"></span></div>
     <div class="row-form">
       <button type="button" class="primary" id="tc-e-save">保存条目</button>
       <button type="button" id="tc-e-cancel">取消</button>
@@ -137,7 +138,8 @@
   <div style="padding-top:10px">
     <h3>策略列表（policy.json）</h3>
     <div id="error-policy" class="error-panel" hidden></div>
-    <table id="policy-table"><thead><tr><th>id</th><th>模型</th><th>时段</th><th>类型</th><th>启用</th><th>优先级</th></tr></thead><tbody id="policy-body"></tbody></table>
+    <div id="policy-empty" class="sub" style="margin-top:4px" hidden>本机暂无切换规则；策略随卡片应用或经配置接口设置。</div>
+    <table id="policy-table"><thead><tr><th>类型</th><th>模型</th><th>时段</th><th>状态</th></tr></thead><tbody id="policy-body"></tbody></table>
     <div class="sub" style="margin-top:6px">本机策略的编辑请通过配置接口进行（本区只读展示）。</div>
     <h3>密钥状态</h3>
     <div class="kv" id="key-status"></div>
@@ -200,6 +202,7 @@ async function boot() {
 
 function setDataPanelsDisabled(disabled) {
   for (const id of ['tc-conn', 'tc-open-add', 'tc-save', 'tc-reload', 'tc-r-entry', 'refreshNow']) $(id).disabled = disabled;
+  $('tc-add-hint').hidden = !disabled;
   document.querySelectorAll('.card-main, #local-zone').forEach((el) => el.classList.toggle('disabled-panel', disabled));
 }
 
@@ -210,15 +213,36 @@ function failPanel(panelId, text) {
   el.querySelector('[data-retry]').onclick = () => refreshAll();
 }
 
+// ② 状态点语义=「已验证」：连接动作执行真实校验往返（admin 凭据探针卡片
+// 端点——双机双钥错配在连接步即暴露）；① 任一令牌空=保持灰+提示不发起请求。
 $('conn-save').onclick = async () => {
+  if (!apiToken() || !adminToken()) {
+    $('conn-guide').hidden = false;
+    $('conn-guide').textContent = '请填入 API 令牌与管理令牌';
+    renderConnState();
+    return;
+  }
   localStorage.setItem('trimodel_ui_token', apiToken());
   localStorage.setItem('trimodel_ui_admin_token', adminToken());
-  $('conn-guide').hidden = true;
-  $('conn-settings').open = false;
-  renderConnState();
-  setDataPanelsDisabled(false);
-  // ⑤根治：令牌保存→自动重拉全部数据（去静默）
-  await refreshAll();
+  const dot = $('conn-dot'), label = $('conn-label');
+  dot.className = 'dot warn'; label.textContent = '验证中…';
+  const probe = await api('/v1/config/trimmc-card', { headers: adminHeaders() }).catch(() => ({ status: 0, body: {} }));
+  if (probe.status === 200) {
+    dot.className = 'dot ok'; label.textContent = '已连接';
+    $('conn-guide').hidden = true;
+    $('conn-settings').open = false;
+    setDataPanelsDisabled(false);
+    await refreshAll();
+  } else if (probe.status === 401 || probe.status === 503) {
+    // 凭据问题=黄「已填入未验证」（令牌错/写面未启用）
+    dot.className = 'dot warn'; label.textContent = '已填入未验证';
+    $('conn-guide').hidden = false;
+    $('conn-guide').textContent = humanize(probe.status, probe.body.error);
+  } else {
+    // 网络不可达=红+错误面板+重试（S3.2 禁静默）
+    dot.className = 'dot idle'; label.textContent = '未连接';
+    failPanel('error-status', '无法连接配置服务，请确认服务已启动后点重试');
+  }
 };
 
 // ── 状态条 + 策略列表 + 密钥状态 ──
@@ -247,15 +271,23 @@ async function loadPolicyZone() {
   msg('error-policy', '');
   const tb = $('policy-body');
   tb.innerHTML = '';
-  (r.body.policy?.schedules || []).forEach((s) => {
+  const schedules = r.body.policy?.schedules || [];
+  // ⑦ 未配置空态：不渲染规则表，只出引导文案（两视图分离——条目视图归模型信息区）
+  if (schedules.length === 0) {
+    $('policy-empty').hidden = false;
+    $('policy-table').hidden = true;
+    return;
+  }
+  $('policy-empty').hidden = true;
+  $('policy-table').hidden = false;
+  schedules.forEach((s) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td><code></code></td><td></td><td></td><td></td><td></td><td></td>';
-    tr.children[0].firstChild.textContent = s.id;
+    tr.innerHTML = '<td></td><td></td><td></td><td></td>';
+    tr.children[0].textContent = s.type === 'fixed' ? '固定' : '时段';
     tr.children[1].textContent = s.model;
-    tr.children[2].textContent = s.type === 'fixed' ? '（固定）' : (s.windows || []).map((w) => w.start + '–' + w.end).join(' + ');
-    tr.children[3].textContent = s.type === 'fixed' ? '固定' : '时段';
-    tr.children[4].textContent = s.enabled ? '✓' : '✗';
-    tr.children[5].textContent = String(s.priority);
+    tr.children[2].textContent = s.type === 'fixed' ? '—' : (s.windows || []).map((w) => w.start + '–' + w.end).join(' + ');
+    tr.children[3].textContent = s.enabled ? '<span class="ok">生效中</span>' : '已停用';
+    if (s.enabled) tr.children[3].innerHTML = '<span class="ok">生效中</span>'; else tr.children[3].textContent = '已停用';
     tb.appendChild(tr);
   });
 }
@@ -302,7 +334,6 @@ function wireEyeToggle(inputId, eyeId) {
 let tcCard = null;
 let tcEntries = {};
 let tcEditingId = null;
-const FALLBACK_TIP = '已回落：条目 X 已停用';
 
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { n.textContent = ''; }, 6000); }
 
@@ -335,14 +366,14 @@ function tcRender() {
     tr.children[3].textContent = e.api_key_encrypted ? '••••（已加密保存）' : '（未保存）';
     const sw = tr.querySelector('[data-enable]');
     sw.checked = !!e.enabled;
-    // S2.3：已存条目行内可切启用
+    // S2.3：已存条目行内可切启用（回落提示由 tcRender 尾部状态派生，⑥）
     sw.onchange = () => {
       e.enabled = sw.checked;
-      const currentId = ($('tc-r-entry').value || '').replace(/^entry:/, '');
-      if (!e.enabled && currentId === id) {
-        $('tc-fallback-tip').textContent = FALLBACK_TIP.replace('条目 X', '条目 ' + id);
-        $('tc-fallback-tip').hidden = false;
-      }
+      // D5: toggling a pending (not-yet-applied) entry is form-state only —
+      // quiet hint, no fallback tip (the engine never saw that entry).
+      const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
+      if (appliedEntries.includes(id)) tcRender(); // applied entry → derive fallback tip
+      else tcMsg('已切换（将在应用后生效）', 'warn');
       tcMarkDirty();
     };
     tr.querySelector('[data-edit]').onclick = () => tcOpenForm(id);
@@ -359,6 +390,21 @@ function tcRender() {
     tb.appendChild(tr);
   });
   tcRefreshCurrentSelect();
+  // ⑥ 回落提示=状态派生（D5 修正）：「已回落」是引擎实际裁决后的事实——
+  // 仅当卡片处于已应用态且当前使用条目在该已应用卡中被停用时才提示；
+  // 暂存（未保存卡片）条目的开关切换=表单态，不触发回落提示。
+  const sel = $('tc-r-entry');
+  const currentId = (sel.value || '').replace(/^entry:/, '');
+  const currentEntry = tcEntries[currentId];
+  const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
+  const tip = $('tc-fallback-tip');
+  if (currentEntry && !currentEntry.enabled && appliedEntries.includes(currentId)) {
+    tip.textContent = '已回落：条目 ' + currentId + ' 已停用';
+    tip.hidden = false;
+  } else {
+    tip.hidden = true;
+    tip.textContent = '';
+  }
 }
 
 function tcRefreshCurrentSelect() {
@@ -392,31 +438,53 @@ function tcOpenForm(editId) {
   $('tc-e-id').disabled = !!editId; // 无覆盖语义：编辑=更新该条目，名不可改
   $('tc-e-provider').value = editId ? tcEntries[editId].provider : 'deepseek';
   $('tc-e-key').value = '';
-  $('tc-e-baseurl').value = editId ? (tcEntries[editId].base_url ?? '') : '';
+  $('tc-e-baseurl').value = editId ? (tcEntries[editId].base_url ?? '') : (PROVIDER_DEFAULT_BASEURL[$('tc-e-provider').value] ?? '');
   $('tc-form').hidden = false;
 }
 
 $('tc-open-add').onclick = () => tcOpenForm(null);
 $('tc-e-cancel').onclick = () => { $('tc-form').hidden = true; };
 
+// ③ 级联过滤：供应商→模型下拉（deepseek 供应商只出 deepseek 系，以此类推）
+const PROVIDER_MODELS = { deepseek: ['deepseek-flash', 'deepseek-v4-pro'], glm: ['GLM-5.3-Flash', 'GLM-5.3'], trimetaverse: ['TMV'] };
+const PROVIDER_DEFAULT_BASEURL = { deepseek: 'https://api.deepseek.com/anthropic', glm: 'https://open.bigmodel.cn/api/anthropic', trimetaverse: 'http://127.0.0.1:8008/v1' };
+$('tc-e-provider').onchange = () => {
+  const provider = $('tc-e-provider').value;
+  const sel = $('tc-e-model');
+  sel.innerHTML = '';
+  (PROVIDER_MODELS[provider] || []).forEach((id) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = id;
+    sel.appendChild(o);
+  });
+  // ⑤ 连接档案预置默认（可改不可空）
+  $('tc-e-baseurl').value = PROVIDER_DEFAULT_BASEURL[provider] ?? '';
+};
+
 $('tc-e-save').onclick = () => {
   const id = $('tc-e-id').value.trim();
   const key = $('tc-e-key').value.trim();
   const baseUrl = $('tc-e-baseurl').value.trim();
   if (!id) return tcMsg('请填写条目名', 'err');
+  if (!key) return tcMsg('请填写 API Key', 'err');
   if (key.includes('*')) return tcMsg('检测到占位符，请输入真实密钥', 'err');
+  if (key.length < 16) return tcMsg('密钥长度不足（至少 16 位），请核对是否复制完整', 'err');
+  // ④ 前缀提示性校验（warning 级不阻断——各厂格式差异大）
+  const provider = $('tc-e-provider').value;
+  const prefixHint = { deepseek: 'sk-', glm: '', trimetaverse: 'tmv-sk-' }[provider] ?? '';
+  $('tc-baseurl-warn').textContent = prefixHint && !key.startsWith(prefixHint) ? '提示：该供应商密钥通常以 ' + prefixHint + ' 开头，请核对' : '';
+  if (!baseUrl) return tcMsg('请填写服务地址', 'err');
   if (tcEditingId) {
     // 编辑：保留原密文，除非填了新密钥
     tcEntries[id] = {
       ...tcEntries[id],
-      provider: $('tc-e-provider').value, model: $('tc-e-model').value,
+      provider, model: $('tc-e-model').value,
       enabled: tcEntries[id].enabled,
       ...(key ? { api_key: key, api_key_encrypted: undefined } : {}),
-      ...(baseUrl ? { base_url: baseUrl } : { base_url: undefined }),
+      base_url: baseUrl,
     };
   } else {
-    if (!key) return tcMsg('请填写 API Key', 'err');
-    tcEntries[id] = { provider: $('tc-e-provider').value, model: $('tc-e-model').value, api_key: key, enabled: true, ...(baseUrl ? { base_url: baseUrl } : {}) };
+    tcEntries[id] = { provider, model: $('tc-e-model').value, api_key: key, enabled: true, base_url: baseUrl };
   }
   $('tc-form').hidden = true;
   tcRender();
@@ -459,14 +527,6 @@ async function loadTrimmc() {
   // S3 数据绑定硬规则：不覆盖用户正在输入的字段（空时才从卡回填）
   if (!$('tc-conn').value) $('tc-conn').value = tcCard?.connection?.name || '';
   tcRender();
-  // 停用回落黄提示（S2.4）
-  const rule = (tcCard?.rules || []).find((r2) => r2.type === 'fixed');
-  if (rule && (!tcEntries[rule.entry_id] || !tcEntries[rule.entry_id].enabled)) {
-    $('tc-fallback-tip').textContent = FALLBACK_TIP.replace('条目 X', '条目 ' + rule.entry_id);
-    $('tc-fallback-tip').hidden = false;
-  } else {
-    $('tc-fallback-tip').hidden = true;
-  }
 }
 
 $('refreshNow').onclick = () => refreshAll();

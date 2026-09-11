@@ -1,5 +1,6 @@
 // ── LG-035 UI 重设计 S8：jsdom 首启五断言 + S5 迁移器单测 ──
-// @ts-nocheck -- DOM typing noise (getElementById null-narrowing); runtime asserted by the suite itself
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- DOM typing noise (getElementById null-narrowing); runtime asserted by the suite itself
+// @ts-nocheck
 // 五断言（COS 定）：①无令牌态=连接设置自动展开+引导可见+数据面板禁用
 // ②令牌保存→自动重拉 ③模型下拉有值 ④条目提交可达 ⑤TriMMC 卡片区域
 // 通道词汇+结构词汇零出现。迁移器：幂等/合成条目/auto_imported 标记。
@@ -108,14 +109,14 @@ describe('S8.2: jsdom 首启五断言', () => {
     d.getElementById('tc-conn').value = '本机';
     d.getElementById('tc-open-add').click();
     (d.getElementById('tc-e-id') as HTMLInputElement).value = 'e1';
-    (d.getElementById('tc-e-key') as HTMLInputElement).value = 'sk-test-0001';
+    (d.getElementById('tc-e-key') as HTMLInputElement).value = 'sk-test-0001-12345';
     d.getElementById('tc-e-save').click();
     d.getElementById('tc-save').click();
     await new Promise((r) => setTimeout(r, 120));
     const cardPut = log.find((c) => c.url.includes('/trimmc-card') && c.init?.method === 'PUT');
     assert.ok(cardPut, 'PUT card must be issued');
-    const sent = JSON.parse(String(cardPut.init!.body));
-    assert.equal(sent.provider_entries.e1.api_key, 'sk-test-0001', 'plaintext hydrates server-side (never stored raw)');
+    const sent = JSON.parse(typeof cardPut.init?.body === 'string' ? cardPut.init.body : '');
+    assert.equal(sent.provider_entries.e1.api_key, 'sk-test-0001-12345', 'plaintext hydrates server-side (never stored raw)');
     dom.window.close();
   });
 
@@ -126,6 +127,43 @@ describe('S8.2: jsdom 首启五断言', () => {
     for (const w of banned) {
       assert.equal(cardZone.includes(w), false, `结构/通道词汇 '${w}' 禁入卡片区域`);
     }
+  });
+
+  it('D5: pending-entry toggle shows quiet hint, zero fallback tip; applied-entry toggle derives it', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const appliedCard = {
+      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
+      provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: 'QUFB', enabled: true, updated_at: 'x' } },
+      rules: [{ rule_id: 'trimmc:e1', type: 'fixed', entry_id: 'e1' }],
+      status: { state: 'applied', at: 'x' },
+      reserved: { quota_switch: null, instances_group: null, env_tag: null },
+    };
+    const dom = bootUi(log, [(url) => {
+      if (url.includes('/trimmc-card')) return { status: 200, body: { object: 'config.trimmc-card', card_file_present: true, card: appliedCard, entries_masked: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', masked: '****0001', enabled: true, updated_at: 'x' } } } };
+      return okFor(url);
+    }]);
+    await new Promise((r) => setTimeout(r, 80));
+    const d = dom.window.document;
+    // applied entry toggle → fallback tip derived (visible)
+    const sw = d.querySelector('[data-enable]') as HTMLInputElement;
+    sw.checked = false;
+    sw.dispatchEvent(new dom.window.Event('change'));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied-entry disable must show fallback tip');
+    // pending-entry (fresh, unsaved) toggle → quiet hint, NO fallback tip
+    const tipBefore = d.getElementById('tc-fallback-tip').hidden;
+    (d.getElementById('tc-e-id') as HTMLInputElement).value = 'e2';
+    (d.getElementById('tc-e-key') as HTMLInputElement).value = 'sk-pending-1234567';
+    d.getElementById('tc-e-save').click();
+    const rows = d.getElementById('tc-entry-body').children;
+    const sw2 = rows[1]?.querySelector('[data-enable]') as HTMLInputElement | null;
+    if (sw2) {
+      sw2.checked = true;
+      sw2.dispatchEvent(new dom.window.Event('change'));
+    }
+    assert.equal(d.getElementById('tc-msg').textContent.includes('将在应用后生效'), true, 'pending toggle = quiet hint');
+    assert.equal(d.getElementById('tc-fallback-tip').hidden, tipBefore, 'pending toggle must not flip the fallback tip');
+    dom.window.close();
   });
 
   it('fetch 失败 → 人话错误面板+重试钮（S3.2 禁静默空）', async () => {
@@ -197,7 +235,4 @@ describe('S5 迁移器: keys.enc → card synthetic entries (幂等)', () => {
   });
 });
 
-function require_catalog(): typeof import('../src/model-catalog.js') {
-   
-  return { MODEL_CATALOG: ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'] } as unknown as typeof import('../src/model-catalog.js');
-}
+

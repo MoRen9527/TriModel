@@ -14,7 +14,7 @@
 // Node18 compat: node:http only.
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { effectiveModel } from './policy.js';
+import { evaluateForMachine, envDefaultModel, sanitizeMachine } from './policy.js';
 import {
   UPSTREAM_ROUTES,
   forwardToUpstream,
@@ -24,6 +24,9 @@ import {
 
 const HOST = process.env.TRIMODEL_PROXY_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.TRIMODEL_PROXY_PORT ?? 3334);
+// S11: which machine's policy document this proxy evaluates (sg sets it to
+// its card machine name; local dev defaults to 'local').
+const MACHINE = sanitizeMachine(process.env.TRIMODEL_PROXY_MACHINE ?? 'local');
 // POST /v1/messages body cap (connection-level oversized-request defense,
 // P2 family); anthropic payloads are small but thinking blocks add up.
 const MAX_BODY_BYTES = 10_000_000;
@@ -61,7 +64,7 @@ async function handler(req: import('node:http').IncomingMessage, res: import('no
   try {
     // ── Health（3334 自检：policy 有效值+路由表+最近改写摘要，无密钥材料）──
     if (url === '/proxy/health' && method === 'GET') {
-      const evaluation = effectiveModel();
+      const evaluation = evaluateForMachine(MACHINE) ?? { model: envDefaultModel(), matched_schedule_id: null, source: 'env-default' as const, machine: MACHINE };
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
@@ -86,7 +89,7 @@ async function handler(req: import('node:http').IncomingMessage, res: import('no
         return;
       }
 
-      const rewritten = rewriteMessagesBody(rawBody);
+      const rewritten = rewriteMessagesBody(rawBody, new Date(), undefined, MACHINE);
       if (!rewritten.ok || !rewritten.body || !rewritten.upstream) {
         const statusMap: Record<string, number> = { 'bad-json': 400, 'no-upstream-route': 502, 'no-api-key': 502 };
         res.writeHead(statusMap[rewritten.code] ?? 400, { 'content-type': 'application/json' });
