@@ -208,7 +208,7 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
 
   it('anchor③-a: daemon initial pull reflects pre-policy env default (real chain, stubs annotated)', async () => {
     const init = await waitForEvent((e) => e.type === 'init', 15000, 'init event');
-    assert.equal(init.defaultModel, 'tmv-deepseek-v4-pro', 'initial fetch before any policy');
+    assert.equal(init.defaultModel, 'deepseek-v4-pro', 'initial fetch before any policy');
   });
 
   it('P4-guard: default bind is loopback (netstat LISTENING line shows 127.0.0.1:port)', async () => {
@@ -227,7 +227,7 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     const ok = await get('/v1/config/keys', `Bearer ${TOKEN}`);
     assert.equal(ok.status, 200);
     const body = JSON.parse(ok.text) as { default_model: string };
-    assert.equal(body.default_model, 'tmv-deepseek-v4-pro', 'pre-policy env default');
+    assert.equal(body.default_model, 'deepseek-v4-pro', 'pre-policy env default');
   });
 
   it('P3: GET policy on clean state → 200 with empty schedules (not 404)', async () => {
@@ -249,7 +249,7 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
 
   it('P4: policy face is unauthenticated by design — PUT/GET without Authorization → 200', async () => {
     const win = shanghaiWindowAroundNow();
-    const res = await put('/v1/config/policy', policyBody('gate-echo-in', win));
+    const res = await put('/v1/config/policy', policyBody('GLM-5.3', win));
     assert.equal(res.status, 200, 'loopback PUT with no token must be 200 (令文钦定)');
     const got = await get('/v1/config/policy');
     assert.equal(got.status, 200);
@@ -261,16 +261,16 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     const keys = await get('/v1/config/keys', `Bearer ${TOKEN}`);
     assert.equal(keys.status, 200);
     const body = JSON.parse(keys.text) as { default_model: string };
-    assert.equal(body.default_model, 'gate-echo-in', 'per-request evaluation must reflect policy on next GET');
+    assert.equal(body.default_model, 'GLM-5.3', 'per-request evaluation must reflect policy on next GET');
   });
 
   it('anchor③-b: daemon poll pulls the policy flip without restart (env application asserted)', async () => {
     const updated = await waitForEvent(
-      (e) => e.type === 'updated' && e.defaultModel === 'gate-echo-in',
+      (e) => e.type === 'updated' && e.defaultModel === 'GLM-5.3',
       20000, // stagger stubbed to 0 + 1s advertised interval → generous ceiling
-      'updated event with gate-echo-in',
+      'updated event with GLM-5.3',
     );
-    assert.equal(updated.envModel, 'gate-echo-in', 'applyKeyCacheToEnvironment lands the new default in env');
+    assert.equal(updated.envModel, 'GLM-5.3', 'applyKeyCacheToEnvironment lands the new default in env');
   });
 
   it('P7: PUT empty schedules = 200 legal state, keys fall back to env default', async () => {
@@ -278,7 +278,7 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     assert.equal(res.status, 200);
     const keys = await get('/v1/config/keys', `Bearer ${TOKEN}`);
     const body = JSON.parse(keys.text) as { default_model: string };
-    assert.equal(body.default_model, 'tmv-deepseek-v4-pro', 'empty policy → env default');
+    assert.equal(body.default_model, 'deepseek-v4-pro', 'empty policy → env default');
     const got = await get('/v1/config/policy');
     const pol = JSON.parse(got.text) as { policy: { schedules: unknown[] }; policy_file_present: boolean };
     assert.deepEqual(pol.policy.schedules, []);
@@ -287,11 +287,11 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
 
   it('anchor③-c: daemon poll follows the flip back on empty-policy reset', async () => {
     const updated = await waitForEvent(
-      (e) => e.type === 'updated' && e.defaultModel === 'tmv-deepseek-v4-pro',
+      (e) => e.type === 'updated' && e.defaultModel === 'deepseek-v4-pro',
       20000,
       'updated event back to env default',
     );
-    assert.equal(updated.envModel, 'tmv-deepseek-v4-pro');
+    assert.equal(updated.envModel, 'deepseek-v4-pro');
   });
 
   it('U12 via API: malformed window → 400, prior policy untouched', async () => {
@@ -311,7 +311,7 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
   it('F1 adjudicated: zero-length window [18:00,18:00) → PUT 400 (CTO 14:42 ruling, f7f90c6)', async () => {
     // STE-GATE-F1 resolved: validatePolicyShape now rejects start==end at write time
     // (config semantics aligned with engine U13a zero-match). Was observed-200 pre-fix.
-    const res = await put('/v1/config/policy', policyBody('gate-zero', { start: '18:00', end: '18:00' }));
+    const res = await put('/v1/config/policy', policyBody('deepseek-flash', { start: '18:00', end: '18:00' }));
     assert.equal(res.status, 400, 'zero-length window must be rejected at PUT (F1 fixed in f7f90c6)');
   });
 
@@ -346,7 +346,7 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
 
   it('L3-R1 restart persistence (Q7): policy survives server reboot via policy.json reload', async () => {
     const win = shanghaiWindowAroundNow();
-    const res = await put('/v1/config/policy', policyBody('gate-restart-proof', win));
+    const res = await put('/v1/config/policy', policyBody('deepseek-flash', win));
     assert.equal(res.status, 200);
     killChild(server);
     await new Promise((r) => setTimeout(r, 300)); // let the port settle before rebind
@@ -354,10 +354,10 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     await waitHealth(port);
     const got = await get('/v1/config/policy');
     const pol = JSON.parse(got.text) as { policy: { schedules: { id: string; model: string }[] } };
-    assert.equal(pol.policy.schedules[0]?.model, 'gate-restart-proof', 'loadPolicy must reload after reboot');
+    assert.equal(pol.policy.schedules[0]?.model, 'deepseek-flash', 'loadPolicy must reload after reboot');
     const keys = await get('/v1/config/keys', `Bearer ${TOKEN}`);
     const body = JSON.parse(keys.text) as { default_model: string };
-    assert.equal(body.default_model, 'gate-restart-proof', 'keys default_model policy-driven after reboot');
+    assert.equal(body.default_model, 'deepseek-flash', 'keys default_model policy-driven after reboot');
   });
 
   it('P6: legacy routes unaffected — /health 200, unknown route 404', async () => {

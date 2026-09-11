@@ -15,7 +15,7 @@ function schedule(partial: Partial<PolicySchedule>): PolicySchedule {
   return {
     id: 'gate-s1',
     target: 'daemon-default',
-    model: 'gate-model-a',
+    model: 'deepseek-v4-pro',
     windows: [{ start: '18:00', end: '22:00' }],
     timezone: 'Asia/Shanghai',
     enabled: true,
@@ -31,7 +31,7 @@ describe('GATE L1: boundary family (independent re-assert)', () => {
     const policy: PolicyShape = { version: '1', schedules: [schedule({})] };
     const hit = evaluatePolicy(new Date(`${DAY}T18:00:00+08:00`), policy);
     assert.ok(hit, 'start-inclusive (CTO Q3 ruling) must match at 18:00');
-    assert.equal(hit.model, 'gate-model-a');
+    assert.equal(hit.model, 'deepseek-v4-pro');
   });
 
   it('U5-U8 overnight window [22:00,06:00): 23:30/00:30/05:59 in, 06:00 out', () => {
@@ -72,14 +72,14 @@ describe('GATE L1: boundary family (independent re-assert)', () => {
     assert.equal(evaluatePolicy(new Date(`${DAY}T12:00:00+08:00`), null), null);
     assert.equal(evaluatePolicy(new Date(`${DAY}T12:00:00+08:00`), undefined), null);
     assert.equal(evaluatePolicy(new Date(`${DAY}T12:00:00+08:00`), { version: '1', schedules: [] }), null);
-    assert.equal(envDefaultModel(), 'tmv-deepseek-v4-pro');
+    assert.equal(envDefaultModel(), 'deepseek-v4-pro');
   });
 });
 
 describe('GATE L1: U14 timezone — UTC-constructed instants map to Shanghai wall clock', () => {
   const win = (start: string, end: string): PolicyShape => ({
     version: '1',
-    schedules: [schedule({ model: 'gate-tz', windows: [{ start, end }] })],
+    schedules: [schedule({ model: 'GLM-5.3', windows: [{ start, end }] })],
   });
 
   it('18:00 seam via UTC instants (09:59Z=17:59 out, 10:00Z=18:00 in, 10:01Z=18:01 in)', () => {

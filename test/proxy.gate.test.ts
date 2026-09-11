@@ -19,6 +19,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const POLICY_FILE = join(REPO_ROOT, 'policy.json');
 const DS_KEY = 'sk-gate-deepseek-sentinel';
 const GLM_KEY = 'sk-gate-glm-sentinel';
+const TMV_KEY = 'sk-gate-tmv-sentinel';
 
 let proxy: Server | null = null;
 let mock: Server | null = null;
@@ -99,13 +100,15 @@ describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
     rmSync(POLICY_FILE, { force: true }); // deterministic: env-default routing
     setEnv('DEEPSEEK_API_KEY', DS_KEY);
     setEnv('GLM_API_KEY', GLM_KEY);
-    setEnv('TRIMODEL_DEFAULT_MODEL', 'tmv-deepseek-v4-pro');
+    setEnv('TRIMODEL_TRIMETAVERSE_API_KEY', TMV_KEY);
+    setEnv('TRIMODEL_DEFAULT_MODEL', 'deepseek-v4-pro');
 
     // mock upstream (http → exercises the node:http branch of forwardToUpstream);
     // BOTH route families must point here — never let gate tests reach real endpoints
     mockPort = await freePort();
     setEnv('GLM_ANTHROPIC_BASE_URL', `http://127.0.0.1:${mockPort}`);
     setEnv('DEEPSEEK_ANTHROPIC_BASE_URL', `http://127.0.0.1:${mockPort}`);
+    setEnv('TRIMODEL_TRISTACISS_BASE_URL', `http://127.0.0.1:${mockPort}/v1`);
     const m = createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
@@ -166,31 +169,41 @@ describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
     assert.ok(health.text.includes('DEEPSEEK_API_KEY'), 'health shows env var NAMES only');
   });
 
-  it('G2 mapping four cases (pure): deepseek/glm routes+key+strip, unmatched & keyless 502-codes, longest-prefix', () => {
-    const policy = policyFor('tmv-deepseek-v4-pro');
-    const ds = rewriteMessagesBody('{"model":"claude-x","messages":[]}', new Date(), policy);
+  it('G2 mapping: three official groups exact-match + keys, unmatched/keyless/case-negative refusals', () => {
+    const ds = rewriteMessagesBody('{"model":"claude-x","messages":[]}', new Date(), policyFor('deepseek-v4-pro'));
     assert.equal(ds.code, 'ok');
-    assert.equal(ds.upstream?.route.prefix, 'tmv-deepseek', 'longest prefix wins over bare deepseek');
+    assert.equal(ds.upstream?.route.label, 'deepseek-anthropic');
     assert.equal(ds.upstream?.apiKey, DS_KEY);
     assert.equal(ds.upstream?.baseUrl, `http://127.0.0.1:${mockPort}`, 'DEEPSEEK base URL env override honored');
     const dsBody = JSON.parse(ds.body ?? '{}') as { model: string };
-    assert.equal(dsBody.model, 'deepseek-v4-pro', 'tmv- registry shell stripped for native endpoint');
+    assert.equal(dsBody.model, 'deepseek-v4-pro', 'official name forwarded verbatim (strip retired)');
+    assert.equal(rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('deepseek-flash')).upstream?.route.label, 'deepseek-anthropic');
 
-    const glm = rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('tmv-glm-5.3'));
+    const glm = rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('GLM-5.3-Flash'));
     assert.equal(glm.code, 'ok');
-    assert.equal(glm.upstream?.route.prefix, 'tmv-glm');
+    assert.equal(glm.upstream?.route.label, 'glm-anthropic');
     assert.equal(glm.upstream?.apiKey, GLM_KEY);
     assert.equal(glm.upstream?.baseUrl, `http://127.0.0.1:${mockPort}`, 'GLM base URL env override honored');
+    assert.equal(rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('GLM-5.3')).upstream?.route.label, 'glm-anthropic');
+
+    const tmv = rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('TMV'));
+    assert.equal(tmv.code, 'ok');
+    assert.equal(tmv.upstream?.route.label, 'tristaciss-anthropic');
+    assert.equal(tmv.upstream?.apiKey, TMV_KEY);
+    assert.equal(tmv.upstream?.baseUrl, `http://127.0.0.1:${mockPort}`, 'tristaciss /v1 tail stripped for /v1/messages join');
 
     const unknown = rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('mistral-large-x'));
     assert.equal(unknown.code, 'no-upstream-route', 'unmatched model refused (never mis-routed)');
 
+    const lowerGlm = rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('glm-5.3'));
+    assert.equal(lowerGlm.code, 'no-upstream-route', 'catalog is case-exact: lowercase glm-5.3 refused (CTO③ negative case)');
+
     setEnv('GLM_API_KEY', undefined);
-    const keyless = rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('tmv-glm-5.3'));
+    const keyless = rewriteMessagesBody('{"model":"claude-x"}', new Date(), policyFor('GLM-5.3'));
     assert.equal(keyless.code, 'no-api-key', 'matched route without key refused');
     setEnv('GLM_API_KEY', GLM_KEY);
 
-    assert.equal(rewriteMessagesBody('{broken', new Date(), policy).code, 'bad-json');
+    assert.equal(rewriteMessagesBody('{broken', new Date(), policyFor('deepseek-v4-pro')).code, 'bad-json');
   });
 
   it('G4 fidelity deep-compare: only model rewritten + auth injected; hop-by-hop/auth dropped; no leak back', async () => {
@@ -248,15 +261,17 @@ describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
   });
 
   it('G2-E2E: unmatched model → 502 with ZERO upstream requests (never sends wrong key to wrong endpoint)', async () => {
+    // 1ab2bfa 后 policy PUT 被五名集校验挡下（非官方名 400），未匹配模型的现实
+    // 路径=env 误配——经进程内 env 构造（in-process server 直读本进程 env）。
     mockMode = 'json';
     const before = captured.length;
-    writeFileSync(POLICY_FILE, JSON.stringify(policyFor('mistral-unknown-x')), 'utf-8');
+    setEnv('TRIMODEL_DEFAULT_MODEL', 'mistral-unknown-x');
     const res = await post('/v1/messages', JSON.stringify({ model: 'whatever', messages: [] }));
     assert.equal(res.status, 502);
     assert.equal(captured.length, before, 'refused rewrite must NOT reach any upstream');
     const health = JSON.parse((await get('/proxy/health')).text) as { policy_effective: { model: string } };
     assert.equal(health.policy_effective.model, 'mistral-unknown-x');
-    rmSync(POLICY_FILE, { force: true }); // back to env-default for remaining/cleanup
+    setEnv('TRIMODEL_DEFAULT_MODEL', 'deepseek-v4-pro');
   });
 
   it('G5 gap probe: unknown routes stable 405 shape; oversized body rejected at connection level', async () => {

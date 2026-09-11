@@ -133,7 +133,7 @@ describe('GATE P2-B/A E2E: single-boot server (admin token via env)', () => {
       TRIMODEL_PORT: String(port),
       TRIMODEL_API_TOKEN: API_TOKEN,
       TRIMODEL_ADMIN_TOKEN: ADMIN_TOKEN, // env wins over dotenv(override:false) .env injection
-      TRIMODEL_DEFAULT_MODEL: 'tmv-deepseek-v4-pro', // pin baseline for transition asserts
+      TRIMODEL_DEFAULT_MODEL: 'deepseek-v4-pro', // pin baseline for transition asserts
       DEEPSEEK_API_KEY: ENV_KEY,
     };
     server = spawn(process.execPath, ['--import', 'tsx', join('src', 'server.ts')], {
@@ -180,21 +180,21 @@ describe('GATE P2-B/A E2E: single-boot server (admin token via env)', () => {
     const res = await put('/v1/config/policy', JSON.stringify({
       version: '1',
       schedules: [{
-        id: 'gate-p2-flip', target: 'daemon-default', model: 'gate-p2-flip', windows: [shanghaiWindowAroundNow()],
+        id: 'GLM-5.3', target: 'daemon-default', model: 'GLM-5.3', windows: [shanghaiWindowAroundNow()],
         timezone: 'Asia/Shanghai', enabled: true, priority: 10,
       }],
     }));
     assert.equal(res.status, 200);
     const keys = await get('/v1/config/keys', `Bearer ${API_TOKEN}`);
     const kb = JSON.parse(keys.text) as { default_model: string };
-    assert.equal(kb.default_model, 'gate-p2-flip', 'flip active on next GET');
+    assert.equal(kb.default_model, 'GLM-5.3', 'flip active on next GET');
 
     assert.ok(existsSync(TRANS_LOG), 'transition log must exist after flip+GET');
     const lines = readFileSync(TRANS_LOG, 'utf-8').split('\n').filter((l) => l.trim() !== '');
     assert.ok(lines.length >= 1);
     const last = JSON.parse(lines[lines.length - 1]) as Record<string, unknown>;
-    assert.equal(last.from, 'tmv-deepseek-v4-pro');
-    assert.equal(last.to, 'gate-p2-flip');
+    assert.equal(last.from, 'deepseek-v4-pro');
+    assert.equal(last.to, 'GLM-5.3');
     assert.equal(last.source, 'policy');
 
     const ALLOWED = new Set(['at', 'from', 'to', 'source', 'matched_schedule_id']);
