@@ -330,9 +330,13 @@ function wireEyeToggle(inputId, eyeId) {
   };
 }
 
-// ═══ TriMMC 信息卡（S2 交互唯一模式 + S4 只写卡片→待应用）═══
+// ═══ TriMMC 信息卡（S2 交互唯一模式 + S4 只写卡片→待应用 + D7 脏追踪）═══
+// D7 保存语义：tcEntries=脏条目（用户新增/编辑，持明文）；tcMirror=GET 只读
+// 镜像（密文条目回显）；保存=只发脏条目+deleted（后端合并），镜像永不回写。
 let tcCard = null;
-let tcEntries = {};
+let tcEntries = {};   // 脏条目（id -> {provider, model, enabled, base_url?, api_key? 明文}）
+let tcMirror = {};    // 只读镜像（id -> {provider, model, masked, enabled, updated_at})
+let tcDeleted = [];   // 本次删除的既有（镜像）条目 id
 let tcEditingId = null;
 
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
@@ -351,29 +355,31 @@ function tcRender() {
   tcBadge();
   const tb = $('tc-entry-body');
   tb.innerHTML = '';
-  const ids = Object.keys(tcEntries);
+  // 合并视图：镜像 ∪ 脏（脏覆盖同 id）
+  const ids = Array.from(new Set([...Object.keys(tcMirror), ...Object.keys(tcEntries)]));
   $('tc-empty-entries').hidden = ids.length > 0;
   ids.forEach((id) => {
-    const e = tcEntries[id];
+    const dirty = tcEntries[id];
+    const mirror = tcMirror[id];
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td></td><td></td><td></td><td></td>' +
       '<td><input type="checkbox" class="switch" data-enable></td>' +
       '<td><button data-edit style="margin-right:4px">编辑</button><button class="danger" data-del>删除</button></td>';
     tr.children[0].textContent = id;
-    tr.children[1].textContent = e.provider;
-    tr.children[2].textContent = e.model;
-    tr.children[3].textContent = e.api_key_encrypted ? '••••（已加密保存）' : '（未保存）';
+    tr.children[1].textContent = (dirty ?? mirror).provider ?? '-';
+    tr.children[2].textContent = (dirty ?? mirror).model ?? '-';
+    tr.children[3].textContent = dirty ? (dirty.api_key_encrypted ? '••••（已加密保存）' : '••••（待保存）') : (mirror?.masked ?? '••••');
     const sw = tr.querySelector('[data-enable]');
-    sw.checked = !!e.enabled;
-    // S2.3：已存条目行内可切启用（回落提示由 tcRender 尾部状态派生，⑥）
+    sw.checked = !!(dirty ?? mirror)?.enabled;
     sw.onchange = () => {
-      e.enabled = sw.checked;
-      // D5: toggling a pending (not-yet-applied) entry is form-state only —
-      // quiet hint, no fallback tip (the engine never saw that entry).
-      const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
-      if (appliedEntries.includes(id)) tcRender(); // applied entry → derive fallback tip
-      else tcMsg('已切换（将在应用后生效）', 'warn');
+      // D7：镜像条目启用翻转=创建脏副本（保存合并落盘）；脏条目翻转=表单态
+      if (dirty) { dirty.enabled = sw.checked; }
+      else {
+        tcEntries[id] = { provider: mirror.provider, model: mirror.model, enabled: sw.checked, base_url: mirror.base_url, api_key_encrypted: undefined };
+        tcMsg('已切换（将在应用后生效）', 'warn');
+      }
+      tcRender();
       tcMarkDirty();
     };
     tr.querySelector('[data-edit]').onclick = () => tcOpenForm(id);
@@ -382,35 +388,25 @@ function tcRender() {
         tcMsg('该条目正被切换策略使用，请先改选其他模型', 'err');
         return;
       }
-      delete tcEntries[id];
-      tcRefreshCurrentSelect();
+      if (dirty) { delete tcEntries[id]; }
+      else if (mirror) { delete tcMirror[id]; tcDeleted.push(id); }
       tcRender();
       tcMarkDirty();
+      tcMsg('已从本地卡片移除 ' + id + '（保存后生效）', 'warn');
     };
     tb.appendChild(tr);
   });
   tcRefreshCurrentSelect();
-  // ⑥ 回落提示=状态派生（D5 修正）：「已回落」是引擎实际裁决后的事实——
-  // 意图源=卡片 rules（fixed 引用），不取下拉现值（停用后下拉已切走）；
-  // 仅当卡片处于已应用态且意图条目被停用时才提示；暂存条目开关=表单态不触发。
-  const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
-  const currentId = rule?.entry_id ?? '';
-  const currentEntry = currentId ? tcEntries[currentId] : undefined;
-  const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
-  const tip = $('tc-fallback-tip');
-  if (rule && currentEntry && !currentEntry.enabled && appliedEntries.includes(currentId)) {
-    tip.textContent = '已回落：条目 ' + currentId + ' 已停用';
-    tip.hidden = false;
-  } else {
-    tip.hidden = true;
-    tip.textContent = '';
-  }
+  tcDeriveFallback();
 }
+
+function tcMarkDirty() { $('tc-dirty').textContent = '（有未保存改动，保存后待应用）'; }
 
 function tcRefreshCurrentSelect() {
   const sel = $('tc-r-entry');
   sel.innerHTML = '';
-  const enabledIds = Object.keys(tcEntries).filter((id) => tcEntries[id].enabled);
+  const all = { ...tcMirror, ...tcEntries };
+  const enabledIds = Object.keys(all).filter((id) => (all[id] ?? {}).enabled);
   if (enabledIds.length === 0) {
     const o = document.createElement('option');
     o.textContent = '暂无可用条目，请先在模型信息中添加并启用';
@@ -421,44 +417,62 @@ function tcRefreshCurrentSelect() {
   enabledIds.forEach((id) => {
     const o = document.createElement('option');
     o.value = 'entry:' + id;
-    o.textContent = id + '（' + tcEntries[id].model + '）';
+    o.textContent = id + '（' + all[id].model + '）';
     sel.appendChild(o);
   });
-  // 回显卡片已存意图
   const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
   if (rule && enabledIds.includes(rule.entry_id)) sel.value = 'entry:' + rule.entry_id;
 }
 
-function tcMarkDirty() { $('tc-dirty').textContent = '（有未保存改动，保存后待应用）'; }
+// ⑥/D5 回落提示=状态派生（意图源=卡 rules；仅已应用卡条目停用才提示）
+function tcDeriveFallback() {
+  // D5：回落=引擎事实（卡盘面条目被停用）——派生源=tcMirror（盘面现状），
+  // 脏态（未保存翻转）不算事实（暂存开关零回落提示，D7 语义合流）。
+  const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
+  const currentId = rule?.entry_id ?? '';
+  const diskEntry = currentId ? tcMirror[currentId] : undefined;
+  const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
+  const tip = $('tc-fallback-tip');
+  if (rule && diskEntry && diskEntry.enabled === false && appliedEntries.includes(currentId)) {
+    tip.textContent = '已回落：条目 ' + currentId + ' 已停用';
+    tip.hidden = false;
+  } else {
+    tip.hidden = true;
+    tip.textContent = '';
+  }
+}
 
 function tcOpenForm(editId) {
   tcEditingId = editId ?? null;
   $('tc-form-title').textContent = editId ? '编辑条目 ' + editId : '添加模型条目';
   $('tc-e-id').value = editId ?? '';
-  $('tc-e-id').disabled = !!editId; // 无覆盖语义：编辑=更新该条目，名不可改
-  $('tc-e-provider').value = editId ? tcEntries[editId].provider : 'deepseek';
+  $('tc-e-id').disabled = !!editId;
+  const src = tcEntries[editId] ?? tcMirror[editId] ?? {};
+  $('tc-e-provider').value = src.provider ?? 'deepseek';
+  tcFillModelSelect(src.model);
   $('tc-e-key').value = '';
-  $('tc-e-baseurl').value = editId ? (tcEntries[editId].base_url ?? '') : (PROVIDER_DEFAULT_BASEURL[$('tc-e-provider').value] ?? '');
+  $('tc-e-baseurl').value = src.base_url ?? PROVIDER_DEFAULT_BASEURL[$('tc-e-provider').value] ?? '';
   $('tc-form').hidden = false;
 }
 
 $('tc-open-add').onclick = () => tcOpenForm(null);
 $('tc-e-cancel').onclick = () => { $('tc-form').hidden = true; };
 
-// ③ 级联过滤：供应商→模型下拉（deepseek 供应商只出 deepseek 系，以此类推）
+// ③ 级联过滤 + ⑤ base_url 预置
 const PROVIDER_MODELS = { deepseek: ['deepseek-flash', 'deepseek-v4-pro'], glm: ['GLM-5.3-Flash', 'GLM-5.3'], trimetaverse: ['TMV'] };
 const PROVIDER_DEFAULT_BASEURL = { deepseek: 'https://api.deepseek.com/anthropic', glm: 'https://open.bigmodel.cn/api/anthropic', trimetaverse: 'http://127.0.0.1:8008/v1' };
-$('tc-e-provider').onchange = () => {
-  const provider = $('tc-e-provider').value;
+function tcFillModelSelect(prefer) {
   const sel = $('tc-e-model');
   sel.innerHTML = '';
-  (PROVIDER_MODELS[provider] || []).forEach((id) => {
+  (PROVIDER_MODELS[$('tc-e-provider').value] || []).forEach((id) => {
     const o = document.createElement('option');
-    o.value = id; o.textContent = id;
+    o.value = id; o.textContent = id; if (id === prefer) o.selected = true;
     sel.appendChild(o);
   });
-  // ⑤ 连接档案预置默认（可改不可空）
-  $('tc-e-baseurl').value = PROVIDER_DEFAULT_BASEURL[provider] ?? '';
+}
+$('tc-e-provider').onchange = () => {
+  tcFillModelSelect();
+  $('tc-e-baseurl').value = PROVIDER_DEFAULT_BASEURL[$('tc-e-provider').value] ?? '';
 };
 
 $('tc-e-save').onclick = () => {
@@ -466,26 +480,17 @@ $('tc-e-save').onclick = () => {
   const key = $('tc-e-key').value.trim();
   const baseUrl = $('tc-e-baseurl').value.trim();
   if (!id) return tcMsg('请填写条目名', 'err');
-  if (!key) return tcMsg('请填写 API Key', 'err');
+  const hasCipher = !!tcEntries[id]?.api_key_encrypted || !!tcMirror[id];
+  if (!key && !hasCipher) return tcMsg('请填写 API Key', 'err');
   if (key.includes('*')) return tcMsg('检测到占位符，请输入真实密钥', 'err');
-  if (key.length < 16) return tcMsg('密钥长度不足（至少 16 位），请核对是否复制完整', 'err');
-  // ④ 前缀提示性校验（warning 级不阻断——各厂格式差异大）
+  if (key && key.length < 16) return tcMsg('密钥长度不足（至少 16 位），请核对是否复制完整', 'err');
   const provider = $('tc-e-provider').value;
-  const prefixHint = { deepseek: 'sk-', glm: '', trimetaverse: 'tmv-sk-' }[provider] ?? '';
-  $('tc-baseurl-warn').textContent = prefixHint && !key.startsWith(prefixHint) ? '提示：该供应商密钥通常以 ' + prefixHint + ' 开头，请核对' : '';
   if (!baseUrl) return tcMsg('请填写服务地址', 'err');
-  if (tcEditingId) {
-    // 编辑：保留原密文，除非填了新密钥
-    tcEntries[id] = {
-      ...tcEntries[id],
-      provider, model: $('tc-e-model').value,
-      enabled: tcEntries[id].enabled,
-      ...(key ? { api_key: key, api_key_encrypted: undefined } : {}),
-      base_url: baseUrl,
-    };
-  } else {
-    tcEntries[id] = { provider, model: $('tc-e-model').value, api_key: key, enabled: true, base_url: baseUrl };
-  }
+  const prev = tcEntries[id] ?? {};
+  tcEntries[id] = {
+    provider, model: $('tc-e-model').value, enabled: prev.enabled ?? tcMirror[id]?.enabled ?? true, base_url: baseUrl,
+    ...(key ? { api_key: key } : { api_key_encrypted: prev.api_key_encrypted }),
+  };
   $('tc-form').hidden = true;
   tcRender();
   tcMarkDirty();
@@ -495,20 +500,22 @@ $('tc-e-save').onclick = () => {
 $('tc-save').onclick = async () => {
   const name = $('tc-conn').value.trim();
   if (!name) return tcMsg('请先填写机器信息中的名称', 'err');
+  const currentUse = $('tc-r-entry').value.replace(/^entry:/, '');
+  const otherRules = (tcCard?.rules || []).filter((r) => r.entry_id !== currentUse);
   const doc = {
     version: 2,
     machine: { name: tcCard?.machine?.name || '' },
     connection: { name },
-    provider_entries: tcEntries,
-    // S4：固定规则意图随卡片保存（当前使用下拉），COS 应用时落 sg 侧策略
-    rules: Object.keys(tcEntries).length && $('tc-r-entry').value
-      ? [{ rule_id: 'trimmc:' + $('tc-r-entry').value.replace('entry:', ''), type: 'fixed', entry_id: $('tc-r-entry').value.replace('entry:', '') }]
-      : [],
+    provider_entries: tcEntries,            // D7：只发脏条目（后端合并）
+    deleted_entry_ids: tcDeleted,           // D7：删除通道
+    rules: currentUse ? [...otherRules, { rule_id: 'trimmc:' + currentUse, type: 'fixed', entry_id: currentUse }] : (tcCard?.rules || []),
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
   const r = await api('/v1/config/trimmc-card', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(doc) });
   if (r.status !== 200) return tcMsg(humanize(r.status, r.body.error), 'err');
+  tcEntries = {};
+  tcDeleted = [];
   $('tc-dirty').textContent = '';
   tcMsg('卡片已保存，等待应用（应用完成后状态变为「已生效」）', 'ok');
   await loadTrimmc();
@@ -522,18 +529,15 @@ async function loadTrimmc() {
   if (r.status !== 200) { failPanel('error-card', humanize(r.status, r.body.error)); tcBadge(); return; }
   msg('error-card', '');
   tcCard = r.body.card_file_present ? r.body.card : null;
-  // S3 数据绑定硬规则：本地有未保存改动（如行内启用翻转）时不重置条目态——
-  // 异步重拉不得覆盖用户输入/切换（否则引擎事实提示与表单态互相打架）。
-  const hasLocalChanges = $('tc-dirty').textContent.includes('未保存');
-  if (!hasLocalChanges) {
-    tcEntries = tcCard ? JSON.parse(JSON.stringify(tcCard.provider_entries || {})) : {};
-    $('tc-dirty').textContent = '';
+  // D7：只更新只读镜像，禁覆盖脏条目（「添加→重拉→保存」竞态根治位）
+  tcMirror = {};
+  for (const [id, m] of Object.entries(r.body.entries_masked || {})) {
+    tcMirror[id] = { provider: m.provider, model: m.model, masked: m.masked, enabled: m.enabled, updated_at: m.updated_at, base_url: m.base_url ?? undefined };
   }
-  // S3 数据绑定硬规则：不覆盖用户正在输入的字段（空时才从卡回填）
   if (!$('tc-conn').value) $('tc-conn').value = tcCard?.connection?.name || '';
+  $('tc-dirty').textContent = '';
   tcRender();
 }
-
 $('refreshNow').onclick = () => refreshAll();
 
 boot();

@@ -34,6 +34,7 @@ function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders
       let call = 0;
       window.fetch = (async (url: string, init?: RequestInit) => {
         fetchLog.push({ url, init });
+        if (String(url).includes('trimmc-card')) console.log('[stub]', init?.method ?? 'GET', String(url).replace('http://127.0.0.1:3333',''), '| body =', String(init?.body ?? '').slice(0, 160));
         // window closed mid-flight (test teardown): resolve inert so no
         // render callback touches a dead document (unhandledRejection guard)
         if (window.closed) return { status: 0, json: async () => ({}), text: async () => '', headers: new Map() } as unknown as Response;
@@ -135,7 +136,29 @@ describe('S8.2: jsdom 首启五断言', () => {
     }
   });
 
-  it('D5: pending-entry toggle shows quiet hint, zero fallback tip; applied-entry toggle derives it', async () => {
+  it('D5: on-disk disabled entry under applied card shows fallback tip (engine fact)', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const appliedCardDisabled = {
+      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
+      provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: 'QUFB', enabled: false, updated_at: 'x' } },
+      rules: [{ rule_id: 'trimmc:e1', type: 'fixed', entry_id: 'e1' }],
+      status: { state: 'applied', at: 'x' },
+      reserved: { quota_switch: null, instances_group: null, env_tag: null },
+    };
+    const dom = bootUi(log, [(url) => {
+      if (url.includes('/trimmc-card')) return { status: 200, body: { object: 'config.trimmc-card', card_file_present: true, card: appliedCardDisabled, entries_masked: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', masked: '****0001', enabled: false, updated_at: 'x' } } } };
+      return okFor(url);
+    }]);
+    const d = dom.window.document;
+    (d.getElementById('token') as HTMLInputElement).value = 'tk-api';
+    (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
+    d.getElementById('conn-save').click();
+    await waitFor(() => d.getElementById('tc-fallback-tip').hidden === false);
+    assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied card + on-disk disabled current-use entry = fallback tip');
+    assert.ok(d.getElementById('tc-fallback-tip').textContent.includes('已回落'), 'fallback wording');
+  });
+
+  it('D5b: derivation source is the disk mirror - dirty (unsaved) toggle cannot fabricate fallback', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const appliedCard = {
       version: 2, machine: { name: 'm' }, connection: { name: '本机' },
@@ -153,34 +176,13 @@ describe('S8.2: jsdom 首启五断言', () => {
     (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
     d.getElementById('conn-save').click();
     await waitFor(() => !!d.querySelector('[data-enable]'));
-    // applied entry toggle → fallback tip derived (visible)
     const sw = d.querySelector('[data-enable]') as HTMLInputElement | null;
-    assert.ok(sw, 'entry row must be rendered before the toggle test');
-    (dom.window as unknown as { tcEntries: unknown }).tcEntries = tcEntriesRef;
+    assert.ok(sw, 'entry row must render');
     sw.checked = false;
     sw.dispatchEvent(new dom.window.Event('change'));
-    await waitFor(() => d.getElementById('tc-fallback-tip').hidden === false);
-    if (d.getElementById('tc-fallback-tip').hidden) {
-      console.log('[D5-FAIL] cardState =', d.getElementById('tc-badge').textContent, '| sel =', JSON.stringify(d.getElementById('tc-r-entry').value), '| e1.enabled =', JSON.stringify((tcEntries as Record<string, { enabled?: boolean }>)[tcEditingId ?? 'e1']?.enabled), '| rules =', JSON.stringify(tcCard?.rules));
-    }
-    assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied-entry disable must show fallback tip');
-    assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied-entry disable must show fallback tip');
-    // pending-entry (fresh, unsaved) toggle → quiet hint, NO fallback tip
-    const tipBefore = d.getElementById('tc-fallback-tip').hidden;
-    (d.getElementById('tc-e-id') as HTMLInputElement).value = 'e2';
-    (d.getElementById('tc-e-key') as HTMLInputElement).value = 'sk-pending-1234567';
-    (d.getElementById('tc-e-baseurl') as HTMLInputElement).value = 'https://api.deepseek.com/anthropic';
-    d.getElementById('tc-e-save').click();
-    const rows = d.getElementById('tc-entry-body').children;
-    const sw2 = rows[1]?.querySelector('[data-enable]') as HTMLInputElement | null;
-    console.log('[D5-2] rows =', rows.length, '| sw2 =', !!sw2, '| msg before =', JSON.stringify(d.getElementById('tc-msg').textContent));
-    if (sw2) {
-      sw2.checked = true;
-      sw2.dispatchEvent(new dom.window.Event('change'));
-    }
-    console.log('[D5-2] msg after =', JSON.stringify(d.getElementById('tc-msg').textContent));
-    assert.equal(d.getElementById('tc-msg').textContent.includes('将在应用后生效'), true, 'pending toggle = quiet hint');
-    assert.equal(d.getElementById('tc-fallback-tip').hidden, tipBefore, 'pending toggle must not flip the fallback tip');
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(d.getElementById('tc-fallback-tip').hidden, true, 'unsaved (dirty) toggle must not fabricate fallback');
+    assert.ok(d.getElementById('tc-msg').textContent.includes('将在应用后生效'), 'quiet hint for unsaved toggle');
   });
 
   it('fetch 失败 → 人话错误面板+重试钮（S3.2 禁静默空）', async () => {

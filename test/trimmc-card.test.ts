@@ -203,3 +203,76 @@ describe('T3: UI — card DOM channel-vocabulary absence (通道词汇零出现)
     assert.ok(cardSection.includes('按时段/额度自动切换将于后续版本提供'), 'reserved-capability copy must be present');
   });
 });
+
+// ── D7: save-chain merge semantics (序列化退化防御+显式删除通道) ──
+describe('D7: PUT merge semantics — degraded forms rejected, explicit delete channel', () => {
+  it('id-array provider_entries (CEO 23:57 corrupted form) → 400 with human message', async () => {
+    process.env.TRIMODEL_ADMIN_TOKEN = 'd7-secret';
+    const m = await import('../src/api/trimmc-card.js');
+    const dir = mkdtempSync(join(tmpdir(), 'trimmc-d7-'));
+    const auth = 'Bearer d7-secret';
+    const doc = JSON.stringify({
+      version: 2,
+      machine: { name: 'd7-machine' },
+      connection: { name: 'd7-conn' },
+      provider_entries: ['f34-ds', 'f34-glm'],
+      rules: [],
+      status: { state: 'pending', at: new Date().toISOString() },
+    });
+    const r = m.handlePutTrimmcCard(auth, doc, { cardPath: join(dir, 'c.json') });
+    assert.equal(r.statusCode, 400);
+    assert.match(String((r.body as { error: string }).error), /条目数据格式错误/);
+  });
+
+  it('string-valued entry → 400 (degraded form never persists)', async () => {
+    const m = await import('../src/api/trimmc-card.js');
+    const dir = mkdtempSync(join(tmpdir(), 'trimmc-d7-'));
+    const auth = 'Bearer d7-secret';
+    const doc = JSON.stringify({
+      version: 2,
+      machine: { name: 'd7-machine' },
+      connection: { name: 'd7-conn' },
+      provider_entries: { 'e-str': 'some-degraded-string' },
+      rules: [],
+      status: { state: 'pending', at: new Date().toISOString() },
+    });
+    const r = m.handlePutTrimmcCard(auth, doc, { cardPath: join(dir, 'c.json') });
+    assert.equal(r.statusCode, 400);
+    assert.match(String((r.body as { error: string }).error), /条目数据格式错误/);
+  });
+
+  it('deleted_entry_ids explicitly removes an existing entry (merge delete channel)', async () => {
+    const m = await import('../src/api/trimmc-card.js');
+    const { loadCard: loadCardFromStore } = await import('../src/trimmc-card.js');
+    const ORIGINAL_ADMIN = process.env.TRIMODEL_ADMIN_TOKEN;
+    process.env.TRIMODEL_ADMIN_TOKEN = 'd7-secret'; // fail-closed plane: unset env = 503
+    const dir = mkdtempSync(join(tmpdir(), 'trimmc-d7-'));
+    const cardPath = join(dir, 'c.json');
+    const auth = 'Bearer d7-secret';
+    const entry = (id: string, model: string) => JSON.stringify({
+      version: 2,
+      machine: { name: 'd7-machine' },
+      connection: { name: 'd7-conn' },
+      provider_entries: { [id]: { provider: 'deepseek', model, api_key: 'sk-d7-real-key-0001', enabled: true, updated_at: new Date().toISOString() } },
+      rules: [],
+      status: { state: 'pending', at: new Date().toISOString() },
+    });
+    assert.equal(m.handlePutTrimmcCard(auth, entry('e-keep', 'deepseek-v4-pro'), { cardPath }).statusCode, 200);
+    assert.equal(m.handlePutTrimmcCard(auth, entry('e-gone', 'GLM-5.3'), { cardPath }).statusCode, 200);
+    // Merge delete: existing card minus e-gone via deleted_entry_ids
+    const del = JSON.stringify({
+      version: 2,
+      machine: { name: 'd7-machine' },
+      connection: { name: 'd7-conn' },
+      provider_entries: {},
+      deleted_entry_ids: ['e-gone'],
+      rules: [],
+      status: { state: 'pending', at: new Date().toISOString() },
+    });
+    assert.equal(m.handlePutTrimmcCard(auth, del, { cardPath }).statusCode, 200);
+    const loaded = loadCardFromStore(cardPath);
+    const entries = loaded?.provider_entries as Record<string, unknown>;
+    assert.equal('e-keep' in entries, true, 'unmentioned entry must survive the merge');
+    assert.equal('e-gone' in entries, false, 'explicitly deleted entry must be removed');
+  });
+});

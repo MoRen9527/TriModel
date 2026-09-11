@@ -71,6 +71,24 @@ export function handlePutTrimmcCard(
     return { statusCode: 400, body: { error: `invalid JSON: ${err instanceof Error ? err.message : String(err)}` } };
   }
   const card = doc as TrimmcCardDocument;
+  // D7 合并语义：PUT provider_entries = 脏条目 upsert（非整卡回写）——
+  // 前端只发用户新增/编辑的条目，既有密文条目不回传不覆盖。
+  // 形态三态：对象+明文 api_key → 服务端加密水合；对象+api_key_encrypted →
+  // 原样保留（密文搬运）；字符串/数组等退化形态 → 400 人话拒不落盘。
+
+  // 退化形态前置拒（水合/校验前即断，防任何路径落盘）
+  const providedRaw = (card as { provider_entries?: unknown }).provider_entries;
+  if (Array.isArray(providedRaw)) {
+    return { statusCode: 400, body: { error: '条目数据格式错误，请重新添加条目' } };
+  }
+  if (typeof providedRaw === 'object' && providedRaw !== null) {
+    for (const [id, entry] of Object.entries(providedRaw as Record<string, unknown>)) {
+      if (typeof entry !== 'object' || entry === null) {
+        return { statusCode: 400, body: { error: `条目数据格式错误（${id}），请重新添加条目` } };
+      }
+    }
+  }
+
   // Hydrate BEFORE validation: UI supplies `api_key` (masked display makes it
   // impossible to paste back — F1-P2 family); the server encrypts here so
   // at-rest storage is ciphertext only.
@@ -88,15 +106,31 @@ export function handlePutTrimmcCard(
     return { statusCode: 400, body: { error: `trimmc card validation failed: ${validationError}` } };
   }
 
-  // Save semantics: status resets to pending (COS writes back applied|failed).
-  card.status = { state: 'pending', at: new Date().toISOString() };
-  card.reserved = { quota_switch: null, instances_group: null, env_tag: null };
+  // 合并基底：既有卡（provider_entries 保留未被本次 PUT 提及的条目）
+  const existing = loadCard(opts?.cardPath);
+  const base = existing ?? emptyCard('');
+  const merged: TrimmcCardDocument = {
+    ...base,
+    machine: card.machine?.name ? card.machine : base.machine,
+    connection: card.connection?.name ? card.connection : base.connection,
+    provider_entries: { ...base.provider_entries, ...card.provider_entries },
+    rules: Array.isArray(card.rules) ? card.rules : base.rules,
+    status: { state: 'pending', at: new Date().toISOString() },
+    reserved: { quota_switch: null, instances_group: null, env_tag: null },
+  };
+  // D7 删除通道：deleted_entry_ids 显式移除（镜像条目删除）
+  if (Array.isArray(card.deleted_entry_ids)) {
+    for (const id of card.deleted_entry_ids) {
+      if (typeof id === 'string') delete merged.provider_entries[id];
+    }
+    merged.deleted_entry_ids = card.deleted_entry_ids.filter((id): id is string => typeof id === 'string');
+  }
   try {
-    saveCard(card, opts?.cardPath);
+    saveCard(merged, opts?.cardPath);
   } catch (err) {
     return { statusCode: 500, body: { error: `failed to persist trimmc-card.json: ${err instanceof Error ? err.message : String(err)}` } };
   }
-  return { statusCode: 200, body: { ok: true, status: card.status, entries: Object.keys(card.provider_entries), rules: card.rules } };
+  return { statusCode: 200, body: { ok: true, status: merged.status, entries: Object.keys(merged.provider_entries), rules: merged.rules } };
 }
 
 export function handlePutTrimmcCardStatus(
