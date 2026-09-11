@@ -302,11 +302,11 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     assert.deepEqual(pol.policy.schedules, [], 'rejected PUT must not half-write');
   });
 
-  it('F1 probe: zero-length window [18:00,18:00) — observed behavior recorded (divergence候裁)', async () => {
-    // STE-GATE-F1: spec U13 expected PUT 400; implementation accepts (validatePolicyShape
-    // passes, evaluatePolicy never matches). Asserting OBSERVED state pending CTO ruling.
+  it('F1 adjudicated: zero-length window [18:00,18:00) → PUT 400 (CTO 14:42 ruling, f7f90c6)', async () => {
+    // STE-GATE-F1 resolved: validatePolicyShape now rejects start==end at write time
+    // (config semantics aligned with engine U13a zero-match). Was observed-200 pre-fix.
     const res = await put('/v1/config/policy', policyBody('gate-zero', { start: '18:00', end: '18:00' }));
-    assert.equal(res.status, 200, 'F1 observed: zero-length window accepted at PUT (spec expected 400)');
+    assert.equal(res.status, 400, 'zero-length window must be rejected at PUT (F1 fixed in f7f90c6)');
   });
 
   it('T8 /ui static: 200 + text/html; traversal probes rejected (raw-path, no client normalization)', async () => {
@@ -322,9 +322,11 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     assert.ok(noLeak, 'encoded traversal must not leak files');
   });
 
-  it('F2 probe: >1MB PUT body — rejected (observed status recorded; 413-vs-500候裁)', async () => {
-    // STE-GATE-F2: readRawBody tags 413 but req.destroy() kills the socket first —
-    // observed ECONNRESET, no HTTP status at all. Asserting rejection only.
+  it('F2 probe (adjudicated: connection-level defense, not spec 413): >1MB PUT body — rejected', async () => {
+    // STE-GATE-F2 resolved (CTO 14:42 ruling: 改口): oversized body is killed at the
+    // connection level (ECONNRESET, no HTTP status) — accepted as connection-level
+    // defense, NOT a spec 413. Content-Length pre-check deferred to a later batch.
+    // Assertion stays at rejection level.
     let observed: string;
     try {
       const big = JSON.stringify({ version: '1', pad: 'x'.repeat(1_100_000), schedules: [] });
