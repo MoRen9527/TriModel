@@ -61,6 +61,7 @@
       <option value="trimetaverse">trimetaverse</option>
     </select>
     <label>api_key</label><input id="k-key" type="password" placeholder="sk-..." style="width:260px" autocomplete="off">
+    <button id="k-eye" title="切换输入可见性（仅当前输入值；已存密钥仍只显尾 4 位）" style="border:none;background:transparent;cursor:pointer;font-size:15px">👁</button>
     <label>base_url（可选）</label><input id="k-baseurl" placeholder="https://..." style="width:220px">
     <button class="primary" id="saveKey">保存（加密落 keys.enc）</button>
   </div>
@@ -138,6 +139,15 @@ async function refreshSecureStatus() {
   });
   el.innerHTML = rows.map(([k, v]) => '<b>' + k + '</b><span>' + v + '</span>').join('');
 }
+
+// ── 眼睛切换钮（CEO 15:55 增补）：仅切换正在输入值的可见性（password↔text）；
+// 已存储密钥展示不受影响——status 页签保持尾 4 位 masked，无任何读回路径。──
+$('k-eye').onclick = () => {
+  const input = $('k-key');
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  $('k-eye').textContent = reveal ? '🚫' : '👁';
+};
 
 $('saveKey').onclick = async () => {
   const provider = $('k-provider').value;
