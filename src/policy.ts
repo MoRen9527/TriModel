@@ -275,6 +275,7 @@ export function loadPolicy(pathOverride?: string): PolicyShape | null {
 /** Atomically persist the policy (tmp + rename). Default target: repo root. */
 export function savePolicy(policy: PolicyShape, pathOverride?: string): void {
   const target = pathOverride ?? policyPathForMachine(DEFAULT_MACHINE);
+  mkdirSync(dirname(target), { recursive: true });
   const tmp = `${target}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(policy, null, 2)}\n`, 'utf-8');
   renameSync(tmp, target);
