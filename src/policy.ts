@@ -131,6 +131,12 @@ export function validatePolicyShape(doc: unknown): string {
       if (typeof win.end !== 'string' || !TIME_RE.test(win.end)) {
         return `schedules[${i}].windows[${j}].end must be 'HH:MM' (00:00-23:59)`;
       }
+      // F1 (CTO 2026-09-11): zero-length windows never match at runtime
+      // (U13a) — reject at write time so config semantics stay consistent
+      // with engine semantics (no silent no-op windows).
+      if (win.start === win.end) {
+        return `schedules[${i}].windows[${j}] must not have start == end (zero-length window never matches)`;
+      }
     }
     if (s.timezone !== SUPPORTED_TIMEZONE) return `schedules[${i}].timezone must be '${SUPPORTED_TIMEZONE}' (P1)`;
     if (typeof s.enabled !== 'boolean') return `schedules[${i}].enabled must be a boolean`;

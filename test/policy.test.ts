@@ -194,6 +194,8 @@ describe('policy: save/load roundtrip (path override, repo root untouched)', () 
       schedules: [schedule({ id: 'dup' }), schedule({ id: 'dup', windows: [{ start: '00:00', end: '01:00' }] })],
     }));
     assert.ok(validatePolicyShape({ version: '1', schedules: [{ id: 's', target: 'other', model: 'm', windows: [{ start: '14:00', end: '18:00' }], timezone: 'Asia/Shanghai', enabled: true, priority: 1 }] }));
+    // F1 (CTO 2026-09-11): zero-length windows are rejected at write time
+    assert.ok(validatePolicyShape({ version: '1', schedules: [schedule({ windows: [{ start: '18:00', end: '18:00' }] })] }));
     assert.equal(validatePolicyShape({ version: '1', schedules: [schedule({})] }), '');
   });
 });

@@ -15,7 +15,9 @@ import { dispatch } from './api/routes.js';
 
 const HOST = process.env.TRIMODEL_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.TRIMODEL_PORT ?? 3333);
-// PUT /v1/config/policy body cap (413 defense); policies are tiny documents.
+// PUT /v1/config/policy connection-level oversized-request defense (F2 口径:
+// 超限即连接级断开 ECONNRESET，非规范 413 响应——Content-Length 预检规范化
+// 候下批)；policies are tiny documents.
 const MAX_BODY_BYTES = 1_000_000;
 
 // ── /ui static file service (GET only) ──

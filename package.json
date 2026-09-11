@@ -21,7 +21,7 @@
     "build": "tsc -p tsconfig.json",
     "start:server": "node dist/src/server.js",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 test/**/*.test.ts",
     "lint": "eslint src/ test/ --max-warnings 200",
     "lint:fix": "eslint src/ test/ --fix --max-warnings 200"
   },
