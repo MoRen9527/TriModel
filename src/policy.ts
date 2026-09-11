@@ -214,6 +214,9 @@ export function loadPolicyForMachine(machine: string = DEFAULT_MACHINE): PolicyS
 
 export function savePolicyForMachine(machine: string, doc: PolicyShape): void {
   const target = policyPathForMachine(machine);
+  // D6 (STE 实锤 2026-09-11): fresh 态（无 legacy→迁移不触发）policies/ 不存在
+  // → writeFileSync ENOENT → PUT 500。首存自建目录（recursive）。
+  mkdirSync(dirname(target), { recursive: true });
   const tmp = `${target}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}
 `, 'utf-8');

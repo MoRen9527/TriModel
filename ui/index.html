@@ -335,7 +335,7 @@ let tcCard = null;
 let tcEntries = {};
 let tcEditingId = null;
 
-function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { n.textContent = ''; }, 6000); }
+function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
 
 function tcBadge() {
   const b = $('tc-badge');
@@ -391,14 +391,14 @@ function tcRender() {
   });
   tcRefreshCurrentSelect();
   // ⑥ 回落提示=状态派生（D5 修正）：「已回落」是引擎实际裁决后的事实——
-  // 仅当卡片处于已应用态且当前使用条目在该已应用卡中被停用时才提示；
-  // 暂存（未保存卡片）条目的开关切换=表单态，不触发回落提示。
-  const sel = $('tc-r-entry');
-  const currentId = (sel.value || '').replace(/^entry:/, '');
-  const currentEntry = tcEntries[currentId];
+  // 意图源=卡片 rules（fixed 引用），不取下拉现值（停用后下拉已切走）；
+  // 仅当卡片处于已应用态且意图条目被停用时才提示；暂存条目开关=表单态不触发。
+  const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
+  const currentId = rule?.entry_id ?? '';
+  const currentEntry = currentId ? tcEntries[currentId] : undefined;
   const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
   const tip = $('tc-fallback-tip');
-  if (currentEntry && !currentEntry.enabled && appliedEntries.includes(currentId)) {
+  if (rule && currentEntry && !currentEntry.enabled && appliedEntries.includes(currentId)) {
     tip.textContent = '已回落：条目 ' + currentId + ' 已停用';
     tip.hidden = false;
   } else {
@@ -522,8 +522,13 @@ async function loadTrimmc() {
   if (r.status !== 200) { failPanel('error-card', humanize(r.status, r.body.error)); tcBadge(); return; }
   msg('error-card', '');
   tcCard = r.body.card_file_present ? r.body.card : null;
-  tcEntries = tcCard ? JSON.parse(JSON.stringify(tcCard.provider_entries || {})) : {};
-  $('tc-dirty').textContent = '';
+  // S3 数据绑定硬规则：本地有未保存改动（如行内启用翻转）时不重置条目态——
+  // 异步重拉不得覆盖用户输入/切换（否则引擎事实提示与表单态互相打架）。
+  const hasLocalChanges = $('tc-dirty').textContent.includes('未保存');
+  if (!hasLocalChanges) {
+    tcEntries = tcCard ? JSON.parse(JSON.stringify(tcCard.provider_entries || {})) : {};
+    $('tc-dirty').textContent = '';
+  }
   // S3 数据绑定硬规则：不覆盖用户正在输入的字段（空时才从卡回填）
   if (!$('tc-conn').value) $('tc-conn').value = tcCard?.connection?.name || '';
   tcRender();

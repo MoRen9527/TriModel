@@ -15,8 +15,15 @@ import { migrateKeysEncToCard } from '../src/secure-keys.js';
 import { loadCard } from '../src/trimmc-card.js';
 import { encrypt } from '../src/security/key-encryptor.js';
 import { MODEL_CATALOG } from '../src/model-catalog.js';
+let tcCardRef: unknown; let tcEntriesRef: unknown;
 
 const UI_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
+
+/** Deterministic wait: poll until cond() or timeout (ms). Replaces fixed sleeps. */
+async function waitFor(cond: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!cond() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 15));
+}
 
 /** Boot the real UI in jsdom with fetch stubbed to a scripted queue. */
 function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders: Array<(url: string) => { status: number; body: unknown }>) {
@@ -27,6 +34,9 @@ function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders
       let call = 0;
       window.fetch = (async (url: string, init?: RequestInit) => {
         fetchLog.push({ url, init });
+        // window closed mid-flight (test teardown): resolve inert so no
+        // render callback touches a dead document (unhandledRejection guard)
+        if (window.closed) return { status: 0, json: async () => ({}), text: async () => '', headers: new Map() } as unknown as Response;
         const r = responders[Math.min(call, responders.length - 1)](url);
         call += 1;
         return { status: r.status, json: async () => r.body, text: async () => JSON.stringify(r.body), headers: new Map() } as unknown as Response;
@@ -63,7 +73,6 @@ describe('S8.2: jsdom 首启五断言', () => {
     // 首启无令牌不应发起数据请求（禁用态不发拉取）
     const dataCalls = log.filter((c) => c.url.includes('/v1/')).length;
     assert.equal(dataCalls, 0, '无令牌首启不应拉数据');
-    dom.window.close();
   });
 
   it('断言② 令牌保存→自动重拉全部数据（去静默）', async () => {
@@ -80,7 +89,6 @@ describe('S8.2: jsdom 首启五断言', () => {
     assert.ok(log.some((c) => c.url.includes('/v1/models')), 'models 必须被重拉');
     assert.equal(d.getElementById('conn-settings').open, false, '连接成功后折叠');
     assert.equal(d.getElementById('conn-dot').className, 'dot ok');
-    dom.window.close();
   });
 
   it('断言③ 模型下拉有值（GET /v1/models 填充）', async () => {
@@ -94,7 +102,6 @@ describe('S8.2: jsdom 首启五断言', () => {
     const opts = d.getElementById('tc-e-model').querySelectorAll('option');
     assert.equal(opts.length, 3, '下拉必须被真实数据填充');
     assert.equal(opts[0].value, 'deepseek-v4-pro');
-    dom.window.close();
   });
 
   it('断言④ 条目提交可达：添加→保存卡片→PUT card 发出', async () => {
@@ -112,12 +119,11 @@ describe('S8.2: jsdom 首启五断言', () => {
     (d.getElementById('tc-e-key') as HTMLInputElement).value = 'sk-test-0001-12345';
     d.getElementById('tc-e-save').click();
     d.getElementById('tc-save').click();
-    await new Promise((r) => setTimeout(r, 120));
+    await waitFor(() => log.some((c) => c.url.includes('/trimmc-card') && c.init?.method === 'PUT'));
     const cardPut = log.find((c) => c.url.includes('/trimmc-card') && c.init?.method === 'PUT');
     assert.ok(cardPut, 'PUT card must be issued');
     const sent = JSON.parse(typeof cardPut.init?.body === 'string' ? cardPut.init.body : '');
     assert.equal(sent.provider_entries.e1.api_key, 'sk-test-0001-12345', 'plaintext hydrates server-side (never stored raw)');
-    dom.window.close();
   });
 
   it('断言⑤ TriMMC 卡片区域通道词汇+结构词汇零出现', () => {
@@ -142,28 +148,39 @@ describe('S8.2: jsdom 首启五断言', () => {
       if (url.includes('/trimmc-card')) return { status: 200, body: { object: 'config.trimmc-card', card_file_present: true, card: appliedCard, entries_masked: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', masked: '****0001', enabled: true, updated_at: 'x' } } } };
       return okFor(url);
     }]);
-    await new Promise((r) => setTimeout(r, 80));
     const d = dom.window.document;
+    (d.getElementById('token') as HTMLInputElement).value = 'tk-api';
+    (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
+    d.getElementById('conn-save').click();
+    await waitFor(() => !!d.querySelector('[data-enable]'));
     // applied entry toggle → fallback tip derived (visible)
-    const sw = d.querySelector('[data-enable]') as HTMLInputElement;
+    const sw = d.querySelector('[data-enable]') as HTMLInputElement | null;
+    assert.ok(sw, 'entry row must be rendered before the toggle test');
+    (dom.window as unknown as { tcEntries: unknown }).tcEntries = tcEntriesRef;
     sw.checked = false;
     sw.dispatchEvent(new dom.window.Event('change'));
-    await new Promise((r) => setTimeout(r, 30));
+    await waitFor(() => d.getElementById('tc-fallback-tip').hidden === false);
+    if (d.getElementById('tc-fallback-tip').hidden) {
+      console.log('[D5-FAIL] cardState =', d.getElementById('tc-badge').textContent, '| sel =', JSON.stringify(d.getElementById('tc-r-entry').value), '| e1.enabled =', JSON.stringify((tcEntries as Record<string, { enabled?: boolean }>)[tcEditingId ?? 'e1']?.enabled), '| rules =', JSON.stringify(tcCard?.rules));
+    }
+    assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied-entry disable must show fallback tip');
     assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied-entry disable must show fallback tip');
     // pending-entry (fresh, unsaved) toggle → quiet hint, NO fallback tip
     const tipBefore = d.getElementById('tc-fallback-tip').hidden;
     (d.getElementById('tc-e-id') as HTMLInputElement).value = 'e2';
     (d.getElementById('tc-e-key') as HTMLInputElement).value = 'sk-pending-1234567';
+    (d.getElementById('tc-e-baseurl') as HTMLInputElement).value = 'https://api.deepseek.com/anthropic';
     d.getElementById('tc-e-save').click();
     const rows = d.getElementById('tc-entry-body').children;
     const sw2 = rows[1]?.querySelector('[data-enable]') as HTMLInputElement | null;
+    console.log('[D5-2] rows =', rows.length, '| sw2 =', !!sw2, '| msg before =', JSON.stringify(d.getElementById('tc-msg').textContent));
     if (sw2) {
       sw2.checked = true;
       sw2.dispatchEvent(new dom.window.Event('change'));
     }
+    console.log('[D5-2] msg after =', JSON.stringify(d.getElementById('tc-msg').textContent));
     assert.equal(d.getElementById('tc-msg').textContent.includes('将在应用后生效'), true, 'pending toggle = quiet hint');
     assert.equal(d.getElementById('tc-fallback-tip').hidden, tipBefore, 'pending toggle must not flip the fallback tip');
-    dom.window.close();
   });
 
   it('fetch 失败 → 人话错误面板+重试钮（S3.2 禁静默空）', async () => {
@@ -178,7 +195,6 @@ describe('S8.2: jsdom 首启五断言', () => {
     assert.equal(panel.hidden, false);
     assert.ok(panel.textContent.includes('无法连接配置服务'), 'must be human phrasing');
     assert.ok(panel.querySelector('[data-retry]'), 'retry button must exist');
-    dom.window.close();
   });
 });
 
