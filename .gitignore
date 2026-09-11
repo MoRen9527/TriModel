@@ -11,3 +11,4 @@ coverage/
 .env.development
 trimodel.log
 trimodel.err.log
+policy.json

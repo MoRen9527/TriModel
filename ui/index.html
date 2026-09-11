@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TriModel 策略面 · default-model 调度</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    margin: 0 auto; padding: 24px 16px 48px; max-width: 960px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #666; margin-bottom: 20px; }
+  section { border: 1px solid #ccc3; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc3; padding: 6px 8px; text-align: left; font-size: 13px; }
+  th { background: #8881; }
+  input, select, button {
+    font: inherit; padding: 4px 8px; border: 1px solid #8886; border-radius: 4px;
+    background: transparent; color: inherit;
+  }
+  button { cursor: pointer; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.danger { color: #dc2626; border-color: #dc2626; }
+  .row-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  .row-form label { font-size: 12px; color: #666; }
+  .kv { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; font-size: 13px; }
+  .kv b { font-weight: 600; }
+  .ok { color: #16a34a; } .warn { color: #d97706; } .err { color: #dc2626; }
+  #msg { margin-top: 10px; font-size: 13px; min-height: 20px; white-space: pre-wrap; }
+  code { background: #8882; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>TriModel 策略面</h1>
+<div class="sub">default-model 时间窗调度（Asia/Shanghai；start 含 / end 不含）· LG-035 P1</div>
+
+<section>
+  <h2>当前生效值对读</h2>
+  <div class="row-form" style="margin:0 0 12px">
+    <label>API Token（GET /v1/config/keys 鉴权用，仅存本浏览器）</label>
+    <input id="token" type="password" placeholder="TRIMODEL_API_TOKEN" style="width:260px">
+    <button id="refreshNow">刷新对读</button>
+  </div>
+  <div class="kv" id="effective"></div>
+</section>
+
+<section>
+  <h2>策略列表（policy.json）</h2>
+  <table id="schedTable">
+    <thead><tr><th>id</th><th>model</th><th>窗口</th><th>enabled</th><th>priority</th><th>操作</th></tr></thead>
+    <tbody id="schedBody"></tbody>
+  </table>
+  <div class="row-form">
+    <label>id</label><input id="f-id" placeholder="workday-deepseek" style="width:150px">
+    <label>model</label><select id="f-model" style="width:220px"></select>
+    <label>窗口</label><input id="f-start" value="14:00" style="width:70px"> –
+    <input id="f-end" value="18:00" style="width:70px">
+    <label>priority</label><input id="f-priority" type="number" value="10" style="width:70px">
+    <label><input id="f-enabled" type="checkbox" checked> enabled</label>
+    <button class="primary" id="addSched">添加 / 更新（按 id 覆盖）</button>
+  </div>
+  <div class="row-form">
+    <button id="savePolicy">保存到服务器（PUT /v1/config/policy）</button>
+    <button id="reloadPolicy">从服务器重载（丢弃本地改动）</button>
+    <span class="sub" id="dirty"></span>
+  </div>
+  <div id="msg"></div>
+</section>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const TZ = 'Asia/Shanghai';
+let policy = { version: '1', schedules: [] };
+let dirty = false;
+
+function msg(text, cls) { $('msg').textContent = text || ''; $('msg').className = cls || ''; }
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
+
+function authHeaders() {
+  const t = $('token').value.trim();
+  return t ? { authorization: 'Bearer ' + t } : {};
+}
+
+// ── effective 对读：GET policy（无鉴权）+ GET keys（Bearer token）──
+async function refreshEffective() {
+  localStorage.setItem('trimodel_ui_token', $('token').value);
+  const out = [];
+  const p = await api('/v1/config/policy');
+  if (p.status === 200) {
+    const e = p.body.effective || {};
+    out.push(['policy.effective.model', e.model + '（source=' + e.source + ', matched=' + (e.matched_schedule_id ?? '∅') + '）']);
+    out.push(['policy_file_present', String(p.body.policy_file_present)]);
+  } else {
+    out.push(['GET /v1/config/policy', 'HTTP ' + p.status]);
+  }
+  const k = await api('/v1/config/keys', { headers: authHeaders() });
+  if (k.status === 200) {
+    out.push(['keys.default_model', k.body.default_model]);
+    out.push(['两源一致', k.body.default_model === (p.body.effective || {}).model ? '✓ 一致' : '✗ 不一致']);
+  } else {
+    out.push(['GET /v1/config/keys', 'HTTP ' + k.status + '（检查 token）']);
+  }
+  $('effective').innerHTML = out.map(([k2, v]) => '<b>' + k2 + '</b><span>' + v + '</span>').join('');
+}
+
+// ── 策略列表渲染 ──
+function render() {
+  const tb = $('schedBody');
+  tb.innerHTML = '';
+  policy.schedules.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    const wins = (s.windows || []).map((w) => w.start + '–' + w.end).join(' + ');
+    tr.innerHTML =
+      '<td><code></code></td><td></td><td></td><td></td><td></td>' +
+      '<td><button data-act="edit">编辑</button> <button data-act="del" class="danger">删除</button></td>';
+    tr.children[0].firstChild.textContent = s.id;
+    tr.children[1].textContent = s.model;
+    tr.children[2].textContent = wins;
+    tr.children[3].textContent = s.enabled ? '✓' : '✗';
+    tr.children[4].textContent = String(s.priority);
+    tr.querySelector('[data-act=edit]').onclick = () => {
+      $('f-id').value = s.id; $('f-model').value = s.model;
+      $('f-start').value = s.windows[0] ? s.windows[0].start : '00:00';
+      $('f-end').value = s.windows[0] ? s.windows[0].end : '00:00';
+      $('f-priority').value = s.priority; $('f-enabled').checked = s.enabled;
+    };
+    tr.querySelector('[data-act=del]').onclick = () => {
+      policy.schedules.splice(i, 1); dirty = true; render(); markDirty();
+    };
+    tb.appendChild(tr);
+  });
+  $('dirty').textContent = dirty ? '（有未保存改动）' : '';
+}
+
+function markDirty() { $('dirty').textContent = dirty ? '（有未保存改动）' : ''; }
+
+$('addSched').onclick = () => {
+  const id = $('f-id').value.trim();
+  const model = $('f-model').value;
+  const start = $('f-start').value.trim(), end = $('f-end').value.trim();
+  if (!id || !model) return msg('id 与 model 必填', 'err');
+  if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) return msg('窗口格式须为 HH:MM', 'err');
+  const existing = policy.schedules.findIndex((s) => s.id === id);
+  const entry = {
+    id, target: 'daemon-default', model,
+    windows: [{ start, end }],
+    timezone: TZ, enabled: $('f-enabled').checked,
+    priority: Number($('f-priority').value) || 0,
+  };
+  if (existing >= 0) policy.schedules[existing] = entry; else policy.schedules.push(entry);
+  dirty = true; render(); markDirty();
+  msg('已加入本地列表（id=' + id + '）；保存到服务器后才生效', 'warn');
+};
+
+$('savePolicy').onclick = async () => {
+  const r = await api('/v1/config/policy', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(policy),
+  });
+  if (r.status === 200) {
+    dirty = false; markDirty(); msg('已保存：' + JSON.stringify(r.body.effective), 'ok');
+    refreshEffective();
+  } else {
+    msg('保存失败 HTTP ' + r.status + '：' + (r.body.error || ''), 'err');
+  }
+};
+
+$('reloadPolicy').onclick = async () => { dirty = false; await loadAll(); msg('已从服务器重载', 'ok'); };
+$('refreshNow').onclick = refreshEffective;
+
+async function loadModels() {
+  const r = await api('/v1/models');
+  const sel = $('f-model');
+  sel.innerHTML = '';
+  if (r.status === 200 && Array.isArray(r.body.data)) {
+    r.body.data.forEach((m) => {
+      const o = document.createElement('option');
+      o.value = m.id; o.textContent = m.id + '（' + (m.display_name || '') + '）';
+      sel.appendChild(o);
+    });
+  } else {
+    msg('GET /v1/models 失败（HTTP ' + r.status + '），下拉为空', 'err');
+  }
+}
+
+async function loadAll() {
+  const r = await api('/v1/config/policy');
+  if (r.status === 200 && r.body.policy) policy = r.body.policy;
+  render();
+  refreshEffective();
+}
+
+$('token').value = localStorage.getItem('trimodel_ui_token') || '';
+loadModels().then(loadAll);
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@ import type { ModelClient } from '../client.js';
 import { handleHealth } from './health.js';
 import { handleModels } from './models.js';
 import { handleGetKeys, handleRefreshKeys } from './keys.js';
+import { handleGetPolicy, handlePutPolicy } from './policy.js';
 
 export type RouteResult = {
   statusCode: number;
@@ -16,6 +17,7 @@ export async function dispatch(
   method: string,
   url: string,
   headers: Record<string, string>,
+  rawBody?: string,
 ): Promise<RouteResult> {
   const jsonHeaders = { 'content-type': 'application/json' };
 
@@ -42,6 +44,20 @@ export async function dispatch(
   if (url === '/v1/config/keys/refresh' && method === 'POST') {
     const auth = headers['authorization'];
     const result = handleRefreshKeys(auth);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // GET /v1/config/policy — current policy + effective preview (P1: no auth,
+  // loopback-only; admin token is a pending adjudication item)
+  if (url === '/v1/config/policy' && method === 'GET') {
+    const result = handleGetPolicy();
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // PUT /v1/config/policy — validate + persist (P1: no auth, loopback-only;
+  // pending adjudication item noted in src/api/policy.ts)
+  if (url === '/v1/config/policy' && method === 'PUT') {
+    const result = handlePutPolicy(rawBody);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 

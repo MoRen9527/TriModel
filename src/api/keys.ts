@@ -1,6 +1,7 @@
 // ── TriModel API: Key distribution endpoints ──
 // GET /v1/config/keys — Returns provider keys for client consumption
 // POST /v1/config/keys/refresh — Admin-only force refresh of key cache
+import { effectiveModel } from '../policy.js';
 
 interface ProviderKey {
   api_key: string;
@@ -25,7 +26,11 @@ const API_TOKEN = process.env.TRIMODEL_API_TOKEN ?? '';
 // O-R3-1 (2026-08-13): keys API 报告的 default_model 同步 tmv-* 注册表
 // （消费方 TriLC key-cache 会取此值，旧名 'deepseek-v4-pro' 与 C12/C13 后
 // 生产注册表错配）。env TRIMODEL_DEFAULT_MODEL 覆盖仍优先。
-const DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'tmv-deepseek-v4-pro';
+// LG-035 P1 (2026-09-11): default_model 热链接入策略面——每次请求经
+// effectiveModel() 逐请求求值（STE 勘误对齐：不做模块级常量冻结，PUT 后
+// 下一次 GET 即得新值）；policy.json 命中窗口返回窗口模型，否则回落
+// env default（loadPolicy 文件缺席=行为与旧值完全一致）。env fallback
+// 求值逻辑归 src/policy.ts envDefaultModel()。
 const REFRESH_INTERVAL_S = Number(process.env.TRIMODEL_KEY_REFRESH_INTERVAL_S ?? 900);
 
 function computeExpiresAt(_unused: number): string {
@@ -103,7 +108,7 @@ export function handleGetKeys(authHeader: string | undefined): { statusCode: num
     body: {
       object: 'config.keys',
       keys,
-      default_model: DEFAULT_MODEL,
+      default_model: effectiveModel().model,
       refresh_interval_s: REFRESH_INTERVAL_S,
       expires_at: computeExpiresAt(REFRESH_INTERVAL_S),
     },
