@@ -1,0 +1,263 @@
+// ── LG-035 STE gate: TriModel UI E2E (E1-E8, real browser via playwright-core) ──
+// CTO 裁定（2026-09-11 21:20）：playwright-core 装包采纳（devDep-only）；护栏=
+// ①env-gate 族：chromium 缺席机器显式 SKIP 禁静默绿 ②devDep-only ③executablePath
+// 钉死+TRIMODEL_E2E_CHROMIUM 覆写+回退发现路径文档化 ④串行进门（npm test glob 继承）。
+// 目标 UI=88ecedd2 重设计实现（FSD 工作树在飞版，选择器随落库对表）。
+// 相位：E1=空令牌首启（boot() 源码语义：conn-settings open+guide 显+面板禁用）；
+// E2-E8=连接相位（conn-save 后 dot ok+数据拉取）。
+import { describe, it, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
+import net from 'node:net';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import type { Browser, Page } from 'playwright-core';
+
+// ①env-gate 延伸：驱动包本身缺失（如干净 npm ci 后）也显式 SKIP，禁静默红
+const pw = await import('playwright-core').then((m) => m).catch(() => null);
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const POLICY_FILE = join(REPO_ROOT, 'policy.json');
+const API_TOKEN = 'ste-gate-token';
+const ADMIN_TOKEN = 'ste-admin-token';
+const CATALOG = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
+// E5 denylist：与 FSD trimmc-card.test.ts T3 源级清单同源（浏览器渲染面超集扫描）
+const BANNED_VOCABULARY = ['SSH', 'ssh', '隧道', 'tunnel', '推送卡', 'apply-to-machine'];
+
+/** ③ executablePath：TRIMODEL_E2E_CHROMIUM 覆写 → 缓存回退发现（文档化路径）。 */
+function discoverChromium(): string | null {
+  const override = process.env.TRIMODEL_E2E_CHROMIUM;
+  if (override) return existsSync(override) ? override : null;
+  const root = process.env.LOCALAPPDATA;
+  if (!root) return null;
+  const cache = join(root, 'ms-playwright');
+  if (!existsSync(cache)) return null;
+  const dirs = readdirSync(cache)
+    .filter((d) => /^chromium-\d+$/.test(d))
+    .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]));
+  for (const d of dirs) {
+    for (const sub of ['chrome-win64', 'chrome-win']) {
+      const exe = join(cache, d, sub, 'chrome.exe');
+      if (existsSync(exe)) return exe;
+    }
+  }
+  return null;
+}
+
+const CHROMIUM = discoverChromium();
+const SKIP_REASON = !pw
+  ? 'SKIP (env-gate): playwright-core not installed (devDep) — npm i -D playwright-core'
+  : CHROMIUM
+    ? false
+    : `SKIP (env-gate): chromium unavailable — tried TRIMODEL_E2E_CHROMIUM override then ${join(process.env.LOCALAPPDATA ?? '<LOCALAPPDATA unset>', 'ms-playwright')}/chromium-*/chrome-win(64)/chrome.exe; install via npx playwright install chromium`;
+
+let server: ChildProcess | null = null;
+let browser: Browser | null = null;
+let port = 0;
+let workDir = '';
+const snap = { policy: null as string | null };
+
+function freePort(): Promise<number> {
+  return new Promise((resolveP, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      const p = typeof addr === 'object' && addr ? addr.port : 0;
+      srv.close(() => resolveP(p));
+    });
+    srv.on('error', reject);
+  });
+}
+
+function bootServer(withAdmin: boolean): ChildProcess {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TRIMODEL_PORT: String(port),
+    TRIMODEL_API_TOKEN: API_TOKEN,
+    TRIMODEL_DEFAULT_MODEL: 'deepseek-v4-pro',
+  };
+  delete env.TRIMODEL_HOST;
+  if (withAdmin) env.TRIMODEL_ADMIN_TOKEN = ADMIN_TOKEN;
+  else delete env.TRIMODEL_ADMIN_TOKEN;
+  return spawn(process.execPath, ['--import', 'tsx', join('src', 'server.ts')], {
+    cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+async function killAndWait(c: ChildProcess | null): Promise<void> {
+  if (!c || c.exitCode !== null || c.signalCode !== null) return;
+  const done = new Promise<void>((res) => c.once('exit', () => res()));
+  c.kill();
+  await Promise.race([done, new Promise((r) => setTimeout(r, 3000))]);
+}
+
+async function waitHealth(timeoutMs = 10000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return;
+    } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  throw new Error(`server :${port} not healthy in ${timeoutMs}ms`);
+}
+
+describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP_REASON }, () => {
+  before(async () => {
+    snap.policy = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
+    rmSync(POLICY_FILE, { force: true });
+    workDir = mkdtempSync(join(tmpdir(), 'ste-ui-e2e-'));
+    port = await freePort();
+    server = bootServer(false); // phase 1: E1 first-launch (empty-token) surface
+    await waitHealth();
+    if (!pw || !CHROMIUM) throw new Error('precondition skipped — describe guard should have skipped this suite');
+    browser = await pw.chromium.launch({ executablePath: CHROMIUM, headless: true });
+  });
+
+  after(async () => {
+    await browser?.close();
+    await killAndWait(server);
+    rmSync(workDir, { recursive: true, force: true });
+    if (snap.policy === null) rmSync(POLICY_FILE, { force: true });
+    else writeFileSync(POLICY_FILE, snap.policy, 'utf-8');
+  });
+
+  async function freshPage(waitMs = 600): Promise<Page> {
+    if (!browser) throw new Error('browser not initialised');
+    const ctx = await browser.newContext(); // fresh localStorage per scenario
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${port}/ui`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(waitMs);
+    return page;
+  }
+
+  it('E1 (empty-token first launch): settings auto-expanded + guide visible + data panels disabled + idle dot', async () => {
+    const page = await freshPage(800);
+    assert.equal(await page.$eval('#conn-settings', (el) => (el as HTMLDetailsElement).open), true, '连接设置自动展开（boot 源码语义①）');
+    assert.equal(await page.$eval('#conn-guide', (el) => el.hidden), false, '引导可见');
+    const guide = await page.locator('#conn-guide').textContent();
+    assert.ok(/首次使用/.test(guide ?? ''), '引导文案内容在位');
+    assert.ok(((await page.locator('#conn-dot').getAttribute('class')) ?? '').includes('idle'), '连接点=idle');
+    const label = await page.locator('#conn-label').textContent();
+    assert.equal(label, '未连接');
+    assert.ok(await page.locator('#tc-empty-entries').isVisible(), '卡片空态指引可见=数据面板禁用态');
+    await page.context().close();
+  });
+
+  it('E2 (phase-2): 连接 → dot flips ok/已连接 + data re-pull lands', async () => {
+    await killAndWait(server);
+    server = bootServer(true); // phase 2: admin surface live
+    await waitHealth();
+    const page = await freshPage();
+    await page.fill('#token', API_TOKEN);
+    await page.fill('#adminToken', ADMIN_TOKEN);
+    await page.click('#conn-save');
+    await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 6000 });
+    assert.equal(await page.locator('#conn-label').textContent(), '已连接');
+    await page.waitForFunction(() => (document.querySelector('#effective')?.textContent ?? '').length > 0, { timeout: 6000 });
+    const stored = await page.evaluate(() => ({
+      t: localStorage.getItem('trimodel_ui_token'),
+      a: localStorage.getItem('trimodel_ui_admin_token'),
+    }));
+    assert.equal(stored.t, API_TOKEN);
+    assert.equal(stored.a, ADMIN_TOKEN);
+    await page.context().close();
+  });
+
+  it('E3: entry-form model dropdown carries the five official names byte-for-byte', async () => {
+    const page = await freshPage();
+    await page.fill('#token', API_TOKEN);
+    await page.fill('#adminToken', ADMIN_TOKEN);
+    await page.click('#conn-save');
+    await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 6000 });
+    await page.click('#tc-open-add'); // form reveals → model select populates
+    await page.waitForFunction(
+      () => (document.querySelector('#tc-e-model') as HTMLSelectElement)?.options?.length === 5,
+      { timeout: 6000 },
+    );
+    const opts = await page.$eval('#tc-e-model', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
+    assert.deepEqual(opts, CATALOG);
+    await page.context().close();
+  });
+
+  it('E4: card entry submit reachable — 保存卡片 PUT lands server-side', async () => {
+    const page = await freshPage();
+    await page.fill('#token', API_TOKEN);
+    await page.fill('#adminToken', ADMIN_TOKEN);
+    await page.click('#conn-save');
+    await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 6000 });
+    await page.fill('#tc-conn', 'ste-gate-machine'); // 机器名称必填（保存前置校验，探针实证）
+    await page.click('#tc-open-add');
+    await page.fill('#tc-e-id', 'gate-ui-e2e');
+    await page.selectOption('#tc-e-model', 'GLM-5.3');
+    await page.fill('#tc-e-key', 'sk-gate-ui-e2e-key');
+    await page.click('#tc-e-save'); // entry into local table
+    await page.click('#tc-save'); // 保存卡片 → PUT /v1/config/trimmc-card
+    await page.waitForTimeout(600);
+    const res = await fetch(`http://127.0.0.1:${port}/v1/config/trimmc-card`, {
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { card?: { provider_entries?: Record<string, { model?: string }> } };
+    const entries = body.card?.provider_entries ?? {};
+    assert.ok(entries['gate-ui-e2e'], 'UI submit must persist the card entry server-side');
+    assert.equal(entries['gate-ui-e2e']?.model, 'GLM-5.3');
+    await page.context().close();
+  });
+
+  it('E5: rendered DOM carries zero channel vocabulary (superset of source-level scan)', async () => {
+    const page = await freshPage();
+    const content = await page.content();
+    for (const banned of BANNED_VOCABULARY) {
+      assert.equal(content.includes(banned), false, `channel vocabulary '${banned}' must not appear in rendered DOM`);
+    }
+    assert.equal(await page.locator('#tc-push').count(), 0, 'no push/apply button');
+    await page.context().close();
+  });
+
+  it('E6: eye toggle real click — password↔text + icon swap (P2 manual residual closed)', async () => {
+    const page = await freshPage();
+    await page.fill('#token', 'abc-test-value');
+    const before = await page.$eval('#token', (el) => (el as HTMLInputElement).type);
+    const iconBefore = await page.locator('#token-eye').textContent();
+    await page.click('#token-eye');
+    const mid = await page.$eval('#token', (el) => (el as HTMLInputElement).type);
+    const iconMid = await page.locator('#token-eye').textContent();
+    await page.click('#token-eye');
+    const after = await page.$eval('#token', (el) => (el as HTMLInputElement).type);
+    assert.equal(before, 'password');
+    assert.equal(mid, 'text');
+    assert.equal(iconMid, '🚫');
+    assert.equal(after, 'password');
+    assert.notEqual(iconBefore, iconMid);
+    await page.context().close();
+  });
+
+  it('E7: wrong admin token → error panel renders 人话 guidance (no bare code)', async () => {
+    const page = await freshPage();
+    await page.fill('#token', API_TOKEN);
+    await page.fill('#adminToken', 'wrong-token');
+    await page.click('#conn-save');
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('#error-card');
+        return el && !el.hidden && (el.textContent ?? '').length > 5;
+      },
+      { timeout: 6000 },
+    );
+    const text = await page.locator('#error-card').textContent();
+    assert.ok(/令牌不正确|请检查连接设置/.test(text ?? ''), `人话指引须渲染，实际: ${String(text).slice(0, 80)}`);
+    await page.context().close();
+  });
+
+  it('E8: full-page screenshot evidence lands non-trivially', async () => {
+    const page = await freshPage();
+    const shot = join(workDir, 'e8-fullpage.png');
+    await page.screenshot({ path: shot, fullPage: true });
+    const size = statSync(shot).size;
+    assert.ok(size > 10_000, `screenshot should be substantive, got ${size} bytes`);
+    await page.context().close();
+  });
+});
