@@ -8,12 +8,16 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'path';
 import {
   UPSTREAM_ROUTES,
   resolveUpstream,
   rewriteMessagesBody,
 } from '../src/anthropic-proxy.js';
 import { createProxyServer } from '../src/proxy-server.js';
+import { upsertSecureKey } from '../src/secure-keys.js';
 import type { PolicyShape } from '../src/policy.js';
 
 const ENV_DEFAULT_MODEL = process.env.TRIMODEL_DEFAULT_MODEL ?? 'tmv-deepseek-v4-pro';
@@ -48,6 +52,39 @@ describe('proxy: upstream route table (三案)', () => {
     assert.equal(up?.baseUrl, 'https://open.bigmodel.cn/api/anthropic');
     assert.equal(up?.apiKey, 'sk-glm-test');
     assert.equal(up?.route.prefix, 'glm');
+  });
+
+  it('灰度前接线: keys.enc same-provider key OVERRIDES env (secure-first resolution)', () => {
+    // upsertSecureKey via secure-keys write path; tmp keystore, repo untouched
+    const dir = mkdtempSync(join(tmpdir(), 'trimodel-proxykey-test-'));
+    try {
+      const keystore = join(dir, 'keys.enc');
+      upsertSecureKey('deepseek', 'sk-from-keysenc', undefined, keystore);
+      process.env.DEEPSEEK_API_KEY = 'sk-from-env';
+      const up = resolveUpstream('tmv-deepseek-v4-pro', keystore);
+      assert.equal(up?.apiKey, 'sk-from-keysenc');
+      // Other provider without keys.enc entry falls back to env
+      process.env.GLM_API_KEY = 'sk-glm-env';
+      const glm = resolveUpstream('glm-5.3', keystore);
+      assert.equal(glm?.apiKey, 'sk-glm-env');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('灰度前接线: keys.enc absent → env fallback; corrupted → env fallback, never throws', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trimodel-proxykey2-test-'));
+    try {
+      process.env.DEEPSEEK_API_KEY = 'sk-env-fallback';
+      // Absent keystore
+      assert.equal(resolveUpstream('deepseek-v4-pro', join(dir, 'missing.enc'))?.apiKey, 'sk-env-fallback');
+      // Corrupted keystore (fail-safe family)
+      const bad = join(dir, 'bad.enc');
+      writeFileSync(bad, Buffer.from('garbage-not-aes-gcm'));
+      assert.equal(resolveUpstream('deepseek-v4-pro', bad)?.apiKey, 'sk-env-fallback');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('unmatched prefix → null (no route, proxy refuses rather than mis-routing keys)', () => {

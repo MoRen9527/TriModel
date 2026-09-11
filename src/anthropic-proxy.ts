@@ -16,6 +16,7 @@
 // (fetch 流管道弃用=18 稳定性优先，CTO 令文钦定 node:https request。)
 import { effectiveModel, envDefaultModel, evaluatePolicy, loadPolicy } from './policy.js';
 import type { PolicyShape } from './policy.js';
+import { readSecureKeys } from './secure-keys.js';
 import http from 'node:http';
 import https from 'node:https';
 
@@ -27,6 +28,8 @@ export interface UpstreamRoute {
   readonly baseUrl: () => string;
   /** Env var name holding the upstream API key. */
   readonly apiKeyEnv: string;
+  /** keys.enc provider name (P2 secure store) overriding the env key. */
+  readonly secureProvider: string;
   /**
    * Optional upstream model-name mapping (tmv-* registry canonical names are
    * not understood by native endpoints — strip the registry shell):
@@ -42,12 +45,14 @@ export const UPSTREAM_ROUTES: readonly UpstreamRoute[] = [
     // 现役实证：src/providers/deepseek-anthropic.ts 常量同源
     baseUrl: () => process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? 'https://api.deepseek.com/anthropic',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
+    secureProvider: 'deepseek',
     mapModelName: (model) => model.replace(/^tmv-/, ''),
   },
   {
     prefix: 'deepseek',
     baseUrl: () => process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? 'https://api.deepseek.com/anthropic',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
+    secureProvider: 'deepseek',
   },
   {
     prefix: 'tmv-glm',
@@ -55,12 +60,14 @@ export const UPSTREAM_ROUTES: readonly UpstreamRoute[] = [
     // P3-sg 切片 2 部署窗核对；GLM_API_KEY 见 .env.example 注释行）
     baseUrl: () => process.env.GLM_ANTHROPIC_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic',
     apiKeyEnv: 'GLM_API_KEY',
+    secureProvider: 'glm',
     mapModelName: (model) => model.replace(/^tmv-/, ''),
   },
   {
     prefix: 'glm',
     baseUrl: () => process.env.GLM_ANTHROPIC_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic',
     apiKeyEnv: 'GLM_API_KEY',
+    secureProvider: 'glm',
   },
 ];
 
@@ -70,12 +77,23 @@ export interface ResolvedUpstream {
   apiKey: string;
 }
 
-/** Prefix-route the (already rewritten) model to its upstream + key. */
-export function resolveUpstream(model: string): ResolvedUpstream | null {
+/**
+ * Prefix-route the (already rewritten) model to its upstream + key.
+ *
+ * Key resolution order (灰度前接线，2026-09-11): keys.enc (P2 secure store)
+ * same-name provider api_key FIRST, env fallback second — COS 运维通道
+ * （SSH 隧道→UI→secure 写面）写入后下一请求即生效零重启（readSecureKeys
+ * 逐调用读文件，零缓存）。keys.enc absent/corrupted ⇒ env fallback
+ * (readSecureKeys fail-safe family — never throws).
+ */
+export function resolveUpstream(model: string, keystorePath?: string): ResolvedUpstream | null {
   const route = UPSTREAM_ROUTES.find((r) => model.startsWith(r.prefix));
   if (!route) return null;
   const baseUrl = route.baseUrl().replace(/\/+$/, '');
-  const apiKey = process.env[route.apiKeyEnv] ?? '';
+  let apiKey = process.env[route.apiKeyEnv] ?? '';
+  const secure = readSecureKeys(keystorePath);
+  const secureKey = secure?.providers[route.secureProvider]?.api_key;
+  if (secureKey) apiKey = secureKey;
   return { route, baseUrl, apiKey };
 }
 
