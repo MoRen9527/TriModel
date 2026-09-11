@@ -216,12 +216,12 @@ describe('GATE P2-B/A E2E: single-boot server (admin token via env)', () => {
     assert.equal(kb.keys.deepseek?.api_key, ENV_KEY, 'corrupt keys.enc degrades to env bootstrap key');
   });
 
-  it('KB3-api observation: masked-pattern api_key accepted server-side (UI-layer guard; finding候裁)', async () => {
-    // STE-GATE-KB3: masked-write protection lives in the UI layer; the server API
-    // accepts masked-looking values. Recorded as observed; server-side rejection
-    // is a CTO adjudication (admin Bearer gates the plane meanwhile).
+  it('KB3 adjudicated: masked-pattern api_key → PUT 400 (server-side second gate, 99f78ca)', async () => {
+    // STE-GATE-KB3 resolved (CTO 16:04 ruling): the server rejects any masked-looking
+    // value (contains '*') with 400 — echo-pollution defense-in-depth over the
+    // UI-layer guard (F1-P2 fixed).
     const res = await put('/v1/config/keys/secure', JSON.stringify({ provider: 'anthropic', api_key: 'sk-ab****' }), `Bearer ${ADMIN_TOKEN}`);
-    assert.equal(res.status, 200, 'observed: server accepts masked-pattern api_key');
-    rmSync(KEYS_ENC, { force: true }); // leave no polluted keystore behind
+    assert.equal(res.status, 400, 'masked-pattern value must be rejected server-side (F1-P2 fixed in 99f78ca)');
+    assert.ok(!existsSync(KEYS_ENC) || !readFileSync(KEYS_ENC).includes('sk-ab****', 'utf-8'), 'rejected value must not be stored');
   });
 });
