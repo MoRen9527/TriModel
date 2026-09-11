@@ -144,6 +144,12 @@ export function handlePutSecureKeys(
   if (!apiKey) {
     return { statusCode: 400, body: { error: 'api_key must be a non-empty string' } };
   }
+  // F1-P2 (CTO 2026-09-11): masked-tail values ('****xxxx') must never be
+  // stored as real keys — depth-in-depth guard against echo pollution
+  // (user pastes the masked display back into the form → silent bad key).
+  if (apiKey.includes('*') || (baseUrl !== undefined && baseUrl.includes('*'))) {
+    return { statusCode: 400, body: { error: 'masked value rejected — 疑似回显污染：masked 尾 4 位展示值不是真实密钥，请填入完整原始键' } };
+  }
 
   try {
     upsertSecureKey(provider, apiKey, baseUrl, opts?.keystorePath);

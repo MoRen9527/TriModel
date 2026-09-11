@@ -14,3 +14,4 @@ trimodel.err.log
 policy.json
 keys.enc
 keys.enc.tmp
+model-transitions.jsonl

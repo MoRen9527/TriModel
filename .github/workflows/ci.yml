@@ -61,4 +61,5 @@ jobs:
           test -f dist/src/config.js || (echo "MISSING: dist/src/config.js" && exit 1)
           test -f dist/src/types.js || (echo "MISSING: dist/src/types.js" && exit 1)
           test -f dist/src/server.js || (echo "MISSING: dist/src/server.js" && exit 1)
+          test -f dist/ui/index.html || (echo "MISSING: dist/ui/index.html" && exit 1)
           echo "dist/ integrity check passed"

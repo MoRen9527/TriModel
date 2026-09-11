@@ -124,10 +124,35 @@ describe('secure plane API: fail-closed admin auth + validation + masked status'
     assert.equal(handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: '' }), { keystorePath: keystore }).statusCode, 400);
   });
 
+  it('F1-P2: masked-tail values are rejected (echo pollution guard); real keys pass', async () => {
+    process.env.TRIMODEL_ADMIN_TOKEN = 'admin-secret-lg035';
+    const { handlePutSecureKeys } = await import('../src/api/keys.js');
+    const keystore = join(dir, 'k.enc');
+    const auth = 'Bearer admin-secret-lg035';
+    // Masked api_key value → 400
+    const maskedKey = handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: '****7666' }), { keystorePath: keystore });
+    assert.equal(maskedKey.statusCode, 400);
+    assert.ok(JSON.stringify(maskedKey.body).includes('masked value rejected'));
+    // Masked base_url value → 400
+    const maskedUrl = handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: 'sk-real-key-1', base_url: 'https://****/v1' }), { keystorePath: keystore });
+    assert.equal(maskedUrl.statusCode, 400);
+    // Normal key still passes and lands in the store
+    const ok = handlePutSecureKeys(auth, JSON.stringify({ provider: 'deepseek', api_key: 'sk-real-key-1' }), { keystorePath: keystore });
+    assert.equal(ok.statusCode, 200);
+    assert.equal(readSecureKeys(keystore)?.providers.deepseek.api_key, 'sk-real-key-1');
+  });
+
   it('status endpoint: provider list + masked tails only, no api_key field anywhere', async () => {
     process.env.TRIMODEL_ADMIN_TOKEN = 'admin-secret-lg035';
-    const { handleSecureKeysStatus } = await import('../src/api/keys.js');
-    const keystore = join(dir, 'k.enc');
+    const { handlePutSecureKeys, handleSecureKeysStatus } = await import('../src/api/keys.js');
+    // Dedicated keystore: F1-P2 test above overwrites 'deepseek' in k.enc —
+    // this assertion needs its own store to stay order-independent.
+    const keystore = join(dir, 'status.enc');
+    handlePutSecureKeys(
+      'Bearer admin-secret-lg035',
+      JSON.stringify({ provider: 'deepseek', api_key: 'sk-live-999888777666' }),
+      { keystorePath: keystore },
+    );
     const status = handleSecureKeysStatus('Bearer admin-secret-lg035', { keystorePath: keystore });
     assert.equal(status.statusCode, 200);
     const text = JSON.stringify(status.body);
