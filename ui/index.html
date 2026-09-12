@@ -117,10 +117,31 @@
   </form>
 
   <h3>模型切换策略</h3>
+  <div class="sub" style="margin:-6px 0 10px">以下策略应用于 TriMMC（sg）</div>
   <div class="row-form">
     <label>当前使用</label><select id="tc-r-entry" style="width:260px"></select>
     <span class="sub">保存卡片后随卡片一起应用</span>
   </div>
+  <div id="tc-fixed-tip" class="sub" style="margin-top:6px" hidden></div>
+
+  <h3 style="margin-top:14px">时段规则（命名候定） <span class="sub">时区：Asia/Shanghai</span></h3>
+  <div id="tc-fixed-active" class="guide" style="margin-top:6px" hidden>固定使用生效中，时段规则暂不参与；清除后按时段执行。</div>
+  <table id="tc-wrules"><thead><tr><th>时段</th><th>目标条目</th><th>优先级</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-wr-body"></tbody></table>
+  <div id="tc-wr-empty" class="sub" style="margin-top:6px">暂无时段规则。点「添加时段规则」创建。</div>
+  <form class="card-form" id="tc-wr-form" hidden>
+    <h3>添加时段规则</h3>
+    <div class="field"><label>目标条目</label><select id="tc-w-entry"></select></div>
+    <div class="field"><label>开始</label><input id="tc-w-start" value="09:00" style="width:110px"></div>
+    <div class="field"><label>结束</label><input id="tc-w-end" value="18:00" style="width:110px"><span id="tc-w-time-err" class="err" style="font-size:12px"></span></div>
+    <div class="field"><label>优先级</label><input id="tc-w-priority" type="number" value="10" style="width:110px"></div>
+    <div class="field"><label><input id="tc-w-enabled" type="checkbox" checked> 启用</label></div>
+    <div class="row-form">
+      <button type="button" class="primary" id="tc-w-save">保存规则</button>
+      <button type="button" id="tc-w-cancel">取消</button>
+      <span class="sub">跨午夜时段暂不支持；随卡片保存后应用</span>
+    </div>
+  </form>
+  <div class="row-form"><button id="tc-wr-open-add">添加时段规则</button></div>
   <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin-top:6px" hidden></div>
   <div class="sub" style="margin-top:6px">按时段/额度自动切换将于后续版本提供</div>
 
@@ -508,7 +529,7 @@ $('tc-save').onclick = async () => {
     connection: { name },
     provider_entries: tcEntries,            // D7：只发脏条目（后端合并）
     deleted_entry_ids: tcDeleted,           // D7：删除通道
-    rules: currentUse ? [...otherRules, { rule_id: 'trimmc:' + currentUse, type: 'fixed', entry_id: currentUse }] : (tcCard?.rules || []),
+    rules: [...(currentUse ? [...otherRules, { rule_id: 'trimmc:' + currentUse, type: 'fixed', entry_id: currentUse }] : otherRules), ...tcWindowRules],
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
@@ -523,6 +544,71 @@ $('tc-save').onclick = async () => {
 
 $('tc-reload').onclick = () => loadTrimmc().then(() => tcMsg('已重新读取', 'ok'));
 
+// ── D10 时段规则（window 规则编辑；随卡保存；应用时映射 policy window 条目）──
+let tcWindowRules = [];
+function tcRenderWindowRules() {
+  const tb = document.getElementById('tc-wr-body');
+  if (!tb) return;
+  tb.innerHTML = '';
+  document.getElementById('tc-wr-empty').hidden = tcWindowRules.length > 0;
+  const fixedActive = (tcCard?.rules || []).some((r) => r.type === 'fixed') || document.getElementById('tc-r-entry').value !== '';
+  const tip = document.getElementById('tc-fixed-tip');
+  tip.hidden = !(fixedActive && tcWindowRules.length > 0);
+  if (!tip.hidden) tip.textContent = '固定使用生效中，时段规则暂不参与；清除后按时段执行。';
+  const wsel = document.getElementById('tc-w-entry');
+  if (wsel) {
+    const prev = wsel.value;
+    wsel.innerHTML = '';
+    Object.keys(tcEntries).filter((id) => tcEntries[id].enabled !== false).forEach((id) => {
+      const o = document.createElement('option');
+      o.value = id; o.textContent = id + '（' + tcEntries[id].model + '）';
+      wsel.appendChild(o);
+    });
+    if (prev && Array.from(wsel.options).some((o) => o.value === prev)) wsel.value = prev;
+  }
+  tcWindowRules.forEach((wr, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td><button class="danger" data-del>删除</button></td>';
+    tr.children[0].textContent = wr.windows.map((w) => w.start + '–' + w.end).join(', ');
+    tr.children[1].textContent = wr.entry_id + '（' + (tcEntries[wr.entry_id]?.model ?? tcMirror[wr.entry_id]?.model ?? '?') + '）';
+    tr.children[2].textContent = String(wr.priority);
+    tr.children[3].textContent = wr.enabled ? '✓' : '✗';
+    tr.querySelector('[data-del]').onclick = () => {
+      tcWindowRules.splice(i, 1);
+      tcRenderWindowRules();
+      tcMarkDirty();
+    };
+    tb.appendChild(tr);
+  });
+}
+(function wireWindowRuleForm() {
+  const openBtn = document.getElementById('tc-wr-open-add');
+  if (!openBtn) return;
+  openBtn.onclick = () => { document.getElementById('tc-wr-form').hidden = false; document.getElementById('tc-w-time-err').textContent = ''; };
+  document.getElementById('tc-w-cancel').onclick = () => { document.getElementById('tc-wr-form').hidden = true; };
+  document.getElementById('tc-w-save').onclick = () => {
+    const entryId = document.getElementById('tc-w-entry').value;
+    const start = document.getElementById('tc-w-start').value.trim();
+    const end = document.getElementById('tc-w-end').value.trim();
+    const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    const errEl = document.getElementById('tc-w-time-err');
+    if (!entryId) { errEl.textContent = '暂无可用条目'; return; }
+    if (!timeRe.test(start) || !timeRe.test(end)) { errEl.textContent = '时间格式须为 HH:MM'; return; }
+    if (start >= end) { errEl.textContent = '结束时间需晚于开始时间'; return; }
+    tcWindowRules.push({
+      rule_id: 'trimmc-win:' + entryId + ':' + start + '-' + end,
+      type: 'window', entry_id: entryId,
+      windows: [{ start: start, end: end }],
+      priority: Number(document.getElementById('tc-w-priority').value) || 10,
+      enabled: document.getElementById('tc-w-enabled').checked,
+    });
+    document.getElementById('tc-wr-form').hidden = true;
+    tcRenderWindowRules();
+    tcMarkDirty();
+    tcMsg('时段规则已加入本地卡片，点「保存卡片」生效（保存后待应用）', 'warn');
+  };
+})();
+
 async function loadTrimmc() {
   if (!adminToken()) { tcBadge(); return; }
   const r = await api('/v1/config/trimmc-card', { headers: adminHeaders() });
@@ -535,8 +621,11 @@ async function loadTrimmc() {
     tcMirror[id] = { provider: m.provider, model: m.model, masked: m.masked, enabled: m.enabled, updated_at: m.updated_at, base_url: m.base_url ?? undefined };
   }
   if (!$('tc-conn').value) $('tc-conn').value = tcCard?.connection?.name || '';
+  // D10: hydrate window rules (trimmc-win: prefix only)
+  tcWindowRules = (tcCard?.rules || []).filter((r) => r.type === 'window' && String(r.rule_id).startsWith('trimmc-win:'));
   $('tc-dirty').textContent = '';
   tcRender();
+  tcRenderWindowRules();
 }
 $('refreshNow').onclick = () => refreshAll();
 

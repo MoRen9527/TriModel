@@ -84,6 +84,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
     d.getElementById('conn-save').click();
     await new Promise((r) => setTimeout(r, 120));
+    console.log('[dbg2] before =', before, 'after =', log.length, '| urls =', JSON.stringify(log.map((c) => c.url)));
     assert.ok(log.length > before, '连接后必须自动重拉数据');
     assert.ok(log.some((c) => c.url.includes('/v1/models')), 'models 必须被重拉');
     assert.equal(d.getElementById('conn-settings').open, false, '连接成功后折叠');

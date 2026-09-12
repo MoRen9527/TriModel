@@ -43,6 +43,10 @@ export interface CardRuleRef {
   rule_id: string;
   type: 'fixed' | 'window';
   entry_id: string;
+  /** D10 window 规则携带：时段窗（HH:MM，start<end；应用时映射 policy window 条目）。 */
+  windows?: { start: string; end: string }[];
+  priority?: number;
+  enabled?: boolean;
 }
 
 export interface TrimmcCardDocument {
@@ -225,6 +229,25 @@ export function validateCard(doc: unknown): string {
     if (r.type !== 'fixed' && r.type !== 'window') return `rules[${i}].type must be 'fixed'|'window' (quota is schema-reserved and rejected)`;
     if (typeof r.entry_id !== 'string' || !(r.entry_id in (d.provider_entries as Record<string, unknown>))) {
       return `rules[${i}].entry_id '${r.entry_id}' does not reference an existing entry (悬挂引用)`;
+    }
+    // D10: window 规则携带时段窗——沿用 P1 引擎校验口径（HH:MM、start<end、
+    // 零长窗拒）；fixed 规则不携带。
+    if (r.type === 'window') {
+      if (!Array.isArray(r.windows) || r.windows.length === 0) {
+        return `rules[${i}].windows must be a non-empty array for window rules`;
+      }
+      const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
+      for (const [j, w] of r.windows.entries()) {
+        if (typeof w !== 'object' || w === null) return `rules[${i}].windows[${j}] must be an object`;
+        const win = w as { start?: unknown; end?: unknown };
+        if (typeof win.start !== 'string' || !timeRe.test(win.start)) return `rules[${i}].windows[${j}].start must be 'HH:MM'`;
+        if (typeof win.end !== 'string' || !timeRe.test(win.end)) return `rules[${i}].windows[${j}].end must be 'HH:MM'`;
+        if (win.start >= win.end) return `rules[${i}].windows[${j}] must have start < end`;
+      }
+      if (r.priority !== undefined && (typeof r.priority !== 'number' || !Number.isFinite(r.priority))) {
+        return `rules[${i}].priority must be a finite number`;
+      }
+      if (r.enabled !== undefined && typeof r.enabled !== 'boolean') return `rules[${i}].enabled must be a boolean`;
     }
   }
   if (typeof d.status === 'object' && d.status !== null) {
