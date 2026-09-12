@@ -580,6 +580,29 @@ async function loadTrimmc() {
   if (!$('tc-conn').value) $('tc-conn').value = tcCard?.connection?.name || '';
   // D10: hydrate window rules (trimmc-win: prefix only)
   tcWindowRules = (tcCard?.rules || []).filter((r) => r.type === 'window' && String(r.rule_id).startsWith('trimmc-win:'));
+  // D16: 默认模型字段载入回填（卡 default_model → 下拉；缺省=空选回落引擎）
+  const dmSel = document.getElementById('tc-default-model');
+  console.error('[D16dbg] loadTrimmc dm block: dmSel =', !!dmSel, '| card default_model =', JSON.stringify(tcCard?.default_model ?? null));
+  if (dmSel) {
+    dmSel.innerHTML = '<option value="">（留空=回落引擎默认）</option>';
+    const catalog = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
+    console.error('[D16-a] before loop options =', dmSel.options.length);
+    for (const m of catalog) {
+      const o = document.createElement('option');
+      o.value = m; o.textContent = m;
+      dmSel.appendChild(o);
+    }
+    console.error('[D16-b] after loop options =', dmSel.options.length);
+    const want = tcCard && tcCard.default_model ? tcCard.default_model : '';
+    dmSel.value = want;
+    console.error('[D16-c] after set value =', dmSel.value, '| want =', want);
+    if (dmSel.value !== want) {
+      const o = document.createElement('option');
+      o.value = want; o.textContent = want + '（历史值）';
+      dmSel.appendChild(o);
+      dmSel.value = want;
+    }
+  }
   $('tc-dirty').textContent = '';
   tcRender();
   tcRenderWindowRules();
