@@ -276,3 +276,15 @@ describe('D7: PUT merge semantics — degraded forms rejected, explicit delete c
     assert.equal('e-gone' in entries, false, 'explicitly deleted entry must be removed');
   });
 });
+
+// ── E12: 本机策略折叠区删除回归（CEO 11:55 ③裁：整删+零残留）──
+describe('E12: folded local-policy zone removal regression', () => {
+  it('ui/index.html carries zero folded-zone residue (DOM ids/JS fns/CSS class)', () => {
+    const uiPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
+    const html = readFileSync(uiPath, 'utf-8');
+    for (const residue of ['zone-local', 'policy-table', 'key-status', 'error-policy', 'policy-empty', 'loadPolicyZone', 'refreshKeyStatus', '本机策略（高级）']) {
+      assert.equal(html.includes(residue), false, `folded-zone residue '${residue}' must be fully removed`);
+    }
+    assert.equal(html.includes('TriMMC 信息'), true, 'TriMMC card section must remain');
+  });
+});
