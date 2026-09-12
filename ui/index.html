@@ -554,16 +554,17 @@ function tcRenderWindowRules() {
   tb.innerHTML = '';
   document.getElementById('tc-wr-empty').hidden = tcWindowRules.length > 0;
   const fixedActive = (tcCard?.rules || []).some((r) => r.type === 'fixed') || document.getElementById('tc-r-entry').value !== '';
-  const tip = document.getElementById('tc-fixed-tip');
+  const tip = document.getElementById('tc-fixed-active');
   tip.hidden = !(fixedActive && tcWindowRules.length > 0);
-  if (!tip.hidden) tip.textContent = '固定使用生效中，时段规则暂不参与；清除后按时段执行。';
   const wsel = document.getElementById('tc-w-entry');
   if (wsel) {
     const prev = wsel.value;
     wsel.innerHTML = '';
-    Object.keys(tcEntries).filter((id) => tcEntries[id].enabled !== false).forEach((id) => {
+    // 合并视图（镜像∪脏）取启用条目——纯镜像卡（无未保存改动）也必须填充
+    const allEntries = { ...tcMirror, ...tcEntries };
+    Object.keys(allEntries).filter((id) => allEntries[id].enabled !== false).forEach((id) => {
       const o = document.createElement('option');
-      o.value = id; o.textContent = id + '（' + tcEntries[id].model + '）';
+      o.value = id; o.textContent = id + '（' + allEntries[id].model + '）';
       wsel.appendChild(o);
     });
     if (prev && Array.from(wsel.options).some((o) => o.value === prev)) wsel.value = prev;
