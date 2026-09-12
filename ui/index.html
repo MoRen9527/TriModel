@@ -456,8 +456,6 @@ $('tc-save').onclick = async () => {
   saveBtn.disabled = true;
   const prevLabel = saveBtn.textContent;
   saveBtn.textContent = '保存中…';
-  // D15/增补件4②：固定使用选择器退役——「当前使用」不再存在；规则=时段规则
-  //（window 单型）随卡；默认模型兜底由 default_model 字段承载（可空=回落引擎）。
   const doc = {
     version: 2,
     machine: { name: tcCard?.machine?.name || '' },
@@ -469,9 +467,18 @@ $('tc-save').onclick = async () => {
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
+  // D17 服务端确认绑定：徽标翻转仅在 PUT 2xx 服务端确认后发生；
+  // 401/503/4xx/5xx → 红态+人话原因（禁本地意图先行翻转）。
   try {
     const r = await api('/v1/config/trimmc-card', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(doc) });
-    if (r.status !== 200) { tcMsg(humanize(r.status, r.body.error), 'err'); return; }
+    if (r.status === 401) {
+      tcMsg('管理令牌被拒：请核对连接设置中的管理令牌', 'err');
+      return;
+    }
+    if (r.status !== 200) {
+      tcMsg('保存未成功（' + r.status + '）：' + (r.body.error || '请稍后重试'), 'err');
+      return;
+    }
     tcEntries = {};
     tcDeleted = [];
     $('tc-dirty').textContent = '';

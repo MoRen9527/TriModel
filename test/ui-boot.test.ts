@@ -36,7 +36,7 @@ function retireUi(dom: JSDOM): void {
   retiredDoms.push(dom);
 }
 
-function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders: Array<(url: string) => { status: number; body: unknown }>) {
+function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders: Array<(url: string, init?: RequestInit) => { status: number; body: unknown }>) {
   const handle = { done: false };
   const dom = new JSDOM(readFileSync(UI_PATH, 'utf-8'), {
     runScripts: 'dangerously',
@@ -49,7 +49,7 @@ function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders
         // window closed mid-flight (test teardown): resolve inert so no
         // render callback touches a dead document (unhandledRejection guard)
         if (window.closed) return { status: 0, json: async () => ({}), text: async () => '', headers: new Map() } as unknown as Response;
-        const r = responders[Math.min(call, responders.length - 1)](url);
+        const r = responders[Math.min(call, responders.length - 1)](url, init);
         call += 1;
         return { status: r.status, json: async () => r.body, text: async () => JSON.stringify(r.body), headers: new Map() } as unknown as Response;
       });
@@ -152,6 +152,63 @@ describe('S8.2: jsdom 首启五断言', () => {
     for (const w of banned) {
       assert.equal(cardZone.includes(w), false, `结构/通道词汇 '${w}' 禁入卡片区域`);
     }
+  });
+
+  it('D17: badge is server-confirmation bound - 401 keeps non-pending, 200 flips to pending', async () => {
+    // 401: stale admin token -> badge stays non-pending, error message shown
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const appliedCard = {
+      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
+      provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: 'QUFB', enabled: true, updated_at: 'x' } },
+      rules: [], status: { state: 'applied', at: 'x' },
+      reserved: { quota_switch: null, instances_group: null, env_tag: null },
+    };
+    const dom = bootUi(log, [(url: string, init?: RequestInit) => {
+      if (init && init.method === 'PUT' && url.includes('/trimmc-card')) return { status: 401, body: { error: 'Unauthorized: invalid or missing admin token' } };
+      if (url.includes('/trimmc-card')) return { status: 200, body: { object: 'x', card_file_present: true, card: appliedCard, entries_masked: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', masked: '****0001', enabled: true, updated_at: 'x' } } } };
+      return okFor(url);
+    }]);
+    const d = dom.window.document;
+    (d.getElementById('token') as HTMLInputElement).value = 'tk-api';
+    (d.getElementById('adminToken') as HTMLInputElement).value = 'ta-stale';
+    d.getElementById('conn-save').click();
+    await waitFor(() => !!d.querySelector('[data-enable]'));
+    (d.getElementById('tc-e-id') as HTMLInputElement).value = 'ee';
+    (d.getElementById('tc-e-key') as HTMLInputElement).value = 'sk-d17-key-00000001';
+    d.getElementById('tc-e-save').click();
+    d.getElementById('tc-save').click();
+    await waitFor(() => (d.getElementById('tc-msg') as HTMLElement).textContent.includes('管理令牌被拒'));
+    assert.equal(d.getElementById('tc-badge').textContent, '已生效', '401 must NOT flip badge to 待应用 (server-confirmation bound)');
+    assert.ok((d.getElementById('tc-msg') as HTMLElement).textContent.includes('管理令牌被拒'), '401 human copy shown');
+    // 200: valid admin token -> badge flips to 待应用
+    let saveCount = 0;
+    const dom2 = bootUi(log, [(url: string, init?: RequestInit) => {
+      if (init && init.method === 'PUT' && url.includes('/trimmc-card')) {
+        saveCount++;
+        // First PUT → pending (save); second PUT → also pending
+        return { status: 200, body: { ok: true } };
+      }
+      if (url.includes('/trimmc-card') && (!init || !init.method || init.method === 'GET')) {
+        // After first save, return pending card; before save, return applied card
+        const state = saveCount > 0 ? 'pending' : 'applied';
+        const dm = saveCount > 0 ? 'deepseek-v4-pro' : '';
+        return { status: 200, body: { object: 'x', card_file_present: true, card: { ...appliedCard, status: { state, at: 'x' } }, default_model: dm, entries_masked: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', masked: '****0001', enabled: true, updated_at: 'x' } } } };
+      }
+      return okFor(url);
+    }]);
+    const d2 = dom2.window.document;
+    (d2.getElementById('token') as HTMLInputElement).value = 'tk-api';
+    (d2.getElementById('adminToken') as HTMLInputElement).value = 'ta-good';
+    d2.getElementById('conn-save').click();
+    await waitFor(() => !!d2.querySelector('[data-enable]'));
+    d2.getElementById('tc-e-id').value = 'ee';
+    d2.getElementById('tc-e-key').value = 'sk-d17-key-00000001';
+    d2.getElementById('tc-e-save').click();
+    d2.getElementById('tc-save').click();
+    await waitFor(() => (d2.getElementById('tc-msg') as HTMLElement).textContent.includes('卡片已保存'));
+    assert.equal(d2.getElementById('tc-badge').textContent, '待应用', '200 must flip badge to 待应用 (server confirmed)');
+    dom2.window.close();
+    dom.window.close();
   });
 
   it('D5: on-disk disabled entry under applied card shows fallback tip (engine fact)', async () => {
