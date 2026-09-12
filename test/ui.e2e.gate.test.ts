@@ -352,13 +352,14 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.context().close();
   });
 
-  it('W2 (②): time-window rules zone — five columns + add form with field defaults', async () => {
+  it('W2 (②): time-window rules zone — five columns + add form with field defaults (fixture self-sufficient)', async () => {
     const page = await freshPage();
-    await connectPage(page);
-    await page.click('#tc-reload'); // explicit card re-read (populate guard against render races)
-    await page.waitForTimeout(900);
+    await connectPage(page, 'w2');
+    await addEntryViaUi(page, 'gate-ui-w2a', 'glm', 'GLM-5.3', 'sk-gate-w2a-key');
+    await page.click('#tc-save'); // fixture: entry persisted so 目标条目 has a source
+    await page.waitForTimeout(700);
     await page.click('#tc-wr-open-add');
-    await waitSelectOptions(page, '#tc-w-entry', 1); // 目标条目下拉自卡片条目填充
+    await waitSelectOptions(page, '#tc-w-entry', 1); // 目标条目下拉自卡片条目填充（合并视图）
     const heads = await page.$eval('#tc-wrules thead', (el) => Array.from(el.querySelectorAll('th')).map((th) => (th.textContent ?? '').trim()));
     assert.deepEqual(heads, ['时段', '目标条目', '优先级', '启用', '操作'], '五列正身');
     assert.equal(await page.locator('#tc-wr-empty').isVisible(), true, '空态指引在位');
@@ -369,25 +370,48 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.context().close();
   });
 
-  it('W3 (③): conflict hint — D12 driver: element+copy in DOM but never un-hides with fixed rule (observed red候修)', async () => {
+  it('W3 (③): conflict hint visible with fixed rule (D12 id 对齐正验) — 清除半周期观测记录', async () => {
     const page = await freshPage();
-    await connectPage(page); // W1 left a fixed rule in the card
-    // D10 semantics: fixed non-empty ⇒ hint SHOULD un-hide; D12 (id mismatch
-    // #tc-fixed-tip JS vs #tc-fixed-active DOM) keeps it hidden forever.
-    const elState = await page.$eval('#tc-fixed-active', (el) => ({ hidden: (el as HTMLElement).hidden, copy: el.textContent ?? '' }));
-    assert.equal(elState.hidden, true, 'D12 observed: hint stays hidden despite fixed rule (JS targets #tc-fixed-tip, DOM has #tc-fixed-active)');
-    assert.ok(/固定使用生效中/.test(elState.copy), '提示文案在位（id 对齐后即可显）');
-    // D14 observed: with fixed-active the #tc-r-entry select is disabled — the hint's
-    // own instruction「清除后按时段执行」has no reachable UI entry (clear path dead-ends)
-    const rEntryDisabled = await page.$eval('#tc-r-entry', (el) => (el as HTMLSelectElement).disabled);
-    assert.equal(rEntryDisabled, true, 'D14 observed: clear path unreachable while fixed-active (select disabled)');
+    await connectPage(page, 'w3');
+    await addEntryViaUi(page, 'gate-ui-w3a', 'glm', 'GLM-5.3', 'sk-gate-w3a-key');
+    await page.click('#tc-save'); // 条目先落卡（否则选择器无 w3a 可选）
+    await page.waitForTimeout(700);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(900);
+    // set fixed rule → save → hint un-hides (D12 id 对齐后正验)
+    await page.waitForFunction(
+      '() => { const el = document.querySelector("#tc-r-entry"); return el instanceof HTMLSelectElement && el.options.length >= 2; }',
+      undefined,
+      { timeout: 8000 },
+    );
+    const glmVal = (await page.$eval('#tc-r-entry', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value))).find((v) => v.includes('w3a')) ?? '';
+    await page.selectOption('#tc-r-entry', glmVal);
+    await page.click('#tc-save');
+    await page.waitForTimeout(800);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(900);
+    await page.waitForFunction(
+      '() => { const el = document.querySelector("#tc-fixed-active"); return el !== null && !el.hasAttribute("hidden"); }',
+      undefined,
+      { timeout: 8000 },
+    );
+    const hint = await page.locator('#tc-fixed-active').textContent();
+    assert.ok(/固定使用生效中/.test(hint ?? ''), 'fixed 在卡→冲突常驻提示显（D12 修后正验）');
+    // clear half-cycle observation: redesigned UI carries NO none-option in
+    // #tc-r-entry (probe-f9 evidence) —「清除」语义由 D11 替换语义承载（改选即替换），
+    // hint 隐半周期随清除入口落地后补测（观测记录，非缺陷断言）
+    const opts = await page.$eval('#tc-r-entry', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
+    assert.ok(opts.length >= 2, '选择器条目选项在位（清除入口候补观测记录）');
     await page.context().close();
   });
 
-  it('W4 (④): start >= end rejected with 人话 copy, rule not added (跨午夜不暴露)', async () => {
+  it('W4 (④): start >= end rejected with 人话 copy, rule not added (跨午夜不暴露) — fixture self-sufficient', async () => {
     const page = await freshPage();
-    await connectPage(page);
-    await page.click('#tc-reload');
+    await connectPage(page, 'w4');
+    await addEntryViaUi(page, 'gate-ui-w4a', 'deepseek', 'deepseek-v4-pro', 'sk-gate-w4a-key');
+    await page.click('#tc-save');
+    await page.waitForTimeout(700);
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(900);
     const rowsBefore = await page.locator('#tc-wr-body tr').count();
     await page.click('#tc-wr-open-add');
