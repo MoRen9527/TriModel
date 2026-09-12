@@ -32,11 +32,11 @@ export interface PolicySchedule {
   enabled: boolean;
   priority: number; // higher number wins when multiple windows match
   /**
-   * LG-035 TriMMC 栏（T2）：'window'=P1 时段语义（缺省，向后兼容）；'fixed'=
-   * 无时间条件恒匹配（priority 降序遍历中恒中，压过更低优先级的时段规则）。
-   * 'quota' 为 schema 级预留——运行时显式拒绝（validatePolicyShape 400）。
+   * D15/增补件4②：type 收窄='window' 单型（缺省即 window；'fixed' 退役——
+   * boot 迁移器转写 default_model 后剥离）。'quota' 为 schema 级预留——运行
+   * 时显式拒绝。
    */
-  type?: 'window' | 'fixed';
+  type?: 'window';
 }
 
 export interface PolicyShape {
@@ -55,6 +55,32 @@ const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 /** Env fallback shared with keys.ts（官方名，LG-035 增补标准化）。 */
 export function envDefaultModel(): string {
   return process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-v4-pro';
+}
+
+/**
+ * 增补件4②：卡 default_model 兜底（计算序中间层：窗口命中 → 卡 default_model
+ * → env 出厂默认）。读 trimmc-card.json 的 default_model 字段；卡缺席/损坏=
+ * 无中间层（fail-safe，同族口径）。
+ */
+export function cardDefaultModel(): string | null {
+  try {
+    const { loadCard } = cardStore();
+    const doc = loadCard();
+    return doc && doc.default_model ? doc.default_model : null;
+  } catch {
+    return null;
+  }
+}
+
+// 延迟绑定（ESM 静态 import 会引入 trimmc-card -> key-encryptor 依赖链，
+// 该链无环但保持单一数据流向；动态 import 缓存模块引用）。
+let _cardStore: { loadCard: (p?: string) => import('./trimmc-card.js').TrimmcCardDocument | null } | null = null;
+export function registerCardStore(store: { loadCard: (p?: string) => import('./trimmc-card.js').TrimmcCardDocument | null }): void {
+  _cardStore = store;
+}
+function cardStore() {
+  if (!_cardStore) throw new Error('card store not registered');
+  return _cardStore;
 }
 
 function toMinutes(hhmm: string): number {
@@ -105,11 +131,7 @@ export function evaluatePolicy(
     .filter((s) => s && s.enabled)
     .sort((a, b) => b.priority - a.priority);
   for (const schedule of enabled) {
-    // T2: 'fixed' schedules have no time condition — they always match at
-    // their priority position (恒中压时段). Same evaluatePolicy, 零双轨.
-    if (schedule.type === 'fixed') {
-      return { model: schedule.model, matched_schedule_id: schedule.id };
-    }
+    // D15/增补件4②：fixed 分支退役（迁移器转写 default_model 后剥离）
     if (schedule.timezone !== SUPPORTED_TIMEZONE) continue; // P1: single-TZ support
     const hhmm = hhmmInZone(now, schedule.timezone);
     if (Array.isArray(schedule.windows) && schedule.windows.some((w) => windowMatches(hhmm, w))) {
@@ -136,10 +158,7 @@ export function validatePolicyShape(doc: unknown): string {
       return `schedules[${i}].model must be one of the official catalog: ${MODEL_CATALOG_LIST}`;
     }
     if (!Array.isArray(s.windows) || s.windows.length === 0) {
-      // T2: 'fixed' schedules have no time condition — windows not required.
-      if (s.type !== 'fixed') {
-        return `schedules[${i}].windows must be a non-empty array`;
-      }
+      return `schedules[${i}].windows must be a non-empty array`;
     }
     for (const [j, w] of (Array.isArray(s.windows) ? (s.windows as unknown[]) : []).entries()) {
       if (typeof w !== 'object' || w === null) return `schedules[${i}].windows[${j}] must be an object`;
@@ -158,10 +177,10 @@ export function validatePolicyShape(doc: unknown): string {
       }
     }
     if (s.timezone !== SUPPORTED_TIMEZONE) return `schedules[${i}].timezone must be '${SUPPORTED_TIMEZONE}' (P1)`;
-    // T2: type whitelist — absent = 'window' (P1 back-compat); 'quota' is
-    // schema-reserved and explicitly rejected at runtime (400).
-    if (s.type !== undefined && s.type !== 'window' && s.type !== 'fixed') {
-      return `schedules[${i}].type must be 'window' | 'fixed' (absent defaults to 'window'); 'quota' is reserved and not accepted`;
+    // D15/增补件4②: type 收窄='window' 单型（fixed 退役，迁移器转写）；
+    // 'quota' 仍 schema 级预留显式拒。
+    if (s.type !== undefined && s.type !== 'window') {
+      return `schedules[${i}].type must be 'window' (absent defaults to 'window'); 'fixed' retired (migrate via boot), 'quota' reserved and not accepted`;
     }
     if (typeof s.enabled !== 'boolean') return `schedules[${i}].enabled must be a boolean`;
     if (typeof s.priority !== 'number' || !Number.isFinite(s.priority)) {
@@ -285,9 +304,12 @@ export function savePolicy(policy: PolicyShape, pathOverride?: string): void {
 export function effectiveModel(now: Date = new Date()): {
   model: string;
   matched_schedule_id: string | null;
-  source: 'policy' | 'env-default';
+  source: 'policy' | 'card-default' | 'env-default';
 } {
   const hit = evaluatePolicy(now, loadPolicy());
   if (hit) return { model: hit.model, matched_schedule_id: hit.matched_schedule_id, source: 'policy' };
+  // 增补件4② 三层计算序中间层：窗口未命中 → 卡 default_model → env 出厂默认
+  const cardModel = cardDefaultModel();
+  if (cardModel) return { model: cardModel, matched_schedule_id: null, source: 'card-default' };
   return { model: envDefaultModel(), matched_schedule_id: null, source: 'env-default' };
 }

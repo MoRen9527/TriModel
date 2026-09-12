@@ -104,12 +104,23 @@ export function handlePutTrimmcCard(
   // 合并基底：既有卡（provider_entries 保留未被本次 PUT 提及的条目）
   const existing = loadCard(opts?.cardPath);
   const base = existing ?? emptyCard('');
+  // D15② 跨 id 幂等去重：同条目名+同厂商+同模型的既有条目，若本次 PUT 又以
+  // 新 id 提交同内容 → 视为同一逻辑条目，保留 PUT 侧（updated_at 更新），旧 id
+  // 沉默淘汰（零挫败；updated_at 由水合/直传分支刷新）。
+  for (const [newId, entry] of Object.entries(card.provider_entries)) {
+    const dupIds = Object.entries(base.provider_entries)
+      .filter(([oldId, old]) => oldId !== newId && old.provider === entry.provider && old.model === entry.model)
+      .map(([oldId]) => oldId);
+    for (const oldId of dupIds) delete base.provider_entries[oldId];
+  }
   const merged: TrimmcCardDocument = {
     ...base,
     machine: card.machine?.name ? card.machine : base.machine,
     connection: card.connection?.name ? card.connection : base.connection,
     provider_entries: { ...base.provider_entries, ...card.provider_entries },
     rules: Array.isArray(card.rules) ? card.rules : base.rules,
+    // 增补件4②：默认模型兜底字段（null/absent = 回落引擎出厂默认）
+    default_model: 'default_model' in card ? card.default_model : base.default_model ?? null,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };

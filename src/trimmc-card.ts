@@ -59,6 +59,8 @@ export interface TrimmcCardDocument {
   reserved: { quota_switch: null; instances_group: null, env_tag: null };
   /** D7 合并语义：PUT 时要求删除的既有条目 id（UI 删除镜像条目通道）。 */
   deleted_entry_ids?: string[];
+  /** 增补件4②：默认模型兜底（可空=回落引擎出厂默认；计算序中间层）。 */
+  default_model?: string | null;
 }
 
 // ── D9 路径规范化（预走查 f2 谜题根修）──

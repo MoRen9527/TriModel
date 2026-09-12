@@ -118,13 +118,16 @@
   <h3>模型切换策略</h3>
   <div class="sub" style="margin:-6px 0 10px">以下策略应用于 TriMMC（sg）</div>
   <div class="row-form">
-    <label>当前使用</label><select id="tc-r-entry" style="width:260px"></select>
-    <span class="sub">保存卡片后随卡片一起应用</span>
+    <label>可切换模型</label>
+    <span id="tc-chips" class="sub">暂无已启用条目</span>
   </div>
-  <div id="tc-fixed-tip" class="sub" style="margin-top:6px" hidden></div>
+  <div class="row-form">
+    <label>默认模型（可留空=回落引擎默认）</label>
+    <select id="tc-default-model" style="width:260px"><option value="">（留空=回落引擎默认）</option></select>
+    <span class="sub">窗口时段未命中时使用</span>
+  </div>
 
   <h3 style="margin-top:14px">时段规则（命名候定） <span class="sub">时区：Asia/Shanghai</span></h3>
-  <div id="tc-fixed-active" class="guide" style="margin-top:6px" hidden>固定使用生效中，时段规则暂不参与；清除后按时段执行。</div>
   <table id="tc-wrules"><thead><tr><th>时段</th><th>目标条目</th><th>优先级</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-wr-body"></tbody></table>
   <div id="tc-wr-empty" class="sub" style="margin-top:6px">暂无时段规则。点「添加时段规则」创建。</div>
   <form class="card-form" id="tc-wr-form" hidden>
@@ -137,7 +140,7 @@
     <div class="row-form">
       <button type="button" class="primary" id="tc-w-save">保存规则</button>
       <button type="button" id="tc-w-cancel">取消</button>
-      <span class="sub">跨午夜时段暂不支持；随卡片保存后应用</span>
+      <span class="sub">随卡片保存后应用</span>
     </div>
   </form>
   <div class="row-form"><button id="tc-wr-open-add">添加时段规则</button></div>
@@ -152,7 +155,7 @@
   <div id="tc-msg" class="msg"></div>
 </section>
 
-<!-- 【本机策略（高级）】折叠区已随 D12/D13/D14 三件删除（CEO 裁：本页单语义化=TriMMC 卡纯度；本机直生效语义归位 TriRLC 卡四卡规划） -->
+<!-- 本机策略折叠区已删除（D13，CEO 裁）：本页单语义化=TriMMC 卡纯度；本机直生效语义归位 TriRLC 卡四卡规划 -->
 
 <script>
 'use strict';
@@ -209,7 +212,7 @@ async function boot() {
 }
 
 function setDataPanelsDisabled(disabled) {
-  for (const id of ['tc-conn', 'tc-open-add', 'tc-save', 'tc-reload', 'tc-r-entry', 'refreshNow']) $(id).disabled = disabled;
+  for (const id of ['tc-conn', 'tc-open-add', 'tc-save', 'tc-reload', 'refreshNow']) $(id).disabled = disabled;
   $('tc-add-hint').hidden = !disabled;
   document.querySelectorAll('.card-main, #local-zone').forEach((el) => el.classList.toggle('disabled-panel', disabled));
 }
@@ -358,8 +361,10 @@ function tcRender() {
     };
     tr.querySelector('[data-edit]').onclick = () => tcOpenForm(id);
     tr.querySelector('[data-del]').onclick = () => {
-      if (($('tc-r-entry').value || '') === 'entry:' + id) {
-        tcMsg('该条目正被切换策略使用，请先改选其他模型', 'err');
+      // D15：时段规则（window）引用检查（fixed 退役后唯一规则形态）
+      const referenced = (tcCard?.rules || []).some((r) => r.type === 'window' && r.entry_id === id);
+      if (referenced) {
+        tcMsg('该条目正被时段规则使用，请先删除对应时段规则', 'err');
         return;
       }
       if (dirty) { delete tcEntries[id]; }
@@ -370,8 +375,7 @@ function tcRender() {
     };
     tb.appendChild(tr);
   });
-  tcRefreshCurrentSelect();
-  tcDeriveFallback();
+  tcRenderChips();
   // D12① 单点接线：条目增删/启用翻转走 tcRender 后时段规则下拉同步重填
   // （幂等渲染；loadTrimmc 尾的既有配对不变——双点冗余防御渲染竞态）
   tcRenderWindowRules();
@@ -379,44 +383,14 @@ function tcRender() {
 
 function tcMarkDirty() { $('tc-dirty').textContent = '（有未保存改动，保存后待应用）'; }
 
-function tcRefreshCurrentSelect() {
-  const sel = $('tc-r-entry');
-  sel.innerHTML = '';
+// D15/增补件4②：回落提示退役（fixed 概念退役，组合制无冲突态）——
+// 可切换模型 chips 派生取而代之（已启用条目自动派生只读展示）。
+function tcRenderChips() {
   const all = { ...tcMirror, ...tcEntries };
-  const enabledIds = Object.keys(all).filter((id) => (all[id] ?? {}).enabled);
-  if (enabledIds.length === 0) {
-    const o = document.createElement('option');
-    o.textContent = '暂无可用条目，请先在模型信息中添加并启用';
-    o.value = ''; o.disabled = true; o.selected = true;
-    sel.appendChild(o);
-    return;
-  }
-  enabledIds.forEach((id) => {
-    const o = document.createElement('option');
-    o.value = 'entry:' + id;
-    o.textContent = id + '（' + all[id].model + '）';
-    sel.appendChild(o);
-  });
-  const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
-  if (rule && enabledIds.includes(rule.entry_id)) sel.value = 'entry:' + rule.entry_id;
-}
-
-// ⑥/D5 回落提示=状态派生（意图源=卡 rules；仅已应用卡条目停用才提示）
-function tcDeriveFallback() {
-  // D5：回落=引擎事实（卡盘面条目被停用）——派生源=tcMirror（盘面现状），
-  // 脏态（未保存翻转）不算事实（暂存开关零回落提示，D7 语义合流）。
-  const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
-  const currentId = rule?.entry_id ?? '';
-  const diskEntry = currentId ? tcMirror[currentId] : undefined;
-  const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
-  const tip = $('tc-fallback-tip');
-  if (rule && diskEntry && diskEntry.enabled === false && appliedEntries.includes(currentId)) {
-    tip.textContent = '已回落：条目 ' + currentId + ' 已停用';
-    tip.hidden = false;
-  } else {
-    tip.hidden = true;
-    tip.textContent = '';
-  }
+  const chips = Object.keys(all).filter((id) => all[id].enabled);
+  document.getElementById('tc-chips').textContent = chips.length > 0
+    ? chips.map((id) => id + '（' + all[id].model + '）').join(' · ')
+    : '暂无已启用条目';
 }
 
 function tcOpenForm(editId) {
@@ -477,27 +451,36 @@ $('tc-e-save').onclick = () => {
 $('tc-save').onclick = async () => {
   const name = $('tc-conn').value.trim();
   if (!name) return tcMsg('请先填写机器信息中的名称', 'err');
-  const currentUse = $('tc-r-entry').value.replace(/^entry:/, '');
-  // D11 单选语义：当前使用选择=全量替换 fixed 规则（trimmc: 前缀域全移除，
-  // 仅保留当前选择一条）；window 规则分型不受影响。
-  const nonFixedRules = (tcCard?.rules || []).filter((r) => !(r.type === 'fixed' && String(r.rule_id).startsWith('trimmc:')));
+  // D15① 防双击：提交中禁用+「保存中…」（S7 灰系），完成/失败后恢复
+  const saveBtn = $('tc-save');
+  saveBtn.disabled = true;
+  const prevLabel = saveBtn.textContent;
+  saveBtn.textContent = '保存中…';
+  // D15/增补件4②：固定使用选择器退役——「当前使用」不再存在；规则=时段规则
+  //（window 单型）随卡；默认模型兜底由 default_model 字段承载（可空=回落引擎）。
   const doc = {
     version: 2,
     machine: { name: tcCard?.machine?.name || '' },
     connection: { name },
     provider_entries: tcEntries,            // D7：只发脏条目（后端合并）
     deleted_entry_ids: tcDeleted,           // D7：删除通道
-    rules: [...(currentUse ? [...nonFixedRules, { rule_id: 'trimmc:' + currentUse, type: 'fixed', entry_id: currentUse }] : nonFixedRules), ...tcWindowRules],
+    rules: tcWindowRules.map((wr) => ({ ...wr })),
+    default_model: $('tc-default-model').value || null,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
-  const r = await api('/v1/config/trimmc-card', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(doc) });
-  if (r.status !== 200) return tcMsg(humanize(r.status, r.body.error), 'err');
-  tcEntries = {};
-  tcDeleted = [];
-  $('tc-dirty').textContent = '';
-  tcMsg('卡片已保存，等待应用（应用完成后状态变为「已生效」）', 'ok');
-  await loadTrimmc();
+  try {
+    const r = await api('/v1/config/trimmc-card', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(doc) });
+    if (r.status !== 200) { tcMsg(humanize(r.status, r.body.error), 'err'); return; }
+    tcEntries = {};
+    tcDeleted = [];
+    $('tc-dirty').textContent = '';
+    tcMsg('卡片已保存，等待应用（应用完成后状态变为「已生效」）', 'ok');
+    await loadTrimmc();
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = prevLabel;
+  }
 };
 
 $('tc-reload').onclick = () => loadTrimmc().then(() => tcMsg('已重新读取', 'ok'));
@@ -509,18 +492,19 @@ function tcRenderWindowRules() {
   if (!tb) return;
   tb.innerHTML = '';
   document.getElementById('tc-wr-empty').hidden = tcWindowRules.length > 0;
-  const fixedActive = (tcCard?.rules || []).some((r) => r.type === 'fixed') || document.getElementById('tc-r-entry').value !== '';
-  const tip = document.getElementById('tc-fixed-active');
-  tip.hidden = !(fixedActive && tcWindowRules.length > 0);
+  // D15/增补件4②：chips 行（已启用条目派生只读）——固定使用概念退役后的派生展示
+  const all = { ...tcMirror, ...tcEntries };
+  const chips = Object.keys(all).filter((id) => all[id].enabled);
+  document.getElementById('tc-chips').textContent = chips.length > 0
+    ? chips.map((id) => id + '（' + all[id].model + '）').join(' · ')
+    : '暂无已启用条目';
   const wsel = document.getElementById('tc-w-entry');
   if (wsel) {
     const prev = wsel.value;
     wsel.innerHTML = '';
-    // 合并视图（镜像∪脏）取启用条目——纯镜像卡（无未保存改动）也必须填充
-    const allEntries = { ...tcMirror, ...tcEntries };
-    Object.keys(allEntries).filter((id) => allEntries[id].enabled !== false).forEach((id) => {
+    Object.keys(all).filter((id) => all[id].enabled !== false).forEach((id) => {
       const o = document.createElement('option');
-      o.value = id; o.textContent = id + '（' + allEntries[id].model + '）';
+      o.value = id; o.textContent = id + '（' + all[id].model + '）';
       wsel.appendChild(o);
     });
     if (prev && Array.from(wsel.options).some((o) => o.value === prev)) wsel.value = prev;
@@ -529,7 +513,7 @@ function tcRenderWindowRules() {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td><td></td><td></td><td><button class="danger" data-del>删除</button></td>';
     tr.children[0].textContent = wr.windows.map((w) => w.start + '–' + w.end).join(', ');
-    tr.children[1].textContent = wr.entry_id + '（' + (tcEntries[wr.entry_id]?.model ?? tcMirror[wr.entry_id]?.model ?? '?') + '）';
+    tr.children[1].textContent = wr.entry_id + '（' + (all[wr.entry_id]?.model ?? '?') + '）';
     tr.children[2].textContent = String(wr.priority);
     tr.children[3].textContent = wr.enabled ? '✓' : '✗';
     tr.querySelector('[data-del]').onclick = () => {
@@ -539,6 +523,20 @@ function tcRenderWindowRules() {
     };
     tb.appendChild(tr);
   });
+  // D5 回落提示（独立于 D10 冲突提示，语义保留）：applied 卡内条目被停用=
+  // 引擎事实——「已回落：条目 X 已停用」
+  const rule = (tcCard?.rules || []).find((r) => r.type === 'fixed');
+  const currentId = rule?.entry_id ?? '';
+  const diskEntry = currentId ? tcMirror[currentId] : undefined;
+  const appliedEntries = tcCard?.status?.state === 'applied' ? Object.keys(tcCard.provider_entries ?? {}) : [];
+  const tip = document.getElementById('tc-fallback-tip');
+  if (rule && diskEntry && diskEntry.enabled === false && appliedEntries.includes(currentId)) {
+    tip.textContent = '已回落：条目 ' + currentId + ' 已停用';
+    tip.hidden = false;
+  } else {
+    tip.hidden = true;
+    tip.textContent = '';
+  }
 }
 (function wireWindowRuleForm() {
   const openBtn = document.getElementById('tc-wr-open-add');

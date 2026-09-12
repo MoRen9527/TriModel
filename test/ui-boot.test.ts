@@ -25,13 +25,26 @@ async function waitFor(cond: () => boolean, timeoutMs = 3000): Promise<void> {
 }
 
 /** Boot the real UI in jsdom with fetch stubbed to a scripted queue. */
+// Kept referenced on purpose: retired doms must survive GC while their
+// mid-flight async callbacks drain (see retireUi).
+const retiredDoms: JSDOM[] = [];
+
+/** Mark a bootUi dom as done (fetch resolves inert afterwards). */
+function retireUi(dom: JSDOM): void {
+  const h = (dom as unknown as { __handle: { done: boolean } }).__handle;
+  if (h) h.done = true;
+  retiredDoms.push(dom);
+}
+
 function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders: Array<(url: string) => { status: number; body: unknown }>) {
+  const handle = { done: false };
   const dom = new JSDOM(readFileSync(UI_PATH, 'utf-8'), {
     runScripts: 'dangerously',
     url: 'http://127.0.0.1:3333/ui',
     beforeParse(window: import('jsdom').DOMWindow) {
       let call = 0;
       window.fetch = (async (url: string, init?: RequestInit) => {
+        if (handle.done) return { status: 0, json: async () => ({}), text: async () => '', headers: new Map() } as unknown as Response;
         fetchLog.push({ url, init });
         // window closed mid-flight (test teardown): resolve inert so no
         // render callback touches a dead document (unhandledRejection guard)
@@ -43,6 +56,7 @@ function bootUi(fetchLog: Array<{ url: string; init?: RequestInit }>, responders
       window.localStorage.clear();
     },
   });
+  (dom as unknown as { __handle: { done: boolean } }).__handle = handle;
   return dom;
 }
 
@@ -72,6 +86,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     // 首启无令牌不应发起数据请求（禁用态不发拉取）
     const dataCalls = log.filter((c) => c.url.includes('/v1/')).length;
     assert.equal(dataCalls, 0, '无令牌首启不应拉数据');
+    retireUi(dom);
   });
 
   it('断言② 令牌保存→自动重拉全部数据（去静默）', async () => {
@@ -89,6 +104,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     assert.ok(log.some((c) => c.url.includes('/v1/models')), 'models 必须被重拉');
     assert.equal(d.getElementById('conn-settings').open, false, '连接成功后折叠');
     assert.equal(d.getElementById('conn-dot').className, 'dot ok');
+    retireUi(dom);
   });
 
   it('断言③ 模型下拉有值（GET /v1/models 填充）', async () => {
@@ -102,6 +118,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     const opts = d.getElementById('tc-e-model').querySelectorAll('option');
     assert.equal(opts.length, 3, '下拉必须被真实数据填充');
     assert.equal(opts[0].value, 'deepseek-v4-pro');
+    retireUi(dom);
   });
 
   it('断言④ 条目提交可达：添加→保存卡片→PUT card 发出', async () => {
@@ -124,6 +141,8 @@ describe('S8.2: jsdom 首启五断言', () => {
     assert.ok(cardPut, 'PUT card must be issued');
     const sent = JSON.parse(typeof cardPut.init?.body === 'string' ? cardPut.init.body : '');
     assert.equal(sent.provider_entries.e1.api_key, 'sk-test-0001-12345', 'plaintext hydrates server-side (never stored raw)');
+    // TimingSink drain: let the boot/refresh async chain finish before teardown
+    await new Promise((r) => setTimeout(r, 80));
   });
 
   it('断言⑤ TriMMC 卡片区域通道词汇+结构词汇零出现', () => {
@@ -155,6 +174,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     await waitFor(() => !d.getElementById('tc-fallback-tip').hidden);
     assert.equal(d.getElementById('tc-fallback-tip').hidden, false, 'applied card + on-disk disabled current-use entry = fallback tip');
     assert.ok(d.getElementById('tc-fallback-tip').textContent.includes('已回落'), 'fallback wording');
+    retireUi(dom);
   });
 
   it('D5b: derivation source is the disk mirror - dirty (unsaved) toggle cannot fabricate fallback', async () => {
@@ -182,6 +202,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     await new Promise((r) => setTimeout(r, 40));
     assert.equal(d.getElementById('tc-fallback-tip').hidden, true, 'unsaved (dirty) toggle must not fabricate fallback');
     assert.ok(d.getElementById('tc-msg').textContent.includes('将在应用后生效'), 'quiet hint for unsaved toggle');
+    retireUi(dom);
   });
 
   it('fetch 失败 → 人话错误面板+重试钮（S3.2 禁静默空）', async () => {

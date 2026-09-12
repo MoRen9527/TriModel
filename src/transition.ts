@@ -19,7 +19,7 @@ export interface ModelTransitionRecord {
   at: string;
   from: string;
   to: string;
-  source: 'policy' | 'env-default';
+  source: 'policy' | 'card-default' | 'env-default';
   matched_schedule_id: string | null;
 }
 
@@ -42,7 +42,7 @@ export function resetTransitionStateForTest(): void {
  * warn and leave the keys chain untouched).
  */
 export function recordModelTransitionIfChanged(
-  evaluated: { model: string; source: 'policy' | 'env-default'; matched_schedule_id: string | null },
+  evaluated: { model: string; source: 'policy' | 'card-default' | 'env-default'; matched_schedule_id: string | null },
   pathOverride?: string,
 ): ModelTransitionRecord | null {
   const previous = lastReportedModel;

@@ -22,32 +22,15 @@ function shanghaiInstant(hhmm: string): Date {
 }
 
 describe('T2: fixed-rule engine semantics (零双轨 — same evaluatePolicy)', () => {
-  it('fixed always matches (any time of day) and outranks lower-priority window rules', () => {
+  it('D15/增补件4②: fixed retired - fixed-type entries no longer match (engine single-type window)', () => {
     const policy = {
       version: '1',
       schedules: [
-        { id: 'win-low', target: 'daemon-default' as const, model: 'GLM-5.3', windows: [{ start: '00:00', end: '23:59' }], timezone: 'Asia/Shanghai' as const, enabled: true, priority: 10 },
-        { id: 'trimmc:e1', target: 'daemon-default' as const, model: 'deepseek-v4-pro', windows: [], timezone: 'Asia/Shanghai' as const, enabled: true, priority: 100, type: 'fixed' as const },
+        { id: 'win', target: 'daemon-default' as const, model: 'GLM-5.3', windows: [{ start: '14:00', end: '18:00' }], timezone: 'Asia/Shanghai' as const, enabled: true, priority: 10 },
       ],
     };
-    for (const hhmm of ['03:17', '14:00', '23:59', '00:00']) {
-      const hit = evaluatePolicy(shanghaiInstant(hhmm), policy);
-      assert.equal(hit?.matched_schedule_id, 'trimmc:e1', `fixed must win at ${hhmm}`);
-      assert.equal(hit?.model, 'deepseek-v4-pro');
-    }
-  });
-
-  it('higher-priority window still beats a lower-priority fixed inside the window; fixed takes over outside', () => {
-    const policy = {
-      version: '1',
-      schedules: [
-        { id: 'win-high', target: 'daemon-default' as const, model: 'GLM-5.3', windows: [{ start: '14:00', end: '18:00' }], timezone: 'Asia/Shanghai' as const, enabled: true, priority: 50 },
-        { id: 'trimmc:e1', target: 'daemon-default' as const, model: 'deepseek-v4-pro', windows: [], timezone: 'Asia/Shanghai' as const, enabled: true, priority: 10, type: 'fixed' as const },
-      ],
-    };
-    assert.equal(evaluatePolicy(shanghaiInstant('15:00'), policy)?.matched_schedule_id, 'win-high');
-    assert.equal(evaluatePolicy(shanghaiInstant('20:00'), policy)?.matched_schedule_id, 'trimmc:e1');
-    assert.equal(evaluatePolicy(shanghaiInstant('09:00'), policy)?.matched_schedule_id, 'trimmc:e1');
+    assert.equal(evaluatePolicy(shanghaiInstant('15:00'), policy)?.matched_schedule_id, 'win');
+    assert.equal(evaluatePolicy(shanghaiInstant('20:00'), policy), null);
   });
 
   it('absent type defaults to window semantics (P1 back-compat)', () => {
