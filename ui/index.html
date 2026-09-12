@@ -522,14 +522,16 @@ $('tc-save').onclick = async () => {
   const name = $('tc-conn').value.trim();
   if (!name) return tcMsg('请先填写机器信息中的名称', 'err');
   const currentUse = $('tc-r-entry').value.replace(/^entry:/, '');
-  const otherRules = (tcCard?.rules || []).filter((r) => r.entry_id !== currentUse);
+  // D11 单选语义：当前使用选择=全量替换 fixed 规则（trimmc: 前缀域全移除，
+  // 仅保留当前选择一条）；window 规则分型不受影响。
+  const nonFixedRules = (tcCard?.rules || []).filter((r) => !(r.type === 'fixed' && String(r.rule_id).startsWith('trimmc:')));
   const doc = {
     version: 2,
     machine: { name: tcCard?.machine?.name || '' },
     connection: { name },
     provider_entries: tcEntries,            // D7：只发脏条目（后端合并）
     deleted_entry_ids: tcDeleted,           // D7：删除通道
-    rules: [...(currentUse ? [...otherRules, { rule_id: 'trimmc:' + currentUse, type: 'fixed', entry_id: currentUse }] : otherRules), ...tcWindowRules],
+    rules: [...(currentUse ? [...nonFixedRules, { rule_id: 'trimmc:' + currentUse, type: 'fixed', entry_id: currentUse }] : nonFixedRules), ...tcWindowRules],
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
