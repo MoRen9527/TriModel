@@ -287,4 +287,132 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     assert.ok(size > 10_000, `screenshot should be substantive, got ${size} bytes`);
     await page.context().close();
   });
+
+  // ── 走查增补 W1-W5（D10 时段规则 UI，CEO 复走查八条返工增补件；CPO 正身辖域）──
+  // 节奏纪律：选择器选项随卡片加载异步填充——每次 reload/保存后必须 waitForSelect，
+  // 断言持久性一律走 reload 后读值。
+
+  async function connectPage(page: Page, tag = 'w'): Promise<void> {
+    await page.fill('#token', API_TOKEN);
+    await page.fill('#adminToken', ADMIN_TOKEN);
+    await page.click('#conn-save');
+    await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 8000 });
+    await page.fill('#tc-conn', 'ste-machine-' + tag); // S10 必填：连接解禁后填（面板先禁用）
+    await page.waitForTimeout(500); // settle initial card fetches (async re-render guard)
+  }
+
+  async function waitSelectOptions(page: Page, sel: string, min: number): Promise<void> {
+    await page.waitForFunction(
+      ([s, m]) => { const el = document.querySelector(s); return el instanceof HTMLSelectElement && el.options.length >= m; },
+      [sel, min] as const,
+      { timeout: 8000 },
+    );
+  }
+
+  async function addEntryViaUi(page: Page, id: string, provider: string, model: string, key: string): Promise<void> {
+    await page.click('#tc-open-add');
+    await page.selectOption('#tc-e-provider', provider);
+    await waitModelOption(page, '#tc-e-model', model);
+    await page.fill('#tc-e-id', id);
+    await page.fill('#tc-e-baseurl', 'https://f2.example.com/v1');
+    await page.fill('#tc-e-key', key);
+    await page.click('#tc-e-save');
+    await page.waitForTimeout(250);
+  }
+
+  const waitModelOption = async (page: Page, sel: string, val: string): Promise<void> => {
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      const found = await page.$eval(sel, (el, v) => Array.from((el as HTMLSelectElement).options).some((o) => o.value === v), val).catch(() => false);
+      if (found) return;
+      await page.waitForTimeout(200);
+    }
+    throw new Error('model option "' + val + '" not found within 8s');
+  };
+
+  it('W1 (①): fixed-use selector interaction — save entry pair, reload, select rule, persist across reload', async () => {
+    const page = await freshPage();
+    await connectPage(page);
+    await addEntryViaUi(page, 'gate-ui-w2', 'glm', 'GLM-5.3', 'sk-gate-ui-w2-key');
+    await page.click('#tc-save'); // card now carries both entries
+    await page.waitForTimeout(700);
+    await page.reload({ waitUntil: 'domcontentloaded' }); // reload → selector rebuilds from saved card
+    await page.waitForTimeout(900);
+    await waitSelectOptions(page, '#tc-r-entry', 2);
+    const opts = await page.$eval('#tc-r-entry', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
+    const glmVal = opts.find((v) => v.includes('gate-ui-w2')) ?? '';
+    await page.selectOption('#tc-r-entry', glmVal);
+    await page.click('#tc-save'); // fixed-rule intent rides the card
+    await page.waitForTimeout(700);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(900);
+    await waitSelectOptions(page, '#tc-r-entry', 2);
+    const afterReload = await page.$eval('#tc-r-entry', (el) => (el as HTMLSelectElement).value);
+    assert.equal(afterReload, glmVal, '固定使用选择须随卡持久（reload 后保持）');
+    await page.context().close();
+  });
+
+  it('W2 (②): time-window rules zone — five columns + add form with field defaults', async () => {
+    const page = await freshPage();
+    await connectPage(page);
+    await waitSelectOptions(page, '#tc-w-entry', 1); // 目标条目下拉自卡片条目填充
+    const heads = await page.$eval('#tc-wrules thead', (el) => Array.from(el.querySelectorAll('th')).map((th) => (th.textContent ?? '').trim()));
+    assert.deepEqual(heads, ['时段', '目标条目', '优先级', '启用', '操作'], '五列正身');
+    assert.equal(await page.locator('#tc-wr-empty').isVisible(), true, '空态指引在位');
+    await page.click('#tc-wr-open-add');
+    assert.equal(await page.$eval('#tc-wr-form', (el) => (el as HTMLFormElement).hidden), false, '添加表单展开');
+    assert.equal(await page.$eval('#tc-w-start', (el) => (el as HTMLInputElement).value), '09:00', '开始默认 09:00');
+    assert.equal(await page.$eval('#tc-w-end', (el) => (el as HTMLInputElement).value), '18:00', '结束默认 18:00');
+    await page.click('#tc-w-cancel');
+    await page.context().close();
+  });
+
+  it('W3 (③): conflict persistent hint — visible while fixed non-empty, hidden when cleared', async () => {
+    const page = await freshPage();
+    await connectPage(page);
+    await page.waitForFunction(
+      () => { const el = document.querySelector('#tc-fixed-active'); return Boolean(el) && !(el as HTMLElement).hidden; },
+      undefined,
+      { timeout: 8000 },
+    );
+    const hint = await page.locator('#tc-fixed-active').textContent();
+    assert.ok(/固定使用生效中/.test(hint ?? ''), '冲突常驻提示人话文案在位');
+    const opts = await page.$eval('#tc-r-entry', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
+    const noneVal = opts.find((v) => v === '' || v === 'none') ?? '';
+    await page.selectOption('#tc-r-entry', noneVal);
+    await page.click('#tc-save');
+    await page.waitForTimeout(800);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(900);
+    const hidden = await page.$eval('#tc-fixed-active', (el) => el.hidden);
+    assert.equal(hidden, true, '清除固定规则后提示应隐藏');
+    await page.context().close();
+  });
+
+  it('W4 (④): start >= end rejected with 人话 copy, rule not added (跨午夜不暴露)', async () => {
+    const page = await freshPage();
+    await connectPage(page);
+    await waitSelectOptions(page, '#tc-w-entry', 1);
+    const rowsBefore = await page.locator('#tc-wr-body tr').count();
+    await page.click('#tc-wr-open-add');
+    await page.fill('#tc-w-start', '22:00');
+    await page.fill('#tc-w-end', '06:00');
+    await page.click('#tc-w-save');
+    await page.waitForTimeout(300);
+    const err = await page.locator('#tc-w-time-err').textContent();
+    assert.ok(/结束时间需晚于开始时间/.test(err ?? ''), `人话拒收文案，实际: ${err}`);
+    assert.equal(await page.$eval('#tc-wr-form', (el) => (el as HTMLFormElement).hidden), false, '拒收后表单保持（不静默吞）');
+    const rowsAfter = await page.locator('#tc-wr-body tr').count();
+    assert.equal(rowsAfter, rowsBefore, '拒收规则不得入表');
+    await page.click('#tc-w-cancel');
+    await page.context().close();
+  });
+
+  it('W5 (⑤): scope small-print in place — 以下策略应用于 TriMMC（sg）', async () => {
+    const page = await freshPage();
+    const body = await page.evaluate(() => document.body.innerText);
+    assert.ok(body.includes('以下策略应用于 TriMMC（sg）'), '作用域小字在位');
+    assert.ok(body.includes('时区：Asia/Shanghai'), '时区副注显式（D10 正身）');
+    await page.context().close();
+  });
 });
