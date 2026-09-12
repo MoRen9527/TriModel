@@ -4,20 +4,15 @@
 // true dangling still 400).
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, renameSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'path';
 import {
-  canonicalCardPath,
-  legacyCardPath,
   migrateLegacyDistCard,
   loadCard,
   saveCard,
   emptyCard,
-  validateCard,
 } from '../src/trimmc-card.js';
-import type { TrimmcCardDocument } from '../src/trimmc-card.js';
-import { handlePutTrimmcCard } from '../src/api/trimmc-card.js';
 
 describe('D9: path canonicalization', () => {
   const ORIGINAL_ENV = process.env.TRIMODEL_CARD_FILE;

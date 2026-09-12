@@ -153,19 +153,7 @@
   <div id="tc-msg" class="msg"></div>
 </section>
 
-<!-- ═══ 【本机策略（高级）】折叠区（S1：灰调+显示器图标+「本机改动即时生效」）═══ -->
-<details class="zone-local" id="local-zone">
-  <summary>🖥 【本机策略（高级）】 — 本机改动即时生效</summary>
-  <div style="padding-top:10px">
-    <h3>策略列表（policy.json）</h3>
-    <div id="error-policy" class="error-panel" hidden></div>
-    <div id="policy-empty" class="sub" style="margin-top:4px" hidden>本机暂无切换规则；策略随卡片应用或经配置接口设置。</div>
-    <table id="policy-table"><thead><tr><th>类型</th><th>模型</th><th>时段</th><th>状态</th></tr></thead><tbody id="policy-body"></tbody></table>
-    <div class="sub" style="margin-top:6px">本机策略的编辑请通过配置接口进行（本区只读展示）。</div>
-    <h3>密钥状态</h3>
-    <div class="kv" id="key-status"></div>
-  </div>
-</details>
+<!-- 【本机策略（高级）】折叠区已随 D12/D13/D14 三件删除（CEO 裁：本页单语义化=TriMMC 卡纯度；本机直生效语义归位 TriRLC 卡四卡规划） -->
 
 <script>
 'use strict';
@@ -269,7 +257,7 @@ $('conn-save').onclick = async () => {
 // ── 状态条 + 策略列表 + 密钥状态 ──
 async function refreshAll() {
   renderConnState();
-  await Promise.all([refreshEffective(), loadPolicyZone(), refreshKeyStatus(), loadTrimmc()]);
+  await Promise.all([refreshEffective(), loadTrimmc()]);
   await fillModelSelect();
 }
 
@@ -284,40 +272,6 @@ async function refreshEffective() {
     '<b>当前模型</b><span>' + (e.model ?? '-') + '</span>' +
     '<b>来源</b><span>' + (e.source === 'policy' ? '策略' : '默认配置') + '</span>' +
     '<b>一致性</b><span>' + (actual === e.model ? '<span class="ok">✓ 一致</span>' : '<span class="err">✗ 不一致</span>') + '</span>';
-}
-
-async function loadPolicyZone() {
-  const r = await api('/v1/config/policy').catch(() => ({ status: 0, body: {} }));
-  if (r.status !== 200) { failPanel('error-policy', humanize(r.status, r.body.error)); return; }
-  msg('error-policy', '');
-  const tb = $('policy-body');
-  tb.innerHTML = '';
-  const schedules = r.body.policy?.schedules || [];
-  // ⑦ 未配置空态：不渲染规则表，只出引导文案（两视图分离——条目视图归模型信息区）
-  if (schedules.length === 0) {
-    $('policy-empty').hidden = false;
-    $('policy-table').hidden = true;
-    return;
-  }
-  $('policy-empty').hidden = true;
-  $('policy-table').hidden = false;
-  schedules.forEach((s) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td>';
-    tr.children[0].textContent = s.type === 'fixed' ? '固定' : '时段';
-    tr.children[1].textContent = s.model;
-    tr.children[2].textContent = s.type === 'fixed' ? '—' : (s.windows || []).map((w) => w.start + '–' + w.end).join(' + ');
-    tr.children[3].textContent = s.enabled ? '<span class="ok">生效中</span>' : '已停用';
-    if (s.enabled) tr.children[3].innerHTML = '<span class="ok">生效中</span>'; else tr.children[3].textContent = '已停用';
-    tb.appendChild(tr);
-  });
-}
-
-async function refreshKeyStatus() {
-  const r = await api('/v1/config/keys/secure/status', { headers: adminHeaders() });
-  const el = $('key-status');
-  if (r.status !== 200) { el.innerHTML = '<b>状态</b><span>' + humanize(r.status, r.body.error) + '</span>'; return; }
-  el.innerHTML = '<b>状态</b><span>' + (r.body.message || '-') + '</span>';
 }
 
 // ── 模型下拉（S3.1：失败=错误空态+重试钮，禁静默空下拉）──
@@ -419,6 +373,9 @@ function tcRender() {
   });
   tcRefreshCurrentSelect();
   tcDeriveFallback();
+  // D12① 单点接线：条目增删/启用翻转走 tcRender 后时段规则下拉同步重填
+  // （幂等渲染；loadTrimmc 尾的既有配对不变——双点冗余防御渲染竞态）
+  tcRenderWindowRules();
 }
 
 function tcMarkDirty() { $('tc-dirty').textContent = '（有未保存改动，保存后待应用）'; }
