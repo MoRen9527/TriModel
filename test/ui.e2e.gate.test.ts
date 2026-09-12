@@ -330,25 +330,30 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     throw new Error('model option "' + val + '" not found within 8s');
   };
 
-  it('W1 (①): fixed-use selector interaction — save entry pair, reload, select rule, persist across reload', async () => {
+  it('W1 (①) D15 改写: 默认模型字段+条目持久 — 选择→保存→reload 保持（第四型完整周期）', async () => {
     const page = await freshPage();
     await connectPage(page);
     await addEntryViaUi(page, 'gate-ui-w2', 'glm', 'GLM-5.3', 'sk-gate-ui-w2-key');
-    await page.click('#tc-save'); // card now carries both entries
+    // D15: 默认模型字段（可空 select，''=回落引擎默认）——模型表异步填充后选 GLM-5.3；
+    // selectOption 与异步重建竞态（2026-09-12 实测 30s 重试循环）→ 直 DOM 赋值+change 派发（原子）
+    await page.waitForFunction(
+      '() => { const el = document.querySelector("#tc-default-model"); return el instanceof HTMLSelectElement && Array.from(el.options).some((o) => o.value === "GLM-5.3"); }',
+      undefined,
+      { timeout: 8000 },
+    );
+    await page.evaluate(() => {
+      const el = document.querySelector('#tc-default-model') as HTMLSelectElement;
+      el.value = 'GLM-5.3';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.click('#tc-save');
     await page.waitForTimeout(700);
-    await page.reload({ waitUntil: 'domcontentloaded' }); // reload → selector rebuilds from saved card
+    await page.reload({ waitUntil: 'domcontentloaded' }); // 第四型：跨刷新持久周期
     await page.waitForTimeout(900);
-    await waitSelectOptions(page, '#tc-r-entry', 2);
-    const opts = await page.$eval('#tc-r-entry', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
-    const glmVal = opts.find((v) => v.includes('gate-ui-w2')) ?? '';
-    await page.selectOption('#tc-r-entry', glmVal);
-    await page.click('#tc-save'); // fixed-rule intent rides the card
-    await page.waitForTimeout(700);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(900);
-    await waitSelectOptions(page, '#tc-r-entry', 2);
-    const afterReload = await page.$eval('#tc-r-entry', (el) => (el as HTMLSelectElement).value);
-    assert.equal(afterReload, glmVal, '固定使用选择须随卡持久（reload 后保持）');
+    const dm = await page.$eval('#tc-default-model', (el) => (el as HTMLSelectElement).value);
+    assert.equal(dm, 'GLM-5.3', '默认模型字段须随卡持久（reload 后保持）');
+    const entryRows = await page.locator('#tc-entry-body tr').count();
+    assert.ok(entryRows >= 1, '条目随卡持久');
     await page.context().close();
   });
 
@@ -370,38 +375,19 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.context().close();
   });
 
-  it('W3 (③): conflict hint visible with fixed rule (D12 id 对齐正验) — 清除半周期观测记录', async () => {
+  it('W3 (③) D15 改写: fixed 选择器退役确认 — 无 fixed 选择器+默认模型字段接管+冲突提示按窗口态', async () => {
     const page = await freshPage();
     await connectPage(page, 'w3');
-    await addEntryViaUi(page, 'gate-ui-w3a', 'glm', 'GLM-5.3', 'sk-gate-w3a-key');
-    await page.click('#tc-save'); // 条目先落卡（否则选择器无 w3a 可选）
-    await page.waitForTimeout(700);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(900);
-    // set fixed rule → save → hint un-hides (D12 id 对齐后正验)
-    await page.waitForFunction(
-      '() => { const el = document.querySelector("#tc-r-entry"); return el instanceof HTMLSelectElement && el.options.length >= 2; }',
-      undefined,
-      { timeout: 8000 },
-    );
-    const glmVal = (await page.$eval('#tc-r-entry', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value))).find((v) => v.includes('w3a')) ?? '';
-    await page.selectOption('#tc-r-entry', glmVal);
-    await page.click('#tc-save');
-    await page.waitForTimeout(800);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(900);
-    await page.waitForFunction(
-      '() => { const el = document.querySelector("#tc-fixed-active"); return el !== null && !el.hasAttribute("hidden"); }',
-      undefined,
-      { timeout: 8000 },
-    );
-    const hint = await page.locator('#tc-fixed-active').textContent();
-    assert.ok(/固定使用生效中/.test(hint ?? ''), 'fixed 在卡→冲突常驻提示显（D12 修后正验）');
-    // clear half-cycle observation: redesigned UI carries NO none-option in
-    // #tc-r-entry (probe-f9 evidence) —「清除」语义由 D11 替换语义承载（改选即替换），
-    // hint 隐半周期随清除入口落地后补测（观测记录，非缺陷断言）
-    const opts = await page.$eval('#tc-r-entry', (el) => Array.from((el as HTMLSelectElement).options).map((o) => o.value));
-    assert.ok(opts.length >= 2, '选择器条目选项在位（清除入口候补观测记录）');
+    // D15: tc-r-entry 退役（fixed 引擎分支收尾，type 收窄 window 单型）
+    assert.equal(await page.locator('#tc-r-entry').count(), 0, 'fixed 选择器已退役（DOM 零残留）');
+    assert.equal(await page.locator('#tc-default-model').count(), 1, '默认模型字段接管（可空=回落引擎默认）');
+    // D15: 冲突提示元素整体退役（fixed 分支收尾=无冲突可提，id 争议随之消解）
+    assert.equal(await page.locator('#tc-fixed-active').count(), 0, '冲突提示元素已退役（fixed 分支收尾）');
+    assert.equal(await page.locator('#tc-fixed-tip').count(), 0, '旧 tip 元素零残留');
+    // 卡 schema: rules 仅 window 型（trimmc-win: 前缀域），零 fixed 混写
+    const card = await (await fetch(`http://127.0.0.1:${port}/v1/config/trimmc-card`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } })).json();
+    const rules = card.card?.rules ?? [];
+    assert.ok(rules.every((r: { type?: string }) => r.type !== 'fixed'), '卡 rules 零 fixed 型（window 单型收窄）');
     await page.context().close();
   });
 
