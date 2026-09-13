@@ -131,9 +131,9 @@
     <span class="sub">窗口时段未命中时使用</span>
   </div>
 
-  <h3 style="margin-top:14px">策略列表</h3>
+  <h3 style="margin-top:14px">策略列表 <button class="primary" id="tc-str-add" style="margin-left:8px;font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">+ 新增策略</button></h3>
   <table id="tc-str-table"><thead><tr><th>名称</th><th>模型集</th><th>规则数</th><th>默认模型</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-str-body"></tbody></table>
-  <div id="tc-str-list-empty" class="sub" style="margin-top:6px">暂无策略。点「新增策略」创建。</div>
+  <div id="tc-str-list-empty" class="sub" style="margin-top:6px">暂无策略。<button class="primary" style="font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">新增策略</button></div>
 
   <form class="card-form" id="tc-str-form" hidden>
     <h3 id="tc-str-form-title">新增策略</h3>
