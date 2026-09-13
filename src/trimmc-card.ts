@@ -61,6 +61,68 @@ export interface TrimmcCardDocument {
   deleted_entry_ids?: string[];
   /** 增补件4②：默认模型兜底（可空=回落引擎出厂默认；计算序中间层）。 */
   default_model?: string | null;
+  /** 增补件5：策略实体化（策略字典，id 为键）。 */
+  strategies?: Record<string, StrategyEntity>;
+  /** 增补件5：当前活动策略 id（null=无活动策略）。 */
+  active_strategy_id?: string | null;
+  /** 增补件5：已删除策略 id 列表（防幽灵引用）。 */
+  deleted_strategy_ids?: string[];
+}
+
+export interface StrategyWindow {
+  start: string; // 'HH:MM' inclusive
+  end: string;   // 'HH:MM' exclusive
+}
+
+export interface StrategyRule {
+  type: 'window';
+  windows: StrategyWindow[];
+  model: string; // 官方五名（catalog）
+  priority: number;
+  enabled: boolean;
+}
+
+export interface StrategyEntity {
+  name: string;
+  purpose: string;
+  models: string[]; // 可切换模型集（catalog 五名子集）
+  rules: StrategyRule[];
+  default_model: string; // 兜底（窗口未命中时使用）
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── 增补件5：策略实体化 ──
+
+export interface StrategyWindow {
+  start: string; // 'HH:MM' inclusive
+  end: string;   // 'HH:MM' exclusive
+}
+
+export interface StrategyRule {
+  type: 'window';
+  windows: StrategyWindow[];
+  model: string; // 官方五名（catalog）
+  priority: number;
+  enabled: boolean;
+}
+
+export interface StrategyEntity {
+  name: string;
+  purpose: string;
+  models: string[]; // 可切换模型集（catalog 五名子集）
+  rules: StrategyRule[];
+  default_model: string; // 兜底（窗口未命中时使用）
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyConfig {
+  strategies: Record<string, StrategyEntity>;
+  active_strategy_id: string | null;
+  deleted_strategy_ids: string[];
 }
 
 // ── D9 路径规范化（预走查 f2 谜题根修）──
@@ -115,9 +177,60 @@ export function emptyCard(connectionName = ''): TrimmcCardDocument {
     connection: { name: connectionName },
     provider_entries: {},
     rules: [],
+    strategies: {},
+    active_strategy_id: null,
+    deleted_strategy_ids: [],
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
+}
+
+/** Strategy CRUD: upsert a strategy entity. */
+export function upsertStrategy(doc: TrimmcCardDocument, id: string, entity: StrategyEntity): void {
+  if (!doc.strategies) doc.strategies = {};
+  doc.strategies[id] = entity;
+}
+
+/** Strategy CRUD: delete a strategy (active strategy 禁删守卫). */
+export function deleteStrategy(doc: TrimmcCardDocument, id: string): { ok: boolean; error?: string } {
+  if (!doc.strategies || !doc.strategies[id]) return { ok: false, error: `strategy '${id}' not found` };
+  if (doc.active_strategy_id === id) return { ok: false, error: `active strategy '${id}' cannot be deleted; switch first` };
+  delete doc.strategies[id];
+  if (!doc.deleted_strategy_ids) doc.deleted_strategy_ids = [];
+  doc.deleted_strategy_ids.push(id);
+  return { ok: true };
+}
+
+/** Strategy CRUD: set the active strategy id. */
+export function setActiveStrategy(doc: TrimmcCardDocument, id: string | null): void {
+  doc.active_strategy_id = id;
+}
+
+/** Get the active strategy entity, or null if none set / not found. */
+export function getActiveStrategy(doc: TrimmcCardDocument): StrategyEntity | null {
+  if (!doc.active_strategy_id || !doc.strategies) return null;
+  return doc.strategies[doc.active_strategy_id] ?? null;
+}
+
+/** Validate a strategy entity (五名目录+规则格式). */
+export function validateStrategy(entity: StrategyEntity): string {
+  if (typeof entity.name !== 'string' || !entity.name.trim()) return '策略名称必填';
+  if (!entity.models || entity.models.length === 0) return '策略模型集不能为空';
+  for (const m of entity.models) {
+    if (!isCatalogModel(m)) return `模型 '${m}' not in official catalog: ${MODEL_CATALOG_LIST}`;
+  }
+  if (!entity.rules || entity.rules.length === 0) return '策略规则不能为空';
+  for (const rule of entity.rules) {
+    if (rule.type !== 'window') return `rule type must be 'window' (fixed retired)`;
+    for (const w of rule.windows) {
+      const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
+      if (!timeRe.test(w.start) || !timeRe.test(w.end)) return `rule window time must be 'HH:MM'`;
+      if (w.start >= w.end) return 'rule window must have start < end';
+    }
+    if (!isCatalogModel(rule.model)) return `rule model '${rule.model}' not in official catalog: ${MODEL_CATALOG_LIST}`;
+  }
+  if (!isCatalogModel(entity.default_model)) return `default_model '${entity.default_model}' not in official catalog: ${MODEL_CATALOG_LIST}`;
+  return '';
 }
 
 /** Read + decrypt entries. Absent file → null; corrupt → null (fail-safe). */

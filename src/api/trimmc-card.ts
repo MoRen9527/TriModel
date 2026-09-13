@@ -7,8 +7,8 @@
 //
 // Admin plane: fail-closed 503 (TRIMODEL_ADMIN_TOKEN unset) / 401 (wrong
 // Bearer) / 200 — same family as the P2 secure key plane.
-import { loadCard, saveCard, emptyCard, validateCard, CARD_STATES, buildEntry } from '../trimmc-card.js';
-import type { TrimmcCardDocument, CardState, CardEntry } from '../trimmc-card.js';
+import { loadCard, saveCard, emptyCard, validateCard, CARD_STATES, buildEntry, validateStrategy } from '../trimmc-card.js';
+import type { TrimmcCardDocument, CardState, CardEntry, StrategyEntity } from '../trimmc-card.js';
 import { decrypt } from '../security/key-encryptor.js';
 import { maskKey } from '../secure-keys.js';
 
@@ -121,9 +121,39 @@ export function handlePutTrimmcCard(
     rules: Array.isArray(card.rules) ? card.rules : base.rules,
     // 增补件4②：默认模型兜底字段（null/absent = 回落引擎出厂默认）
     default_model: 'default_model' in card ? card.default_model : base.default_model ?? null,
+    // 增补件5：策略实体字典合并（UI 编辑的 strategies upsert 到基座）
+    strategies: { ...base.strategies, ...card.strategies },
+    active_strategy_id: 'active_strategy_id' in card ? card.active_strategy_id ?? null : base.active_strategy_id ?? null,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
+  // D10 校验扩展：merged 后全量 validateCard（含策略引用校验）
+  // 增补件5：策略校验前置——active_strategy_id 悬挂→400；deleted 含 active→400
+  if (merged.active_strategy_id && !(merged.active_strategy_id in (merged.strategies ?? {}))) {
+    return { statusCode: 400, body: { error: '引用的策略不存在，请先创建或改选' } };
+  }
+  if (Array.isArray(merged.deleted_strategy_ids) && merged.active_strategy_id && merged.deleted_strategy_ids.includes(merged.active_strategy_id)) {
+    return { statusCode: 400, body: { error: '当前策略不可删除，请先切换至其他策略' } };
+  }
+  // 增补件5：策略实体校验（validateStrategy 复用 T1 的校验函数）
+  if (typeof card.strategies === 'object' && card.strategies !== null) {
+    for (const [id, entity] of Object.entries(card.strategies)) {
+      const err = validateStrategy(entity as StrategyEntity);
+      if (err) return { statusCode: 400, body: { error: `策略 '${id}' 校验失败: ${err}` } };
+    }
+  }
+  // D10 删除通道：deleted_strategy_ids 显式移除（策略删除）
+  if (Array.isArray(card.deleted_strategy_ids)) {
+    for (const id of card.deleted_strategy_ids) {
+      if (typeof id === 'string') {
+        if (merged.active_strategy_id === id) {
+          return { statusCode: 400, body: { error: '当前策略不可删除，请先切换至其他策略' } };
+        }
+        delete merged.strategies?.[id];
+      }
+    }
+    merged.deleted_strategy_ids = card.deleted_strategy_ids.filter((id): id is string => typeof id === 'string');
+  }
   // D7 删除通道：deleted_entry_ids 显式移除（镜像条目删除）
   if (Array.isArray(card.deleted_entry_ids)) {
     for (const id of card.deleted_entry_ids) {

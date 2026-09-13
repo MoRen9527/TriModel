@@ -58,29 +58,21 @@ export function envDefaultModel(): string {
 }
 
 /**
- * 增补件4②：卡 default_model 兜底（计算序中间层：窗口命中 → 卡 default_model
- * → env 出厂默认）。读 trimmc-card.json 的 default_model 字段；卡缺席/损坏=
- * 无中间层（fail-safe，同族口径）。
+ * 增补件5：卡 default_model 兜底（计算序中间层：窗口命中 → 卡 default_model
+ * → env 出厂默认）。从 trimmc-card.json 读取 default_model 字段。
+ * 延迟绑定：loadCard 从 trimmc-card.ts 注入（防环：trimmc-card 不依赖 policy）。
  */
-export function cardDefaultModel(): string | null {
-  try {
-    const { loadCard } = cardStore();
-    const doc = loadCard();
-    return doc && doc.default_model ? doc.default_model : null;
-  } catch {
-    return null;
-  }
+let _cardDefaultModelFn: (() => string | null) | null = null;
+
+/** Register a card default_model getter (called from server.ts at boot). */
+export function registerCardDefaultModelFn(fn: () => string | null): void {
+  _cardDefaultModelFn = fn;
 }
 
-// 延迟绑定（ESM 静态 import 会引入 trimmc-card -> key-encryptor 依赖链，
-// 该链无环但保持单一数据流向；动态 import 缓存模块引用）。
-let _cardStore: { loadCard: (p?: string) => import('./trimmc-card.js').TrimmcCardDocument | null } | null = null;
-export function registerCardStore(store: { loadCard: (p?: string) => import('./trimmc-card.js').TrimmcCardDocument | null }): void {
-  _cardStore = store;
-}
-function cardStore() {
-  if (!_cardStore) throw new Error('card store not registered');
-  return _cardStore;
+/** Get card default_model via registered getter, or null (fail-safe). */
+export function getCardDefaultModel(): string | null {
+  if (!_cardDefaultModelFn) return null;
+  try { return _cardDefaultModelFn(); } catch { return null; }
 }
 
 function toMinutes(hhmm: string): number {
@@ -309,7 +301,7 @@ export function effectiveModel(now: Date = new Date()): {
   const hit = evaluatePolicy(now, loadPolicy());
   if (hit) return { model: hit.model, matched_schedule_id: hit.matched_schedule_id, source: 'policy' };
   // 增补件4② 三层计算序中间层：窗口未命中 → 卡 default_model → env 出厂默认
-  const cardModel = cardDefaultModel();
+  const cardModel = getCardDefaultModel();
   if (cardModel) return { model: cardModel, matched_schedule_id: null, source: 'card-default' };
   return { model: envDefaultModel(), matched_schedule_id: null, source: 'env-default' };
 }
