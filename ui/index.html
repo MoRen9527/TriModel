@@ -115,17 +115,38 @@
     </div>
   </form>
 
-  <h3>模型切换策略</h3>
+  <h3>当前策略</h3>
   <div class="sub" style="margin:-6px 0 10px">以下策略应用于 TriMMC（sg）</div>
   <div class="row-form">
-    <label>可切换模型</label>
-    <span id="tc-chips" class="sub">暂无已启用条目</span>
+    <label>策略</label>
+    <select id="tc-strategy-sel" style="width:260px"><option value="">暂无策略，请先新增</option></select>
+    <button id="tc-str-switch">切换至选中策略</button>
+    <button id="tc-str-clear">清除（不使用策略）</button>
   </div>
+  <div class="kv" id="tc-str-detail" style="margin-top:8px"></div>
+  <div class="row-form"><span id="tc-chips" class="sub">暂无已启用条目</span></div>
   <div class="row-form">
     <label>默认模型（可留空=回落引擎默认）</label>
     <select id="tc-default-model" style="width:260px"><option value="">（留空=回落引擎默认）</option></select>
     <span class="sub">窗口时段未命中时使用</span>
   </div>
+
+  <h3 style="margin-top:14px">策略列表</h3>
+  <table id="tc-str-table"><thead><tr><th>名称</th><th>模型集</th><th>规则数</th><th>默认模型</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-str-body"></tbody></table>
+  <div id="tc-str-list-empty" class="sub" style="margin-top:6px">暂无策略。点「新增策略」创建。</div>
+
+  <form class="card-form" id="tc-str-form" hidden>
+    <h3 id="tc-str-form-title">新增策略</h3>
+    <div class="field"><label>名称（必填）</label><input id="tc-s-name" placeholder="例如 工作时段"></div>
+    <div class="field"><label>目的（选填）</label><input id="tc-s-purpose" placeholder="例如 闲时用 glm 忙时用 deepseek"></div>
+    <div class="field"><label>模型集</label><select id="tc-s-model" style="width:200px"></select></div>
+    <div class="field"><label>默认模型</label><select id="tc-s-default" style="width:200px"></select></div>
+    <div class="field"><label><input id="tc-s-enabled" type="checkbox" checked> 启用</label></div>
+    <div class="row-form">
+      <button type="button" class="primary" id="tc-s-save">保存策略</button>
+      <button type="button" id="tc-s-cancel">取消</button>
+    </div>
+  </form>
 
   <h3 style="margin-top:14px">时段规则（命名候定） <span class="sub">时区：Asia/Shanghai</span></h3>
   <table id="tc-wrules"><thead><tr><th>时段</th><th>目标条目</th><th>优先级</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-wr-body"></tbody></table>
@@ -140,12 +161,12 @@
     <div class="row-form">
       <button type="button" class="primary" id="tc-w-save">保存规则</button>
       <button type="button" id="tc-w-cancel">取消</button>
-      <span class="sub">随卡片保存后应用</span>
+      <span class="sub">跨午夜时段暂不支持；随卡片保存后应用</span>
     </div>
   </form>
   <div class="row-form"><button id="tc-wr-open-add">添加时段规则</button></div>
-  <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin-top:6px" hidden></div>
   <div class="sub" style="margin-top:6px">按时段/额度自动切换将于后续版本提供</div>
+  <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin-top:6px" hidden></div>
 
   <div class="row-form">
     <button class="primary" id="tc-save">保存卡片</button>
@@ -261,6 +282,9 @@ async function refreshAll() {
   renderConnState();
   await Promise.all([refreshEffective(), loadTrimmc()]);
   await fillModelSelect();
+  tcFillDefaultModelSelect();
+  tcFillStrategySelects();
+  tcFillDefaultModelSelect();
 }
 
 async function refreshEffective() {
@@ -274,6 +298,36 @@ async function refreshEffective() {
     '<b>当前模型</b><span>' + (e.model ?? '-') + '</span>' +
     '<b>来源</b><span>' + (e.source === 'policy' ? '策略' : '默认配置') + '</span>' +
     '<b>一致性</b><span>' + (actual === e.model ? '<span class="ok">✓ 一致</span>' : '<span class="err">✗ 不一致</span>') + '</span>';
+}
+
+// ── D19 默认模型下拉动态填充（官方五名+空选）──
+function tcFillDefaultModelSelect() {
+  const sel = $('tc-default-model');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">（留空=回落引擎默认）</option>';
+  const catalog = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
+  for (const m of catalog) {
+    const o = document.createElement('option');
+    o.value = m; o.textContent = m;
+    sel.appendChild(o);
+  }
+  sel.value = prev;
+}
+
+// ── D19 策略表单下拉填充 ──
+function tcFillStrategySelects() {
+  const catalog = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
+  for (const selId of ['tc-s-model', 'tc-s-default']) {
+    const sel = $(selId);
+    if (!sel) continue;
+    sel.innerHTML = '';
+    for (const m of catalog) {
+      const o = document.createElement('option');
+      o.value = m; o.textContent = m;
+      sel.appendChild(o);
+    }
+  }
 }
 
 // ── 模型下拉（S3.1：失败=错误空态+重试钮，禁静默空下拉）──
@@ -314,6 +368,7 @@ let tcCard = null;
 let tcEntries = {};   // 脏条目（id -> {provider, model, enabled, base_url?, api_key? 明文}）
 let tcMirror = {};    // 只读镜像（id -> {provider, model, masked, enabled, updated_at})
 let tcDeleted = [];   // 本次删除的既有（镜像）条目 id
+let tcDeletedStrategyIds = []; // D19：删除的策略 id
 let tcEditingId = null;
 
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
@@ -463,6 +518,8 @@ $('tc-save').onclick = async () => {
     provider_entries: tcEntries,            // D7：只发脏条目（后端合并）
     deleted_entry_ids: tcDeleted,           // D7：删除通道
     rules: tcWindowRules.map((wr) => ({ ...wr })),
+    strategies: tcStrategies,
+    active_strategy_id: tcActiveStrategy,
     default_model: $('tc-default-model').value || null,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
@@ -573,6 +630,99 @@ function tcRenderWindowRules() {
   };
 })();
 
+// ═══ D19 策略实体（策略=一等实体；策略={命名,模型集,规则组合}）═══
+let tcStrategies = {};   // 策略字典（id -> StrategyEntity）
+let tcActiveStrategy = null;  // 当前活动策略 id
+
+function tcRenderStrategySel() {
+  const sel = $('tc-strategy-sel');
+  sel.innerHTML = '<option value="">暂无策略，请先新增</option>';
+  const ids = Object.keys(tcStrategies);
+  for (const id of ids) {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = tcStrategies[id].name + (tcStrategies[id].enabled ? '' : '（已停用）');
+    sel.appendChild(o);
+  }
+  if (tcActiveStrategy && tcStrategies[tcActiveStrategy]) sel.value = tcActiveStrategy;
+}
+
+function tcRenderStrategyDetail() {
+  const el = $('tc-str-detail');
+  const s = tcActiveStrategy ? tcStrategies[tcActiveStrategy] : null;
+  if (!s) { el.innerHTML = '<b>活动策略</b><span>无（按时段规则执行）</span>'; return; }
+  el.innerHTML = '<b>活动策略</b><span>' + s.name + '</span>'
+    + '<b>目的</b><span>' + (s.purpose || '—') + '</span>'
+    + '<b>默认模型</b><span>' + s.default_model + '</span>'
+    + '<b>模型集</b><span>' + s.models.join(', ') + '</span>'
+    + '<b>规则数</b><span>' + s.rules.length + '</span>';
+}
+
+function tcRenderStrategyTable() {
+  const tb = $('tc-str-body');
+  tb.innerHTML = '';
+  $('tc-str-list-empty').hidden = Object.keys(tcStrategies).length > 0;
+  Object.entries(tcStrategies).forEach(([id, s]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td><button data-edit style="margin-right:4px">编辑</button><button class="danger" data-del>删除</button></td>';
+    tr.children[0].textContent = s.name;
+    tr.children[1].textContent = s.models.join(', ');
+    tr.children[2].textContent = String(s.rules.length);
+    tr.children[3].textContent = s.default_model;
+    tr.children[4].textContent = s.enabled ? '✓' : '✗';
+    tr.querySelector('[data-edit]').onclick = () => tcOpenStrategyForm(id);
+    tr.querySelector('[data-del]').onclick = () => {
+      if (tcActiveStrategy === id) { tcMsg('当前策略不可删除，请先切换至其他策略', 'err'); return; }
+      delete tcStrategies[id];
+      tcRenderStrategyTable();
+      tcMarkDirty();
+    };
+    tb.appendChild(tr);
+  });
+}
+
+function tcOpenStrategyForm(editId) {
+  tcEditingId = editId ?? null;
+  $('tc-str-form-title').textContent = editId ? '编辑策略 ' + editId : '新增策略';
+  const s = editId ? tcStrategies[editId] : null;
+  $('tc-s-name').value = s?.name ?? '';
+  $('tc-s-purpose').value = s?.purpose ?? '';
+  $('tc-s-enabled').checked = s ? s.enabled : true;
+  $('tc-str-form').hidden = false;
+}
+
+$('tc-s-cancel').onclick = () => { $('tc-str-form').hidden = true; };
+$('tc-s-save').onclick = () => {
+  const name = $('tc-s-name').value.trim();
+  if (!name) return tcMsg('策略名称必填', 'err');
+  const model = $('tc-s-model').value;
+  const purpose = $('tc-s-purpose').value.trim();
+  const id = tcEditingId ?? ('str-' + Date.now());
+  tcStrategies[id] = {
+    name, purpose, models: [model], default_model: model, enabled: $('tc-s-enabled').checked,
+    rules: tcStrategies[id]?.rules ?? [],
+    created_at: tcStrategies[id]?.created_at ?? new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  $('tc-str-form').hidden = true;
+  tcRenderStrategyTable();
+  tcMarkDirty();
+};
+
+$('tc-str-switch').onclick = () => {
+  const id = $('tc-strategy-sel').value;
+  if (!id) return tcMsg('请先选择策略', 'err');
+  tcActiveStrategy = id;
+  tcMarkDirty();
+  tcMsg('已切换至策略 ' + id + '（保存卡片后生效）', 'ok');
+};
+
+$('tc-str-clear').onclick = () => {
+  tcActiveStrategy = null;
+  tcMarkDirty();
+  tcMsg('已清除策略（不使用策略）', 'ok');
+};
+
+
 async function loadTrimmc() {
   if (!adminToken()) { tcBadge(); return; }
   const r = await api('/v1/config/trimmc-card', { headers: adminHeaders() });
@@ -613,6 +763,9 @@ async function loadTrimmc() {
   $('tc-dirty').textContent = '';
   tcRender();
   tcRenderWindowRules();
+  tcRenderStrategySel();
+  tcRenderStrategyTable();
+  tcRenderStrategyDetail();
 }
 $('refreshNow').onclick = () => refreshAll();
 
