@@ -191,6 +191,46 @@ describe('S8.2: jsdom 首启五断言', () => {
     retireUi(dom);
   });
 
+
+  it('层2 段D 修复回归：规则表单三型显隐（computed display 断言——.field display:grid 覆盖 hidden 属性坑防复发）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const card = {
+      version: 4, machine: { name: 'm' }, connection: { name: '本机' },
+      provider_entries: { e1: { provider: 'glm', model: 'GLM-5.3', api_key_encrypted: 'QUFB', enabled: true, updated_at: 'x' } },
+      model_sets: { ms1: { name: '集', entry_ids: ['e1'], created_at: 'x', updated_at: 'x' } },
+      rules: { r1: { name: '示例', type: 'time', enabled: true, windows: [{ start: '09:00', end: '18:00', entry_id: 'e1' }], created_at: 'x', updated_at: 'x' } },
+      strategies: { s1: { name: '策略', model_set_id: 'ms1', rule_ids: ['r1'], created_at: 'x', updated_at: 'x' } },
+      active_strategy_id: 's1', deleted_strategy_ids: [],
+      status: { state: 'pending', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null },
+    };
+    const dom = bootUi(log, [(url: string) => {
+      if (url.includes('/v1/models')) return { status: 200, body: { object: 'list', data: [{ id: 'GLM-5.3' }] } };
+      if (url.includes('/v1/config/policy')) return { status: 200, body: { object: 'config.policy', policy: { version: '1', schedules: [] }, effective: { model: 'GLM-5.3', source: 'env-default', matched_schedule_id: null } } };
+      if (url.includes('/v1/config/keys')) return { status: 200, body: { object: 'config.keys', keys: {}, default_model: 'GLM-5.3', refresh_interval_s: 900, expires_at: 'x' } };
+      if (url.includes('/trimmc-card')) return { status: 200, body: { object: 'x', card_file_present: true, card, entries_masked: { e1: { provider: 'glm', model: 'GLM-5.3', masked: '****0001', enabled: true, updated_at: 'x' } } } };
+      return { status: 200, body: {} };
+    }]);
+    const d = dom.window.document;
+    (d.getElementById('token') as HTMLInputElement).value = 'tk';
+    (d.getElementById('adminToken') as HTMLInputElement).value = 'ta';
+    d.getElementById('conn-save').click();
+    await waitFor(() => (d.getElementById('tc-r-body') as HTMLElement).children.length >= 1);
+    d.getElementById('tc-r-add').click();
+    const vis = (id: string) => dom.window.getComputedStyle(d.getElementById(id)).display;
+    // 遍历三型：本型字段可见（display≠none），他型字段必隐（=none）
+    for (const [type, visible, hiddenIds] of [
+      ['time', ['tc-r-time-zone'], ['tc-r-default-row', 'tc-r-watch-row', 'tc-r-fallback-row']],
+      ['default', ['tc-r-default-row'], ['tc-r-time-zone', 'tc-r-watch-row', 'tc-r-fallback-row']],
+      ['quota', ['tc-r-watch-row', 'tc-r-fallback-row'], ['tc-r-time-zone', 'tc-r-default-row']],
+    ] as Array<[string, string[], string[]]>) {
+      (d.getElementById('tc-r-type') as HTMLSelectElement).value = type;
+      d.getElementById('tc-r-type').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      for (const id of visible) assert.notEqual(vis(id), 'none', `${type} 型下 ${id} 须可见`);
+      for (const id of hiddenIds) assert.equal(vis(id), 'none', `${type} 型下 ${id} 须隐藏（BOD 23:5x 走查回归位）`);
+    }
+    retireUi(dom);
+  });
+
   it('断言⑤ TriMMC 卡片区域通道词汇+结构词汇零出现', () => {
     const html = readFileSync(UI_PATH, 'utf-8');
     const cardZone = html.slice(html.indexOf('【TriMMC 信息】'), html.indexOf('【本机策略（高级）】'));

@@ -53,6 +53,9 @@
   details summary { cursor: pointer; font-size: 13px; color: var(--fg-dim); }
   form.card-form { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 10px; max-width: 460px; }
   form.card-form .field { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; align-items: center; margin-bottom: 8px; }
+  /* 型显隐根治（BOD 23:5x 走查必修）：.field 的 display:grid 会覆盖 hidden 属性的
+     UA display:none——他型字段恒显。全局 !important 使 hidden 语义绝对化。 */
+  [hidden] { display: none !important; }
   form.card-form .field label { font-size: 12.5px; color: var(--fg-dim); text-align: right; }
   .switch { position: relative; width: 34px; height: 18px; appearance: none; background: var(--idle); border-radius: 9px; cursor: pointer; transition: background .15s; }
   .switch:checked { background: var(--ok); }
