@@ -1,4 +1,4 @@
-// ── LG-035 增补件5: strategy entity persistence + validation tests ──
+// ── LG-035 增补件5→schema v4: strategy entity persistence tests（三实体引用式）──
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -11,12 +11,15 @@ process.env.TRIMODEL_ADMIN_TOKEN = 'd16-secret';
 
 function makeCard(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
-    version: 2, machine: { name: 'm' }, connection: { name: 'c' },
-    provider_entries: {}, rules: [], deleted_entry_ids: [],
-    strategies: {
-      s1: { name: '策略一', purpose: '测试', models: ['deepseek-v4-pro'], rules: [{ type: 'window', windows: [{ start: '09:00', end: '18:00' }], model: 'deepseek-v4-pro', priority: 10, enabled: true }], default_model: 'deepseek-v4-pro', enabled: true, created_at: 'x', updated_at: 'x' },
+    version: 4, machine: { name: 'm' }, connection: { name: 'c' },
+    provider_entries: {
+      e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: 'QUFB', enabled: true, updated_at: 'x' },
     },
+    model_sets: { ms1: { name: '集一', entry_ids: ['e1'], created_at: 'x', updated_at: 'x' } },
+    rules: { r1: { name: '工作窗', type: 'time', enabled: true, windows: [{ start: '09:00', end: '18:00', entry_id: 'e1' }], created_at: 'x', updated_at: 'x' } },
+    strategies: { s1: { name: '策略一', purpose: '测试', model_set_id: 'ms1', rule_ids: ['r1'], created_at: 'x', updated_at: 'x' } },
     active_strategy_id: 's1',
+    deleted_entry_ids: [],
     deleted_strategy_ids: [],
     status: { state: 'pending', at: 'x' },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
@@ -24,7 +27,7 @@ function makeCard(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-describe('增补件5: strategy entity persistence + validation', () => {
+describe('增补件5→v4: strategy entity persistence + validation', () => {
   let dir: string;
   const setup = () => { dir = mkdtempSync(join(tmpdir(), 'trimodel-d16-')); };
   const teardown = () => { rmSync(dir, { recursive: true, force: true }); };
@@ -52,14 +55,14 @@ describe('增补件5: strategy entity persistence + validation', () => {
     teardown();
   });
 
-  it('③deleted_strategy_ids 含 active→400 人话', async () => {
+  it('③deleted_strategy_ids 含 active→400 人话（「活动策略」词汇定稿）', async () => {
     setup();
     const cardPath = join(dir, 'c.json');
     const doc = JSON.parse(makeCard());
     doc.deleted_strategy_ids = ['s1'];
     const put = handlePutTrimmcCard(ADMIN, JSON.stringify(doc), { cardPath });
     assert.equal(put.statusCode, 400);
-    assert.ok(JSON.stringify(put.body).includes('当前策略不可删除'));
+    assert.ok(JSON.stringify(put.body).includes('活动策略使用中，请先切换'));
     teardown();
   });
 });

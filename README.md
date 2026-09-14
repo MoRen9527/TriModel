@@ -89,6 +89,16 @@ See `.env.example` for the full list. Key variables:
 - **Test Runner**: Node.js native (`node --test`)
 - **CI**: GitHub Actions (lint + type-check + test + build on push/PR)
 
+## 本地侧 Web UI（LG-035 本地域，2026-09-14）
+
+本地域（TriMLC 8713 / TriRLC 8711）的时段切换配置面=本机 TriModel 实例（`http://127.0.0.1:3333/ui`）：
+
+- **域标签**：`TRIMODEL_DOMAIN_LABEL`（默认 `本地域（TriMLC/TriRLC）`；sg 部署设 `TriMMC（sg）`）。
+- **「应用到本机」**：`TRIMODEL_LOCAL_APPLY=1` 时启用——把活动策略落 `policies/local.json`（本机直生效，替代 sg 侧 COS 应用链）；sg 侧不设=按钮隐藏（零行为变化）。
+- **策略目录规范位**：`TRIMODEL_POLICIES_DIR` env > 进程 cwd（`policies/`）；boot 自动迁移 legacy 编译邻接旧位（D9 同族，幂等）。
+- **消费链**：TriMLC/TriRLC key-cache 从 `TRILC_TRIMODEL_API_URL`（默认 `http://127.0.0.1:3333`）拉 `default_model`（=策略窗命中→卡默认→env 出厂三层求值）。
+- 启动（本地）：`TRIMODEL_LOCAL_APPLY=1 node dist/src/server.js`（工作目录=仓库根）。
+
 ## Deployment (sg)
 
 - 部署面归 COS（LG-035 P3-sg 切片 2）；工程侧两项部署验证（P3-sg 切片 1 定）：

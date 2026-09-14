@@ -83,9 +83,10 @@ describe('S8.2: jsdom 首启五断言', () => {
     assert.ok(d.getElementById('conn-guide').textContent.includes('首次使用'));
     assert.equal(d.getElementById('tc-open-add').disabled, true, '数据面板必须禁用');
     assert.ok(d.querySelector('.card-main').classList.contains('disabled-panel'));
-    // 首启无令牌不应发起数据请求（禁用态不发拉取）
-    const dataCalls = log.filter((c) => c.url.includes('/v1/')).length;
-    assert.equal(dataCalls, 0, '无令牌首启不应拉数据');
+    // 首启无令牌不应发起数据请求（禁用态不发拉取）；
+    // runtime-info 例外：无鉴权运行时信息（域标签展示用，非业务数据）
+    const dataCalls = log.filter((c) => c.url.includes('/v1/') && !c.url.includes('runtime-info')).length;
+    assert.equal(dataCalls, 0, '无令牌首启不应拉数据（runtime-info 除外）');
     retireUi(dom);
   });
 
@@ -143,6 +144,45 @@ describe('S8.2: jsdom 首启五断言', () => {
     assert.equal(sent.provider_entries.e1.api_key, 'sk-test-0001-12345', 'plaintext hydrates server-side (never stored raw)');
     // TimingSink drain: let the boot/refresh async chain finish before teardown
     await new Promise((r) => setTimeout(r, 80));
+  });
+
+  it('本地侧: 域标签+应用到本机按钮（runtime-info 驱动；点击 POST apply）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const card = {
+      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
+      provider_entries: {}, rules: [],
+      strategies: { s1: { name: '工作时段', purpose: '', models: ['GLM-5.3'], rules: [{ type: 'window', windows: [{ start: '09:00', end: '18:00' }], model: 'GLM-5.3', priority: 10, enabled: true }], default_model: 'GLM-5.3', enabled: true, created_at: 'x', updated_at: 'x' } },
+      active_strategy_id: 's1', deleted_strategy_ids: [],
+      status: { state: 'pending', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null },
+    };
+    const dom = bootUi(log, [(url: string, _init?: RequestInit) => {
+      if (url.includes('/v1/config/runtime-info')) return { status: 200, body: { object: 'config.runtime-info', domain_label: '本地域（TriMLC/TriRLC）', local_apply_enabled: true, machine: 'dev' } };
+      if (url.includes('/v1/config/trimmc-card/apply')) return { status: 200, body: { ok: true, message: '已应用到本机：工作时段（1 条时段规则，默认模型 GLM-5.3）' } };
+      if (url.includes('/trimmc-card')) return { status: 200, body: { object: 'x', card_file_present: true, card, entries_masked: {} } };
+      return okFor(url);
+    }]);
+    const d = dom.window.document;
+    // 域标签无鉴权即可见（runtime-info 驱动）
+    await waitFor(() => (d.getElementById('tc-domain-label') as HTMLElement).textContent.includes('本地域'));
+    assert.ok((d.getElementById('tc-domain-label') as HTMLElement).textContent.includes('TriMLC/TriRLC'), '域标签=本地域（runtime-info 驱动）');
+    // 连接后按钮可见
+    (d.getElementById('token') as HTMLInputElement).value = 'tk-api';
+    (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
+    d.getElementById('conn-save').click();
+    await waitFor(() => !(d.getElementById('tc-apply') as HTMLButtonElement).hidden);
+    assert.equal((d.getElementById('tc-apply') as HTMLButtonElement).hidden, false, 'local_apply_enabled=true → 应用按钮可见');
+    // hydrate 回归断言（真浏览器走查实证缺陷位 2026-09-14）：连接后策略下拉
+    // 必须含卡内策略 + 规则列表渲染（loadTrimmc 漏赋值=下拉永空）
+    await waitFor(() => Array.from((d.getElementById('tc-strategy-sel') as HTMLSelectElement).options).some((o) => o.value === 's1'));
+    assert.ok(Array.from((d.getElementById('tc-strategy-sel') as HTMLSelectElement).options).some((o) => o.value === 's1'), '连接后策略下拉必须含卡内策略（hydrate）');
+    assert.equal((d.getElementById('tc-str-detail') as HTMLElement).textContent.includes('工作时段'), true, '策略详情渲染');
+    assert.equal((d.getElementById('tc-str-rules-body') as HTMLElement).children.length, 1, '策略规则列表渲染');
+    // 点击 → POST apply 发出 + 成功提示
+    d.getElementById('tc-apply').click();
+    await waitFor(() => log.some((c) => c.url.includes('trimmc-card/apply') && c.init?.method === 'POST'));
+    await waitFor(() => (d.getElementById('tc-msg') as HTMLElement).textContent.includes('已应用到本机'));
+    assert.ok((d.getElementById('tc-msg') as HTMLElement).textContent.includes('已应用到本机'), 'apply 成功提示在位');
+    retireUi(dom);
   });
 
   it('断言⑤ TriMMC 卡片区域通道词汇+结构词汇零出现', () => {

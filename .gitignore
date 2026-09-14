@@ -20,3 +20,8 @@ trimmc-card.json.tmp
 test/artifacts/
 policies/
 policies/*.tmp
+
+# 迁移备份与走查证据（敏感/工作产物，不入树）
+.migration-backup*/
+*.pre-v4.bak.json
+.cto-walkthrough/

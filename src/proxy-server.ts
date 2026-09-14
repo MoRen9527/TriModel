@@ -59,11 +59,15 @@ export function createProxyServer(): import('node:http').Server {
 
 async function handler(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse): Promise<void> {
   const url = req.url ?? '/';
+  // CC 实际请求形态带 query（/v1/messages?beta=true）与子路径（/v1/messages/
+  // count_tokens）——路由按去 query 后的 pathname 判定，字面全等会把真实客户端
+  // 流量打进 405 兜底（2026-09-14 接线实测 405 根因）。
+  const pathname = url.split('?')[0];
   const method = req.method ?? 'GET';
 
   try {
     // ── Health（3334 自检：policy 有效值+路由表+最近改写摘要，无密钥材料）──
-    if (url === '/proxy/health' && method === 'GET') {
+    if (pathname === '/proxy/health' && method === 'GET') {
       const evaluation = evaluateForMachine(MACHINE) ?? { model: envDefaultModel(), matched_schedule_id: null, source: 'env-default' as const, machine: MACHINE };
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({
@@ -77,8 +81,8 @@ async function handler(req: import('node:http').IncomingMessage, res: import('no
       return;
     }
 
-    // ── 主路径：POST /v1/messages ──
-    if (url === '/v1/messages' && method === 'POST') {
+    // ── 主路径：POST /v1/messages（含 ?query 形态）+ count_tokens 子路径 ──
+    if ((pathname === '/v1/messages' || pathname === '/v1/messages/count_tokens') && method === 'POST') {
       let rawBody: string;
       try {
         rawBody = await collectBody(req);
@@ -111,6 +115,7 @@ async function handler(req: import('node:http').IncomingMessage, res: import('no
         body: rewritten.body,
         contentType: typeof clientHeaders['content-type'] === 'string' ? clientHeaders['content-type'] : 'application/json',
         anthropicVersion: typeof clientHeaders['anthropic-version'] === 'string' ? clientHeaders['anthropic-version'] : undefined,
+        upstreamPath: pathname,
       });
 
       lastUpstreamStatus = { code: upstreamRes.statusCode ?? null, at: new Date().toISOString() };
@@ -121,6 +126,9 @@ async function handler(req: import('node:http').IncomingMessage, res: import('no
     }
 
     // ── 其余路由 ──
+    // 失配留痕：任何未匹配形态打一行观测日志（下次形态失配日志直接定位，
+    // 不再盲猜——SEC 白名单：仅 method+path，无 body 无密钥材料）。
+    console.log(`[proxy] 405 unmatched: ${method} ${url}`);
     res.writeHead(405, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'method not allowed', hint: 'POST /v1/messages or GET /proxy/health' }));
   } catch (err) {

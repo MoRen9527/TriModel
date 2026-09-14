@@ -10,7 +10,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync, copyFileSync } from 'node:fs';
 import net from 'node:net';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
@@ -29,6 +29,9 @@ let port = 0;
 let workDir = '';
 let snapshot: string | null = null; // prior policy.json content (null = absent)
 let snapLocal: string | null = null; // S11 policies/local.json
+let savedDefaultModel: string | undefined; // 环境隔离：TRIMODEL_DEFAULT_MODEL 现势摘除前值
+let cardStash: string | null = null; // 卡面隔离：repo 根真卡 stash 路径（null=原无卡）
+const CARD_FILE_REPO = join(REPO_ROOT, 'trimmc-card.json');
 let snapLog: string | null = null; // prior model-transitions.jsonl content (null = absent)
 
 interface PollEvent { type: string; defaultModel?: string; envModel?: string; error?: string }
@@ -70,6 +73,9 @@ function bootServer(p: number): ChildProcess {
   };
   delete env.TRIMODEL_DEFAULT_MODEL; // pin documented default for fallback assertions
   delete env.TRIMODEL_HOST; // P4 guard: default bind must be 127.0.0.1
+  // 卡面隔离（2026-09-14）：server main 注册卡默认层（registerCardDefaultModelFn
+  // → loadCard → cwd 卡）——本机现役卡 default_model 会盖过「env 出厂默认」断言。
+  env.TRIMODEL_CARD_FILE = join(workDir, 'gate-no-card.json');
   return spawn(process.execPath, ['--import', 'tsx', join('src', 'server.ts')], {
     cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -146,9 +152,20 @@ function waitForEvent(pred: (e: PollEvent) => boolean, timeoutMs: number, label:
 
 describe('GATE L3+anchor③: E2E full chain + daemon real-chain poll (single lifecycle)', () => {
   before(async () => {
+    // 环境隔离（2026-09-14）：本机系统 env 携 TRIMODEL_DEFAULT_MODEL=GLM-5.3
+    // （演示现势）会穿透「pre-policy env default=deepseek-v4-pro 出厂」断言——
+    // 测试进程+poller 子进程（继承 process.env）一并摘除，出厂默认单源。
+    savedDefaultModel = process.env.TRIMODEL_DEFAULT_MODEL;
+    delete process.env.TRIMODEL_DEFAULT_MODEL;
     snapshot = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
     snapLocal = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
     snapLog = existsSync(TRANS_LOG) ? readFileSync(TRANS_LOG, 'utf-8') : null;
+    // 卡面隔离（2026-09-14 补强）：server main 的 migrateLegacyDistCard 会把
+    // legacy 邻接位（tsx 下=repo 根真卡）rename 到 canonical——先主动搬开真卡
+    // （stash 于 workDir），server 卡层（TRIMODEL_CARD_FILE 钉不存在路径）恒
+    // null，after 原样放回。防真卡被测试搬走/被 v4 迁移改写。
+    cardStash = existsSync(CARD_FILE_REPO) ? join(mkdtempSync(join(tmpdir(), 'ste-gate-card-')), 'trimmc-card.json') : null;
+    if (cardStash) { copyFileSync(CARD_FILE_REPO, cardStash); rmSync(CARD_FILE_REPO); } // EXDEV：跨盘 rename 拒，copy+rm
     rmSync(POLICY_FILE, { force: true });
     rmSync(POLICY_LOCAL, { force: true }); // deterministic init: pre-policy env default
     rmSync(TRANS_LOG, { force: true });
@@ -200,6 +217,8 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
   });
 
   after(() => {
+    if (savedDefaultModel === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = savedDefaultModel;
+    if (cardStash) { try { copyFileSync(cardStash, CARD_FILE_REPO); } catch { /* stash restore best-effort */ } }
     killChild(poller);
     killChild(server);
     rmSync(workDir, { recursive: true, force: true });

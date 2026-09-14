@@ -163,6 +163,8 @@ export interface ForwardOptions {
   /** Client headers to preserve (hop-by-hop/auth headers stripped by caller). */
   contentType?: string;
   anthropicVersion?: string;
+  /** Upstream path appended after baseUrl (default '/v1/messages'; count_tokens passes its own). */
+  upstreamPath?: string;
 }
 
 /**
@@ -171,7 +173,7 @@ export interface ForwardOptions {
  * the response is NOT buffered or rewritten (SSE chunks flow byte-for-byte).
  */
 export function forwardToUpstream(opts: ForwardOptions): Promise<http.IncomingMessage> {
-  const target = new URL(`${opts.upstream.baseUrl}/v1/messages`);
+  const target = new URL(`${opts.upstream.baseUrl}${opts.upstreamPath ?? '/v1/messages'}`);
   const isHttps = target.protocol === 'https:';
   const transport = isHttps ? https : http;
   const payload = Buffer.from(opts.body, 'utf-8');

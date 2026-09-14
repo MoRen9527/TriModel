@@ -64,19 +64,19 @@ describe('D9: merged-validation order (校验序重构)', () => {
     const { handlePutTrimmcCard } = await import('../src/api/trimmc-card.js');
     const cardPath = join(dir, 'c.json');
     const auth = 'Bearer d9-secret';
-    // Seed: full card with e1 + fixed rule referencing it (pre-D9 this shape
+    // Seed: full v4 card with e1 + model set referencing it (pre-D9 this shape
     // 400'd because validation ran on the partial incoming document alone).
     const seed = handlePutTrimmcCard(auth, JSON.stringify({
-      version: 2, machine: { name: 'm' }, connection: { name: 'seed' },
+      version: 4, machine: { name: 'm' }, connection: { name: 'seed' },
       provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key: 'sk-seed-key-0000001', enabled: true, updated_at: 'x' } },
-      rules: [{ rule_id: 'trimmc:e1', type: 'fixed', entry_id: 'e1' }],
+      model_sets: { ms1: { name: '种子集', entry_ids: ['e1'], created_at: 'x', updated_at: 'x' } },
       status: { state: 'applied', at: 'x' },
     }), { cardPath });
     assert.equal(seed.statusCode, 200);
     // Partial PUT: rename only (no entries, no rules) — must NOT 400
     const partial = handlePutTrimmcCard(auth, JSON.stringify({
-      version: 2, machine: { name: 'm' }, connection: { name: 'renamed' },
-      provider_entries: {}, deleted_entry_ids: [], rules: [],
+      version: 4, machine: { name: 'm' }, connection: { name: 'renamed' },
+      provider_entries: {}, deleted_entry_ids: [],
       status: { state: 'pending', at: 'x' },
     }), { cardPath });
     assert.equal(partial.statusCode, 200, 'merge semantics: mirror references resolve via base');
@@ -87,12 +87,12 @@ describe('D9: merged-validation order (校验序重构)', () => {
     const cardPath = join(dir, 'c2.json');
     const auth = 'Bearer d9-secret';
     const res = handlePutTrimmcCard(auth, JSON.stringify({
-      version: 2, machine: { name: 'm' }, connection: { name: 'c' },
+      version: 4, machine: { name: 'm' }, connection: { name: 'c' },
       provider_entries: {},
-      rules: [{ rule_id: 'r', type: 'fixed', entry_id: 'ghost' }],
+      model_sets: { ms1: { name: '集', entry_ids: ['ghost'], created_at: 'x', updated_at: 'x' } },
       status: { state: 'pending', at: 'x' },
     }), { cardPath });
     assert.equal(res.statusCode, 400);
-    assert.ok(JSON.stringify(res.body).includes('does not reference an existing entry'));
+    assert.ok(JSON.stringify(res.body).includes('不存在'));
   });
 });

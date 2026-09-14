@@ -7,10 +7,16 @@
 //
 // Admin plane: fail-closed 503 (TRIMODEL_ADMIN_TOKEN unset) / 401 (wrong
 // Bearer) / 200 — same family as the P2 secure key plane.
-import { loadCard, saveCard, emptyCard, validateCard, CARD_STATES, buildEntry, validateStrategy } from '../trimmc-card.js';
-import type { TrimmcCardDocument, CardState, CardEntry, StrategyEntity } from '../trimmc-card.js';
+import { loadCard, saveCard, emptyCard, validateCard, CARD_STATES, buildEntry, entryReferenceGuards, modelSetReferenceGuard, ruleReferenceGuard } from '../trimmc-card.js';
+import type { TrimmcCardDocument, CardState, CardEntry } from '../trimmc-card.js';
 import { decrypt } from '../security/key-encryptor.js';
+import { savePolicyForMachine, validatePolicyShape } from '../policy.js';
+import type { PolicyShape } from '../policy.js';
 import { maskKey } from '../secure-keys.js';
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
 
 function requireAdmin(authHeader: string | undefined): { statusCode: 503 | 401; body: Record<string, unknown> } | null {
   const adminToken = process.env.TRIMODEL_ADMIN_TOKEN ?? '';
@@ -118,46 +124,53 @@ export function handlePutTrimmcCard(
     machine: card.machine?.name ? card.machine : base.machine,
     connection: card.connection?.name ? card.connection : base.connection,
     provider_entries: { ...base.provider_entries, ...card.provider_entries },
-    rules: Array.isArray(card.rules) ? card.rules : base.rules,
-    // 增补件4②：默认模型兜底字段（null/absent = 回落引擎出厂默认）
-    default_model: 'default_model' in card ? card.default_model : base.default_model ?? null,
-    // 增补件5：策略实体字典合并（UI 编辑的 strategies upsert 到基座）
-    strategies: { ...base.strategies, ...card.strategies },
+    // v4 三实体字典合并（UI 编辑的实体 upsert 到基座；终稿 §七.2）
+    model_sets: { ...base.model_sets, ...(isRecord(card.model_sets) ? card.model_sets : {}) },
+    rules: { ...base.rules, ...(isRecord(card.rules) ? card.rules : {}) },
+    strategies: { ...base.strategies, ...(isRecord(card.strategies) ? card.strategies : {}) },
     active_strategy_id: 'active_strategy_id' in card ? card.active_strategy_id ?? null : base.active_strategy_id ?? null,
+    // 派生缓存：apply 时自活动策略 default 规则同步（无编辑面；PUT 不接受直改——
+    // 传入值与基座一致时透传，否则以基座为准防第二真源）。
+    default_model: base.default_model ?? null,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
-  // D10 校验扩展：merged 后全量 validateCard（含策略引用校验）
-  // 增补件5：策略校验前置——active_strategy_id 悬挂→400；deleted 含 active→400
-  if (merged.active_strategy_id && !(merged.active_strategy_id in (merged.strategies ?? {}))) {
-    return { statusCode: 400, body: { error: '引用的策略不存在，请先创建或改选' } };
-  }
-  if (Array.isArray(merged.deleted_strategy_ids) && merged.active_strategy_id && merged.deleted_strategy_ids.includes(merged.active_strategy_id)) {
-    return { statusCode: 400, body: { error: '当前策略不可删除，请先切换至其他策略' } };
-  }
-  // 增补件5：策略实体校验（validateStrategy 复用 T1 的校验函数）
-  if (typeof card.strategies === 'object' && card.strategies !== null) {
-    for (const [id, entity] of Object.entries(card.strategies)) {
-      const err = validateStrategy(entity as StrategyEntity);
-      if (err) return { statusCode: 400, body: { error: `策略 '${id}' 校验失败: ${err}` } };
+  // v4 删除通道：三通道显式移除（守卫前置——被引用禁删人话拒）。
+  if (Array.isArray(card.deleted_model_set_ids)) {
+    for (const id of card.deleted_model_set_ids) {
+      if (typeof id !== 'string') continue;
+      const guard = modelSetReferenceGuard(merged, id);
+      if (guard) return { statusCode: 400, body: { error: guard } };
+      delete merged.model_sets[id];
     }
+    merged.deleted_model_set_ids = card.deleted_model_set_ids.filter((id): id is string => typeof id === 'string');
   }
-  // D10 删除通道：deleted_strategy_ids 显式移除（策略删除）
+  if (Array.isArray(card.deleted_rule_ids)) {
+    for (const id of card.deleted_rule_ids) {
+      if (typeof id !== 'string') continue;
+      const guard = ruleReferenceGuard(merged, id);
+      if (guard) return { statusCode: 400, body: { error: guard } };
+      delete merged.rules[id];
+    }
+    merged.deleted_rule_ids = card.deleted_rule_ids.filter((id): id is string => typeof id === 'string');
+  }
   if (Array.isArray(card.deleted_strategy_ids)) {
     for (const id of card.deleted_strategy_ids) {
-      if (typeof id === 'string') {
-        if (merged.active_strategy_id === id) {
-          return { statusCode: 400, body: { error: '当前策略不可删除，请先切换至其他策略' } };
-        }
-        delete merged.strategies?.[id];
+      if (typeof id !== 'string') continue;
+      if (merged.active_strategy_id === id) {
+        return { statusCode: 400, body: { error: '活动策略使用中，请先切换' } };
       }
+      delete merged.strategies[id];
     }
     merged.deleted_strategy_ids = card.deleted_strategy_ids.filter((id): id is string => typeof id === 'string');
   }
-  // D7 删除通道：deleted_entry_ids 显式移除（镜像条目删除）
+  // D7 删除通道：deleted_entry_ids 显式移除（守卫=被集或被规则引用均禁删）
   if (Array.isArray(card.deleted_entry_ids)) {
     for (const id of card.deleted_entry_ids) {
-      if (typeof id === 'string') delete merged.provider_entries[id];
+      if (typeof id !== 'string') continue;
+      const guard = entryReferenceGuards(merged, id);
+      if (guard) return { statusCode: 400, body: { error: guard } };
+      delete merged.provider_entries[id];
     }
     merged.deleted_entry_ids = card.deleted_entry_ids.filter((id): id is string => typeof id === 'string');
   }
@@ -204,4 +217,107 @@ export function handlePutTrimmcCardStatus(
   card.status = status;
   saveCard(card, opts?.cardPath);
   return { statusCode: 200, body: { ok: true, status } };
+}
+
+/**
+ * LG-035 本地侧（2026-09-14）：「应用到本机」——把活动策略落本机生效面。
+ * v4（schema 终稿 §三）：活动策略 rule_ids → 解析规则实体 → 分型分流——
+ * time → window schedule（id=strategy:<pid>:<rid>，priority 归一 100）；
+ * default → card.default_model 派生缓存同步（三层计算序中间层零改动）；
+ * quota → 不进 schedules（异常路径层，钩子位另接）。
+ * 应用硬门：活动策略须含 ≥1 条 time 或 default 规则（纯 quota 策略不可应用）。
+ */
+export function handleApplyStrategy(
+  authHeader: string | undefined,
+  opts?: { cardPath?: string; machine?: string },
+): { statusCode: number; body: Record<string, unknown> } {
+  const authError = requireAdmin(authHeader);
+  if (authError) return authError;
+
+  const card = loadCard(opts?.cardPath);
+  if (!card) {
+    return { statusCode: 404, body: { error: '暂无卡片配置：请先在“活动策略”区新增策略并保存卡片' } };
+  }
+  const activeId = card.active_strategy_id;
+  if (!activeId) {
+    return { statusCode: 400, body: { error: '未选择活动策略：请先在“策略”下拉中选择并切换至某个策略' } };
+  }
+  const strategy = card.strategies[activeId];
+  if (!strategy) {
+    return { statusCode: 400, body: { error: '活动策略不存在：请重新选择策略' } };
+  }
+
+  const schedules: PolicyShape['schedules'] = [];
+  let defaultModel: string | null = null;
+  let quotaCount = 0;
+  for (const rid of strategy.rule_ids) {
+    const rule = card.rules[rid];
+    if (!rule) {
+      return { statusCode: 400, body: { error: `活动策略引用的规则不存在（${rid}）：请先修正策略规则引用` } };
+    }
+    if (rule.type === 'time' && rule.windows && rule.windows.length > 0) {
+      // 窗级 entry_id（BOD 22:2x 修正令）：一条规则多窗各带条目——每窗一个
+      // schedule（model 取窗级条目；id 带窗序稳定）。
+      for (const [wi, w] of rule.windows.entries()) {
+        const entry = card.provider_entries[w.entry_id];
+        if (!entry) return { statusCode: 400, body: { error: `规则「${rule.name}」第 ${wi + 1} 窗引用的条目不存在：请先修正规则` } };
+        schedules.push({
+          id: `strategy:${activeId}:${rid}:${wi}`,
+          target: 'daemon-default',
+          model: entry.model,
+          windows: [{ start: w.start, end: w.end }],
+          timezone: 'Asia/Shanghai',
+          enabled: rule.enabled,
+          priority: 100,
+          type: 'window',
+        });
+      }
+    } else if (rule.type === 'default' && rule.entry_id) {
+      const entry = card.provider_entries[rule.entry_id];
+      if (!entry) return { statusCode: 400, body: { error: `规则「${rule.name}」引用的条目不存在：请先修正规则` } };
+      defaultModel = entry.model;
+    } else if (rule.type === 'quota') {
+      quotaCount++;
+    }
+  }
+  // 应用硬门：≥1 条 time 或 default（防「应用了个寂寞」；纯 quota 不可应用）
+  if (schedules.length === 0 && !defaultModel) {
+    return { statusCode: 400, body: { error: '该策略暂无可应用的规则：请先添加至少一条时段规则或默认规则' } };
+  }
+
+  const doc = { version: '1', schedules };
+  const shapeError = validatePolicyShape(doc);
+  if (shapeError) {
+    return { statusCode: 400, body: { error: `策略规则不合法：${shapeError}` } };
+  }
+
+  try {
+    savePolicyForMachine(opts?.machine ?? 'local', doc);
+  } catch (err) {
+    return { statusCode: 500, body: { error: `策略落盘失败：${err instanceof Error ? err.message : String(err)}` } };
+  }
+
+  // default 实体 → card.default_model 派生缓存同步（三层计算序中间层零改动）
+  card.default_model = defaultModel;
+  try {
+    saveCard(card, opts?.cardPath);
+  } catch (err) {
+    return { statusCode: 500, body: { error: `策略已生效但卡片默认模型落盘失败：${err instanceof Error ? err.message : String(err)}` } };
+  }
+
+  return {
+    statusCode: 200,
+    body: {
+      ok: true,
+      applied: {
+        strategy_id: activeId,
+        strategy_name: strategy.name,
+        schedules: schedules.length,
+        default_model: defaultModel,
+        quota_rules: quotaCount,
+        machine: opts?.machine ?? 'local',
+      },
+      message: `已应用到本机：${strategy.name}（${schedules.length} 条时段规则${defaultModel ? `，默认模型 ${defaultModel}` : ''}${quotaCount ? `，${quotaCount} 条额度规则待信号` : ''}）`,
+    },
+  };
 }

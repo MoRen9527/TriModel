@@ -13,7 +13,7 @@
 // - P1 candidate-domain note: NO authentication on policy write path by design
 //   (admin-token enforcement is a pending adjudication item; the config-plane
 //   server binds 127.0.0.1 only). See src/api/policy.ts.
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { MODEL_CATALOG, MODEL_CATALOG_LIST } from './model-catalog.js';
@@ -73,6 +73,30 @@ export function registerCardDefaultModelFn(fn: () => string | null): void {
 export function getCardDefaultModel(): string | null {
   if (!_cardDefaultModelFn) return null;
   try { return _cardDefaultModelFn(); } catch { return null; }
+}
+
+// ── v4 quota 求值层钩子位（schema 终稿 §三/§四；MVP=空实装层 inert）──
+// 额度触发=异常路径优先于常规（增补件 6 §三）：信号就绪且活动策略 quota 规则
+// 的监控条目耗尽 → fallback_ids 依序首个可用。MVP 实装=钩子位+空信号（恒走
+// 常规序，零影响）；信号实接（usage 基座→判定形态）联调窗另排。
+
+export interface QuotaDecision {
+  model: string;
+  /** 失败态：序列耗尽=停留+提示（增补件 6 §三）。 */
+  exhausted?: boolean;
+}
+
+let _quotaSignalFn: (() => QuotaDecision | null) | null = null;
+
+/** Register the quota-signal decision getter (called from server.ts at boot). */
+export function registerQuotaSignalFn(fn: () => QuotaDecision | null): void {
+  _quotaSignalFn = fn;
+}
+
+/** Get the quota override decision via registered getter, or null (常规序). */
+export function getQuotaDecision(): QuotaDecision | null {
+  if (!_quotaSignalFn) return null;
+  try { return _quotaSignalFn(); } catch { return null; }
 }
 
 function toMinutes(hhmm: string): number {
@@ -208,10 +232,43 @@ export function setPoliciesDirForTest(dir: string | null): void {
   policiesDirOverride = dir;
 }
 
+/**
+ * 规范位（写入口，D9 同款防编译位二义）：env 钉位 > 进程 cwd。
+ * 旧实现按 import.meta.url 编译邻接解析 → dist 构建版写 dist/policies/
+ * （随 dist 清理丢策略；本地侧部署实证 2026-09-14）。
+ */
 function policiesDir(): string {
   if (policiesDirOverride) return policiesDirOverride;
+  const env = process.env.TRIMODEL_POLICIES_DIR?.trim();
+  if (env) return resolve(env);
+  return resolve(process.cwd(), 'policies');
+}
+
+/** legacy 位（只读兼容）：D9 前旧写位=import.meta.url 编译邻接。 */
+function legacyPoliciesDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   return resolve(here, '..', 'policies');
+}
+
+/** Boot 迁移：legacy 位策略文件 → 规范位（逐文件 rename，规范位无同名时；幂等）。 */
+export function migrateLegacyPoliciesDir(): { migrated: string[] } {
+  const migrated: string[] = [];
+  const legacy = legacyPoliciesDir();
+  const canonical = policiesDir();
+  if (legacy === canonical || !existsSync(legacy)) return { migrated };
+  try {
+    for (const name of readdirSync(legacy)) {
+      if (!name.endsWith('.json')) continue;
+      const target = join(canonical, name);
+      if (existsSync(target)) continue;
+      mkdirSync(canonical, { recursive: true });
+      renameSync(join(legacy, name), target);
+      migrated.push(name);
+    }
+  } catch (err) {
+    console.warn('[trimodel] policies dir migration skipped:', err instanceof Error ? err.message : err);
+  }
+  return { migrated };
 }
 
 export function policyPathForMachine(machine: string): string {
@@ -220,7 +277,14 @@ export function policyPathForMachine(machine: string): string {
 
 /** Read one machine's policy document. Absent/corrupt → null (fail-safe). */
 export function loadPolicyForMachine(machine: string = DEFAULT_MACHINE): PolicyShape | null {
-  return loadPolicy(policyPathForMachine(machine));
+  const name = `${sanitizeMachine(machine)}.json`;
+  const primary = loadPolicy(join(policiesDir(), name));
+  if (primary) return primary;
+  // legacy 兼容读：仅未注入 override/env 时（测试隔离不受影响）
+  if (!policiesDirOverride && !process.env.TRIMODEL_POLICIES_DIR?.trim()) {
+    return loadPolicy(join(legacyPoliciesDir(), name));
+  }
+  return null;
 }
 
 export function savePolicyForMachine(machine: string, doc: PolicyShape): void {
@@ -292,12 +356,15 @@ export function savePolicy(policy: PolicyShape, pathOverride?: string): void {
   renameSync(tmp, target);
 }
 
-/** One-call helper for hot-path consumers: policy hit or env default. */
+/** One-call helper for hot-path consumers: policy hit or env default.
+ * v4：quota 异常路径优先（钩子位；MVP 空信号恒 null → 常规序零变化）。 */
 export function effectiveModel(now: Date = new Date()): {
   model: string;
   matched_schedule_id: string | null;
-  source: 'policy' | 'card-default' | 'env-default';
+  source: 'quota' | 'policy' | 'card-default' | 'env-default';
 } {
+  const quota = getQuotaDecision();
+  if (quota) return { model: quota.model, matched_schedule_id: null, source: 'quota' };
   const hit = evaluatePolicy(now, loadPolicy());
   if (hit) return { model: hit.model, matched_schedule_id: hit.matched_schedule_id, source: 'policy' };
   // 增补件4② 三层计算序中间层：窗口未命中 → 卡 default_model → env 出厂默认

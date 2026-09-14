@@ -43,6 +43,22 @@ describe('S11: machine domain (分域求值/隔离/迁移)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('LG-035 本地侧: policies 规范位=TRIMODEL_POLICIES_DIR env 钉位（D9 同款防编译位二义）', () => {
+    const prevOverride = process.env.TRIMODEL_POLICIES_DIR;
+    const envDir = mkdtempSync(join(tmpdir(), 'trimodel-policies-env-'));
+    try {
+      setPoliciesDirForTest(null); // 放开 override，走 env 分支
+      process.env.TRIMODEL_POLICIES_DIR = envDir;
+      savePolicyForMachine('local', { version: '1', schedules: [] });
+      assert.ok(existsSync(join(envDir, 'local.json')), '策略必须落在 env 钉位目录');
+      assert.ok(policyPathForMachine('local') === join(envDir, 'local.json'));
+    } finally {
+      if (prevOverride === undefined) delete process.env.TRIMODEL_POLICIES_DIR; else process.env.TRIMODEL_POLICIES_DIR = prevOverride;
+      setPoliciesDirForTest(join(dir, 'policies'));
+      rmSync(envDir, { recursive: true, force: true });
+    }
+  });
+
   it('sanitizeMachine: lowercase + hyphen folding + empty → local', () => {
     assert.equal(sanitizeMachine('SG_Alpha'), 'sg-alpha');
     assert.equal(sanitizeMachine('  --  '), 'local');

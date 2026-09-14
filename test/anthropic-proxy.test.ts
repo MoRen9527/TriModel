@@ -28,9 +28,16 @@ describe('proxy: upstream route table (official catalog exact match)', () => {
     glm: process.env.GLM_API_KEY,
     tmvKey: process.env.TRIMODEL_TRIMETAVERSE_API_KEY,
     tmvUrl: process.env.TRIMODEL_TRISTACISS_BASE_URL,
+    cardFile: process.env.TRIMODEL_CARD_FILE,
+    defaultModel: process.env.TRIMODEL_DEFAULT_MODEL,
   };
 
   before(() => {
+    // 环境隔离（2026-09-14）：resolveUpstream 卡优先解析（deriveProviderKey）——
+    // 本机现役卡（仓根 trimmc-card.json，v4 起含两厂商条目）会覆盖测试 env 键；
+    // TRIMODEL_CARD_FILE 钉不存在的路径 ⇒ 卡面恒空 ⇒ env 单源。
+    process.env.TRIMODEL_CARD_FILE = join(tmpdir(), 'trimodel-proxy-test-no-card.json');
+    delete process.env.TRIMODEL_DEFAULT_MODEL;
     process.env.DEEPSEEK_API_KEY = 'sk-ds-test';
     process.env.GLM_API_KEY = 'sk-glm-test';
     process.env.TRIMODEL_TRIMETAVERSE_API_KEY = 'tmv-sk-test';
@@ -46,6 +53,8 @@ describe('proxy: upstream route table (official catalog exact match)', () => {
     restore('GLM_API_KEY', ORIGINAL.glm);
     restore('TRIMODEL_TRIMETAVERSE_API_KEY', ORIGINAL.tmvKey);
     restore('TRIMODEL_TRISTACISS_BASE_URL', ORIGINAL.tmvUrl);
+    restore('TRIMODEL_CARD_FILE', ORIGINAL.cardFile);
+    restore('TRIMODEL_DEFAULT_MODEL', ORIGINAL.defaultModel);
   });
 
   it('deepseek official names → native anthropic endpoint + DEEPSEEK key', () => {
@@ -132,9 +141,17 @@ describe('proxy: upstream route table (official catalog exact match)', () => {
 
 describe('proxy: body rewrite correctness', () => {
   const ORIGINAL_KEY = process.env.DEEPSEEK_API_KEY;
-  before(() => { process.env.DEEPSEEK_API_KEY = 'sk-ds-rewrite-test'; });
+  const ORIGINAL_CARD = process.env.TRIMODEL_CARD_FILE;
+  const ORIGINAL_DEFAULT = process.env.TRIMODEL_DEFAULT_MODEL;
+  before(() => {
+    process.env.TRIMODEL_CARD_FILE = join(tmpdir(), 'trimodel-rewrite-test-no-card.json');
+    delete process.env.TRIMODEL_DEFAULT_MODEL;
+    process.env.DEEPSEEK_API_KEY = 'sk-ds-rewrite-test';
+  });
   after(() => {
     if (ORIGINAL_KEY === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = ORIGINAL_KEY;
+    if (ORIGINAL_CARD === undefined) delete process.env.TRIMODEL_CARD_FILE; else process.env.TRIMODEL_CARD_FILE = ORIGINAL_CARD;
+    if (ORIGINAL_DEFAULT === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = ORIGINAL_DEFAULT;
   });
 
   it('policy window hit: model rewritten to schedule model + route follows', () => {
@@ -191,9 +208,17 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
   let mockPort = 0;
   let proxy: Server;
   let proxyPort = 0;
-  const ORIGINAL = { dsUrl: process.env.DEEPSEEK_ANTHROPIC_BASE_URL, dsKey: process.env.DEEPSEEK_API_KEY };
+  let e2ePoliciesDir = '';
+  const ORIGINAL = {
+    dsUrl: process.env.DEEPSEEK_ANTHROPIC_BASE_URL,
+    dsKey: process.env.DEEPSEEK_API_KEY,
+    policiesDir: process.env.TRIMODEL_POLICIES_DIR,
+    defaultModel: process.env.TRIMODEL_DEFAULT_MODEL,
+    glmKey: process.env.GLM_API_KEY,
+    cardFile: process.env.TRIMODEL_CARD_FILE,
+  };
 
-  let lastSeen: { headers: IncomingMessage['headers']; body: string } | null = null;
+  let lastSeen: { url: string; headers: IncomingMessage['headers']; body: string } | null = null;
 
   const SSE_FULL = [
     'event: message_start\ndata: {"type":"message_start"}\n\n',
@@ -203,12 +228,20 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
   ].join('');
 
   before(async () => {
+    // 环境隔离（2026-09-14 本机穿透回归）：in-process proxy 的 policy 求值必须
+    // 不读本机现势——TRIMODEL_POLICIES_DIR 钉空目录 ⇒ loadPolicyForMachine=null
+    // ⇒ envDefaultModel()；GLM 真 env 一并摘除，求值结果恒 deepseek-v4-pro 走 mock。
+    e2ePoliciesDir = mkdtempSync(join(tmpdir(), 'trimodel-proxy-e2e-'));
+    process.env.TRIMODEL_POLICIES_DIR = e2ePoliciesDir;
+    process.env.TRIMODEL_CARD_FILE = join(e2ePoliciesDir, 'no-card.json');
+    delete process.env.TRIMODEL_DEFAULT_MODEL;
+    delete process.env.GLM_API_KEY;
     process.env.DEEPSEEK_API_KEY = 'mock-ds-key';
     mockUpstream = createServer((req: IncomingMessage, res: ServerResponse) => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
       req.on('end', () => {
-        lastSeen = { headers: req.headers, body: Buffer.concat(chunks).toString('utf-8') };
+        lastSeen = { url: req.url ?? '', headers: req.headers, body: Buffer.concat(chunks).toString('utf-8') };
         const body = JSON.parse(lastSeen.body) as { stream?: boolean; model?: string };
         if (body.stream === true) {
           res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -242,6 +275,11 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
     await new Promise<void>((r) => mockUpstream.close(() => { r(); }));
     if (ORIGINAL.dsUrl === undefined) delete process.env.DEEPSEEK_ANTHROPIC_BASE_URL; else process.env.DEEPSEEK_ANTHROPIC_BASE_URL = ORIGINAL.dsUrl;
     if (ORIGINAL.dsKey === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = ORIGINAL.dsKey;
+    if (ORIGINAL.policiesDir === undefined) delete process.env.TRIMODEL_POLICIES_DIR; else process.env.TRIMODEL_POLICIES_DIR = ORIGINAL.policiesDir;
+    if (ORIGINAL.defaultModel === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = ORIGINAL.defaultModel;
+    if (ORIGINAL.glmKey === undefined) delete process.env.GLM_API_KEY; else process.env.GLM_API_KEY = ORIGINAL.glmKey;
+    if (ORIGINAL.cardFile === undefined) delete process.env.TRIMODEL_CARD_FILE; else process.env.TRIMODEL_CARD_FILE = ORIGINAL.cardFile;
+    if (e2ePoliciesDir) rmSync(e2ePoliciesDir, { recursive: true, force: true });
   });
 
   it('non-streaming: model rewritten, key injected server-side, CC placeholder overridden', async () => {
@@ -300,6 +338,27 @@ describe('proxy: E2E — fidelity + SSE integrity + defense + health (in-process
     assert.ok(text.includes('policy_effective'));
     assert.ok(text.includes('upstream_routes'));
     assert.equal(text.includes('mock-ds-key'), false, 'health must never leak upstream key material');
+  });
+
+  it('CC real request shapes: ?query suffix + /count_tokens subpath route through (2026-09-14 405 接线根因回归)', async () => {
+    // 形态一：CC 新会话带 query 的 messages 调用——pathname 判定后必须照常改写转发
+    const q = await fetch(`http://127.0.0.1:${proxyPort}/v1/messages?beta=true`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'cc-placeholder', messages: [{ role: 'user', content: 'q' }], max_tokens: 8 }),
+    });
+    assert.equal(q.status, 200, '/v1/messages?beta=true must route, not 405');
+    assert.equal((await q.json() as { echo_model: string }).echo_model, 'deepseek-v4-pro');
+    assert.equal(lastSeen!.url, '/v1/messages', 'upstream receives the bare path — query is a client-side concern');
+    // 形态二：token 预计点子路径——透传转发（model 照常改写），路径跟随
+    const ct = await fetch(`http://127.0.0.1:${proxyPort}/v1/messages/count_tokens`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'cc-placeholder', messages: [{ role: 'user', content: 'ct' }] }),
+    });
+    assert.equal(ct.status, 200, '/v1/messages/count_tokens must route, not 405');
+    assert.equal(lastSeen!.url, '/v1/messages/count_tokens', 'upstream path follows the subpath');
+    assert.equal((JSON.parse(lastSeen!.body) as { model: string }).model, 'deepseek-v4-pro', 'count_tokens body model also rewritten to official name');
   });
 
   it('other routes → 405', async () => {

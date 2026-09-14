@@ -4,7 +4,8 @@ import type { ModelClient } from '../client.js';
 import { handleHealth } from './health.js';
 import { handleModels } from './models.js';
 import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeysStatus } from './keys.js';
-import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus } from './trimmc-card.js';
+import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, handleApplyStrategy } from './trimmc-card.js';
+import { handleRuntimeInfo } from './runtime-info.js';
 import { handleGetPolicy, handlePutPolicy } from './policy.js';
 
 export type RouteResult = {
@@ -88,6 +89,18 @@ export async function dispatch(
   }
   if (url === '/v1/config/trimmc-card/status' && method === 'PUT') {
     const result = handlePutTrimmcCardStatus(headers['authorization'], rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // LG-035 本地侧（2026-09-14）：运行时信息（无鉴权只读，供 UI 标注域与功能开关）
+  if (url === '/v1/config/runtime-info' && method === 'GET') {
+    const result = handleRuntimeInfo();
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // LG-035 本地侧：「应用到本机」——活动策略落本机生效面（policies/local.json）
+  if (url === '/v1/config/trimmc-card/apply' && method === 'POST') {
+    const result = handleApplyStrategy(headers['authorization']);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 

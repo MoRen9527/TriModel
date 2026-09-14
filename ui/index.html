@@ -116,14 +116,16 @@
   </form>
 
   <h3>当前策略</h3>
-  <div class="sub" style="margin:-6px 0 10px">以下策略应用于 TriMMC（sg）</div>
+  <div class="sub" style="margin:-6px 0 10px">以下策略应用于 <span id="tc-domain-label">本地域（TriMLC/TriRLC）</span></div>
   <div class="row-form">
     <label>策略</label>
     <select id="tc-strategy-sel" style="width:260px"><option value="">暂无策略，请先新增</option></select>
     <button id="tc-str-switch">切换至选中策略</button>
     <button id="tc-str-clear">清除（不使用策略）</button>
+    <button class="primary" id="tc-apply" hidden>应用到本机</button>
   </div>
   <div class="kv" id="tc-str-detail" style="margin-top:8px"></div>
+  <table id="tc-str-rules" style="margin-top:8px"><thead><tr><th>时段</th><th>模型</th><th>优先级</th><th>启用</th></tr></thead><tbody id="tc-str-rules-body"></tbody></table>
   <div class="row-form"><span id="tc-chips" class="sub">暂无已启用条目</span></div>
   <div class="row-form">
     <label>默认模型（可留空=回落引擎默认）</label>
@@ -221,6 +223,7 @@ async function boot() {
   wireEyeToggle('adminToken', 'admin-eye');
   wireEyeToggle('tc-e-key', 'tc-e-eye');
   renderConnState();
+  await loadRuntimeInfo();
   if (!apiToken() && !adminToken()) {
     // ①⑤根治：全数据面板禁用态+自动展开连接设置+引导
     $('conn-settings').open = true;
@@ -503,6 +506,36 @@ $('tc-e-save').onclick = () => {
   tcMsg('条目已加入本地卡片，点「保存卡片」生效（保存后待应用）', 'warn');
 };
 
+// ── LG-035 本地侧：运行时信息（域标签 + 本机应用开关）──
+async function loadRuntimeInfo() {
+  const r = await api('/v1/config/runtime-info').catch(() => null);
+  if (!r || r.status !== 200) return;
+  const label = document.getElementById('tc-domain-label');
+  if (label && r.body.domain_label) label.textContent = r.body.domain_label;
+  const applyBtn = document.getElementById('tc-apply');
+  if (applyBtn) applyBtn.hidden = !r.body.local_apply_enabled;
+}
+
+// ── LG-035 本地侧：「应用到本机」——活动策略落本机生效面（时段切换即刻生效）──
+$('tc-apply').onclick = async () => {
+  const btn = $('tc-apply');
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = '应用中…';
+  try {
+    const r = await api('/v1/config/trimmc-card/apply', { method: 'POST', headers: adminHeaders() });
+    if (r.status === 200) {
+      tcMsg(r.body.message || '已应用到本机', 'ok');
+      await refreshEffective();
+    } else {
+      tcMsg(humanize(r.status, r.body.error), 'err');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+};
+
 $('tc-save').onclick = async () => {
   const name = $('tc-conn').value.trim();
   if (!name) return tcMsg('请先填写机器信息中的名称', 'err');
@@ -555,7 +588,32 @@ function tcRenderWindowRules() {
   const tb = document.getElementById('tc-wr-body');
   if (!tb) return;
   tb.innerHTML = '';
-  document.getElementById('tc-wr-empty').hidden = tcWindowRules.length > 0;
+  // CEO 走查 2026-09-14 空显根因③：策略实体化后活动策略的时段规则挂在策略
+  // 实体内，本区（卡级独立规则位）常空——用户面语义「时段规则」应直显当前
+  // 生效的规则：无卡级独立规则且存在活动策略时，在本区只读渲染活动策略的
+  // 规则（编辑入口在策略编辑，不在此处复制管理操作）。
+  const emptyHint = document.getElementById('tc-wr-empty');
+  const activeStrategy = tcActiveStrategy && tcStrategies[tcActiveStrategy] ? tcStrategies[tcActiveStrategy] : null;
+  if (tcWindowRules.length === 0 && activeStrategy && activeStrategy.rules.length > 0) {
+    emptyHint.hidden = false;
+    emptyHint.textContent = '以下为活动策略「' + activeStrategy.name + '」的时段规则（在策略编辑中管理）：';
+    for (const r of activeStrategy.rules) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td>';
+      tr.children[0].textContent = r.windows.map((w) => w.start + '–' + w.end).join(', ');
+      tr.children[1].textContent = r.model;
+      tr.children[2].textContent = String(r.priority);
+      tr.children[3].textContent = r.enabled ? '✓' : '✗';
+      tb.appendChild(tr);
+    }
+    return;
+  }
+  emptyHint.hidden = tcWindowRules.length > 0;
+  if (tcWindowRules.length === 0) {
+    emptyHint.textContent = activeStrategy
+      ? '当前无卡级独立时段规则——活动策略「' + activeStrategy.name + '」的时段规则见上方策略详情'
+      : '暂无时段规则。点「添加时段规则」创建。';
+  }
   // D15/增补件4②：chips 行（已启用条目派生只读）——固定使用概念退役后的派生展示
   const all = { ...tcMirror, ...tcEntries };
   const chips = Object.keys(all).filter((id) => all[id].enabled);
@@ -648,13 +706,33 @@ function tcRenderStrategySel() {
 
 function tcRenderStrategyDetail() {
   const el = $('tc-str-detail');
+  const rulesBody = document.getElementById('tc-str-rules-body');
+  const rulesTable = document.getElementById('tc-str-rules');
   const s = tcActiveStrategy ? tcStrategies[tcActiveStrategy] : null;
-  if (!s) { el.innerHTML = '<b>活动策略</b><span>无（按时段规则执行）</span>'; return; }
+  if (rulesBody) rulesBody.innerHTML = '';
+  if (!s) {
+    el.innerHTML = '<b>活动策略</b><span>无（按时段规则执行）</span>';
+    if (rulesTable) rulesTable.hidden = true;
+    return;
+  }
   el.innerHTML = '<b>活动策略</b><span>' + s.name + '</span>'
     + '<b>目的</b><span>' + (s.purpose || '—') + '</span>'
     + '<b>默认模型</b><span>' + s.default_model + '</span>'
     + '<b>模型集</b><span>' + s.models.join(', ') + '</span>'
     + '<b>规则数</b><span>' + s.rules.length + '</span>';
+  // D19：规则列表挂策略详情内（时段→模型映射可视）
+  if (rulesTable && rulesBody) {
+    rulesTable.hidden = s.rules.length === 0;
+    for (const r of s.rules) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td></td><td></td><td></td>';
+      tr.children[0].textContent = r.windows.map((w) => w.start + '–' + w.end).join(', ');
+      tr.children[1].textContent = r.model;
+      tr.children[2].textContent = String(r.priority);
+      tr.children[3].textContent = r.enabled ? '✓' : '✗';
+      rulesBody.appendChild(tr);
+    }
+  }
 }
 
 function tcRenderStrategyTable() {
@@ -724,7 +802,14 @@ $('tc-str-clear').onclick = () => {
 
 
 async function loadTrimmc() {
-  if (!adminToken()) { tcBadge(); return; }
+  if (!adminToken()) {
+    // CEO 走查 2026-09-14 空显根因①：无管理令牌时原为静默 return——两区空表
+    // 零提示，用户无从知道要先配令牌。改为显式引导+自动展开连接设置。
+    failPanel('error-card', '模型信息与时段规则需要先连接：请在页头「连接设置」填入 API 令牌与管理令牌后点「连接」');
+    const cs = document.getElementById('conn-settings'); if (cs) cs.open = true;
+    tcBadge();
+    return;
+  }
   const r = await api('/v1/config/trimmc-card', { headers: adminHeaders() });
   if (r.status !== 200) { failPanel('error-card', humanize(r.status, r.body.error)); tcBadge(); return; }
   msg('error-card', '');
@@ -739,20 +824,16 @@ async function loadTrimmc() {
   tcWindowRules = (tcCard?.rules || []).filter((r) => r.type === 'window' && String(r.rule_id).startsWith('trimmc-win:'));
   // D16: 默认模型字段载入回填（卡 default_model → 下拉；缺省=空选回落引擎）
   const dmSel = document.getElementById('tc-default-model');
-  console.error('[D16dbg] loadTrimmc dm block: dmSel =', !!dmSel, '| card default_model =', JSON.stringify(tcCard?.default_model ?? null));
   if (dmSel) {
     dmSel.innerHTML = '<option value="">（留空=回落引擎默认）</option>';
     const catalog = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
-    console.error('[D16-a] before loop options =', dmSel.options.length);
     for (const m of catalog) {
       const o = document.createElement('option');
       o.value = m; o.textContent = m;
       dmSel.appendChild(o);
     }
-    console.error('[D16-b] after loop options =', dmSel.options.length);
     const want = tcCard && tcCard.default_model ? tcCard.default_model : '';
     dmSel.value = want;
-    console.error('[D16-c] after set value =', dmSel.value, '| want =', want);
     if (dmSel.value !== want) {
       const o = document.createElement('option');
       o.value = want; o.textContent = want + '（历史值）';
@@ -761,6 +842,10 @@ async function loadTrimmc() {
     }
   }
   $('tc-dirty').textContent = '';
+  // D19 策略实体 hydrate：卡数据灌入本地态（真浏览器走查实证缺此赋值=
+  // 下拉永空"暂无策略"，jjdom/断言双盲区——2026-09-14）
+  tcStrategies = tcCard?.strategies ?? {};
+  tcActiveStrategy = tcCard?.active_strategy_id ?? null;
   tcRender();
   tcRenderWindowRules();
   tcRenderStrategySel();

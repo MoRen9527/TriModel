@@ -61,11 +61,14 @@ export function migrateKeysEncToCard(
   let card = loadCard(cardPath);
   if (!card) {
     card = {
-      version: 2,
+      version: 4,
       machine: { name: hostname() },
       connection: { name: 'auto-import' },
       provider_entries: {},
-      rules: [],
+      model_sets: {},
+      rules: {},
+      strategies: {},
+      active_strategy_id: null,
       status: { state: 'pending', at: new Date().toISOString() },
       reserved: { quota_switch: null, instances_group: null, env_tag: null },
     };

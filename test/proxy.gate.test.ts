@@ -102,6 +102,7 @@ describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
     policyLocalSnap = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
     rmSync(POLICY_FILE, { force: true }); // deterministic: env-default routing
     rmSync(POLICY_LOCAL, { force: true }); // S11: stray applied policy would override env pin
+    setEnv('TRIMODEL_CARD_FILE', join(REPO_ROOT, '.gate-no-card.json')); // 卡优先解析隔离：本机现役卡不穿透（不存在路径=卡面恒空）
     setEnv('DEEPSEEK_API_KEY', DS_KEY);
     setEnv('GLM_API_KEY', GLM_KEY);
     setEnv('TRIMODEL_TRIMETAVERSE_API_KEY', TMV_KEY);

@@ -14,7 +14,7 @@ import { createModelClient, readConfig } from './index.js';
 import { dispatch } from './api/routes.js';
 import { migrateKeysEncToCard } from './secure-keys.js';
 import { loadCard, migrateLegacyDistCard } from './trimmc-card.js';
-import { migrateLegacyPolicy, getCardDefaultModel, registerCardDefaultModelFn } from './policy.js';
+import { migrateLegacyPolicy, getCardDefaultModel, registerCardDefaultModelFn, registerQuotaSignalFn, migrateLegacyPoliciesDir } from './policy.js';
 
 const HOST = process.env.TRIMODEL_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.TRIMODEL_PORT ?? 3333);
@@ -84,7 +84,15 @@ async function main(): Promise<void> {
   // S5 one-shot migration: keys.enc → TriMMC card synthetic entries
   // (auto_imported), then keys.enc renamed to keys.enc.migrated (幂等).
   migrateLegacyPolicy();
+  // LG-035 本地侧：legacy 编译邻接策略文件 → cwd 规范位（D9 同族，幂等）
+  const policiesMigration = migrateLegacyPoliciesDir();
+  if (policiesMigration.migrated.length > 0) {
+    console.log(`[trimodel] policies migrated to cwd: ${policiesMigration.migrated.join(', ')}`);
+  }
   registerCardDefaultModelFn(() => { try { const doc = loadCard(); return doc && doc.default_model ? doc.default_model : null; } catch { return null; } });
+  // v4 quota 钩子位（终稿 §四）：MVP 空信号——恒 null → 常规序零影响；
+  // 信号实接（usage 基座→判定形态）联调窗另排。
+  registerQuotaSignalFn(() => null);
   // D9: legacy dist-adjacent card → canonical cwd path (rename-style, idempotent)
   const cardMigration = migrateLegacyDistCard();
   if (cardMigration.reason && cardMigration.reason !== 'no-legacy') {
