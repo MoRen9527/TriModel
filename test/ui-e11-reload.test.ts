@@ -1,71 +1,47 @@
-// ── LG-035 D16: default-model load backfill assertions ──
-// Covers: loadTrimmc backfills #tc-default-model from card.default_model;
-// absent card → empty selection (回落引擎默认 placeholder visible).
-// Uses jsdom with the real UI; fetch stubbed via the same harness pattern as
-// test/ui-boot.test.ts (independent stub to keep this file self-contained).
-import { describe, it } from 'node:test';
+// ── D16→层2 段A: 默认模型编辑面退役回归（v4：default_model=派生缓存，归 default 规则实体）──
+// 原案（下拉回填）随编辑面退役销项：终稿 §一「default_model 派生缓存：apply 时自
+// 活动策略 default 规则同步；真源=规则实体，无编辑面」。本件断言退役零残留。
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { join, dirname } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { JSDOM, VirtualConsole } from 'jsdom';
+import { JSDOM } from 'jsdom';
 
-const UI_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const UI_PATH = resolve(HERE, '..', 'ui', 'index.html');
 
-async function waitFor(cond: () => boolean, timeoutMs = 3000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!cond() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 15));
-}
-
-function bootUiWithCard(card: unknown | null): { dom: JSDOM; d: Document } {
-  const vc = new VirtualConsole();
-  vc.on('jsdomError', () => { /* drain */ });
-  const dom = new JSDOM(readFileSync(UI_PATH, 'utf-8'), {
-    runScripts: 'dangerously',
-    url: 'http://127.0.0.1:3333/ui',
-    virtualConsole: vc,
-    beforeParse(window: import("jsdom").DOMWindow) {
-      window.localStorage.setItem('trimodel_ui_token', 'tk-d16');
-      window.localStorage.setItem('trimodel_ui_admin_token', 'ta-d16');
-      window.fetch = (async (url: string, _init?: string) => {
-        const u = url;
-        let body: Record<string, unknown> = {};
-        if (u.includes('/v1/models')) {
-          body = { object: 'list', data: [{ id: 'deepseek-flash' }, { id: 'deepseek-v4-pro' }, { id: 'GLM-5.3-Flash' }, { id: 'GLM-5.3' }, { id: 'TMV' }] };
-        } else if (u.includes('/v1/config/policy')) {
-          body = { object: 'config.policy', policy: { version: '1', schedules: [] }, effective: { model: 'deepseek-v4-pro', source: 'env-default', matched_schedule_id: null } };
-        } else if (u.includes('/v1/config/keys')) {
-          body = { object: 'config.keys', keys: {}, default_model: 'deepseek-v4-pro', refresh_interval_s: 900, expires_at: 'x' };
-        } else if (u.includes('/trimmc-card')) {
-          body = { object: 'x', card_file_present: card !== null, card, entries_masked: {} };
-        }
-        return { status: 200, json: async () => body, text: async () => JSON.stringify(body), headers: new Map() } as unknown as Response;
-      }) as typeof window.fetch;
-    },
-  });
-  return { dom, d: dom.window.document };
-}
-
-describe('D16: default-model load backfill', () => {
-  it('card with default_model → dropdown selects it after load', async () => {
-    const card = { version: 4, machine: { name: 'm' }, connection: { name: 'c' }, provider_entries: {}, model_sets: {}, rules: {}, strategies: {}, active_strategy_id: null, default_model: 'GLM-5.3', status: { state: 'applied', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null } };
-    const { dom, d } = bootUiWithCard(card);
-    // jsdom 异步加载时序：等待 boot+refreshAll 的 fetch 链 resolve（轮询条件化，
-    // 禁固定 sleep——竞态确定性）
-    await waitFor(() => (d.getElementById('tc-default-model') as HTMLSelectElement).value !== '', 3000);
-    const sel = d.getElementById('tc-default-model') as HTMLSelectElement;
-    console.log('[D16dbg] options =', sel.options.length, '| selectedValue =', JSON.stringify(sel.value), '| selectedIndex =', sel.selectedIndex, '| allValues =', JSON.stringify(Array.from(sel.options).map((o) => o.value)));
-    assert.equal(sel.value, 'GLM-5.3', '载入后默认模型字段必须回填卡值');
-    dom.window.close();
+describe('层2 段A: 默认模型编辑面退役回归', () => {
+  it('UI 零 #tc-default-model / #tc-s-default 编辑面（v4 派生缓存无编辑面）', () => {
+    const html = readFileSync(UI_PATH, 'utf-8');
+    assert.equal(html.includes('id="tc-default-model"'), false, '默认模型下拉（策略区）已退役');
+    assert.equal(html.includes('id="tc-s-default"'), false, '默认模型下拉（表单内）已退役');
+    assert.equal(html.includes('tcFillDefaultModelSelect'), false, '填充函数零残留');
   });
 
-  it('absent card → dropdown falls back to the empty selection (回落引擎默认)', async () => {
-    const { dom, d } = bootUiWithCard(null);
-    await new Promise((r) => setTimeout(r, 150));
-    const sel = d.getElementById('tc-default-model') as HTMLSelectElement;
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(sel.value, '', '无卡时默认模型字段必须为空选');
-    assert.ok((d.getElementById('tc-conn') as HTMLInputElement).value === '', '连接名同样不回填（无卡）');
+  it('boot 对无卡/v4 卡均不因退役字段崩（jsdom 冒烟）', async () => {
+    const html = readFileSync(UI_PATH, 'utf-8');
+    const dom = new JSDOM(html, {
+      url: 'http://127.0.0.1:3333/ui',
+      runScripts: 'dangerously',
+      beforeParse(window) {
+        window.localStorage.setItem('trimodel_ui_token', 'tk-api');
+        window.localStorage.setItem('trimodel_ui_admin_token', 'tk-admin');
+        const card = { version: 4, machine: { name: 'm' }, connection: { name: 'c' }, provider_entries: {}, model_sets: {}, rules: {}, strategies: {}, active_strategy_id: null, default_model: 'GLM-5.3', status: { state: 'applied', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null } };
+        window.fetch = (async (url: string) => {
+          let body: Record<string, unknown> = {};
+          if (url.includes('/v1/models')) body = { object: 'list', data: [] };
+          else if (url.includes('/v1/config/policy')) body = { object: 'config.policy', policy: { version: '1', schedules: [] }, effective: { model: 'deepseek-v4-pro', source: 'env-default', matched_schedule_id: null } };
+          else if (url.includes('/v1/config/keys')) body = { object: 'config.keys', keys: {}, default_model: 'deepseek-v4-pro', refresh_interval_s: 900, expires_at: 'x' };
+          else if (url.includes('/trimmc-card')) body = { object: 'x', card_file_present: true, card, entries_masked: {} };
+          return { status: 200, json: async () => body, text: async () => JSON.stringify(body), headers: new Map() } as unknown as Response;
+        }) as typeof window.fetch;
+      },
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    const d = dom.window.document;
+    assert.ok(d.getElementById('tc-conn'), '页面存活（boot 链无崩）');
+    assert.equal((d.getElementById('tc-conn') as HTMLInputElement).value, 'c', '连接名回填（v4 卡正常读取）');
     dom.window.close();
   });
 });

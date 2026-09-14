@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TriModel 模型配置</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     color-scheme: light dark;
@@ -115,7 +116,7 @@
     </div>
   </form>
 
-  <h3>当前策略</h3>
+  <h3>活动策略</h3>
   <div class="sub" style="margin:-6px 0 10px">以下策略应用于 <span id="tc-domain-label">本地域（TriMLC/TriRLC）</span></div>
   <div class="row-form">
     <label>策略</label>
@@ -127,47 +128,26 @@
   <div class="kv" id="tc-str-detail" style="margin-top:8px"></div>
   <table id="tc-str-rules" style="margin-top:8px"><thead><tr><th>时段</th><th>模型</th><th>优先级</th><th>启用</th></tr></thead><tbody id="tc-str-rules-body"></tbody></table>
   <div class="row-form"><span id="tc-chips" class="sub">暂无已启用条目</span></div>
-  <div class="row-form">
-    <label>默认模型（可留空=回落引擎默认）</label>
-    <select id="tc-default-model" style="width:260px"><option value="">（留空=回落引擎默认）</option></select>
-    <span class="sub">窗口时段未命中时使用</span>
-  </div>
 
   <h3 style="margin-top:14px">策略列表 <button class="primary" id="tc-str-add" style="margin-left:8px;font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">+ 新增策略</button></h3>
-  <table id="tc-str-table"><thead><tr><th>名称</th><th>模型集</th><th>规则数</th><th>默认模型</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-str-body"></tbody></table>
+  <table id="tc-str-table"><thead><tr><th>名称</th><th>模型集</th><th>规则数</th><th>状态</th><th>操作</th></tr></thead><tbody id="tc-str-body"></tbody></table>
   <div id="tc-str-list-empty" class="sub" style="margin-top:6px">暂无策略。<button class="primary" style="font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">新增策略</button></div>
 
   <form class="card-form" id="tc-str-form" hidden>
     <h3 id="tc-str-form-title">新增策略</h3>
     <div class="field"><label>名称（必填）</label><input id="tc-s-name" placeholder="例如 工作时段"></div>
     <div class="field"><label>目的（选填）</label><input id="tc-s-purpose" placeholder="例如 闲时用 glm 忙时用 deepseek"></div>
-    <div class="field"><label>模型集</label><select id="tc-s-model" style="width:200px"></select></div>
-    <div class="field"><label>默认模型</label><select id="tc-s-default" style="width:200px"></select></div>
-    <div class="field"><label><input id="tc-s-enabled" type="checkbox" checked> 启用</label></div>
+    <div class="field"><label>模型集（必选）</label><select id="tc-s-modelset" style="width:220px"></select><span id="tc-s-ms-empty" class="sub" hidden>暂无模型集——请先在「模型集」区创建（层2 开放中）</span></div>
+    <div class="field" style="align-items:flex-start"><label>规则（可多选）</label><div id="tc-s-rules" style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px"></div><span id="tc-s-rule-empty" class="sub" hidden>暂无规则——请先在「规则」区创建（层2 开放中）</span></div>
     <div class="row-form">
       <button type="button" class="primary" id="tc-s-save">保存策略</button>
       <button type="button" id="tc-s-cancel">取消</button>
     </div>
   </form>
 
-  <h3 style="margin-top:14px">时段规则（命名候定） <span class="sub">时区：Asia/Shanghai</span></h3>
+  <h3 style="margin-top:14px">生效时段规则 <span class="sub">只读——规则在「规则」区管理（层2 全量开放中），当前生效=活动策略引用的规则</span></h3>
   <table id="tc-wrules"><thead><tr><th>时段</th><th>目标条目</th><th>优先级</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-wr-body"></tbody></table>
   <div id="tc-wr-empty" class="sub" style="margin-top:6px">暂无时段规则。点「添加时段规则」创建。</div>
-  <form class="card-form" id="tc-wr-form" hidden>
-    <h3>添加时段规则</h3>
-    <div class="field"><label>目标条目</label><select id="tc-w-entry"></select></div>
-    <div class="field"><label>开始</label><input id="tc-w-start" value="09:00" style="width:110px"></div>
-    <div class="field"><label>结束</label><input id="tc-w-end" value="18:00" style="width:110px"><span id="tc-w-time-err" class="err" style="font-size:12px"></span></div>
-    <div class="field"><label>优先级</label><input id="tc-w-priority" type="number" value="10" style="width:110px"></div>
-    <div class="field"><label><input id="tc-w-enabled" type="checkbox" checked> 启用</label></div>
-    <div class="row-form">
-      <button type="button" class="primary" id="tc-w-save">保存规则</button>
-      <button type="button" id="tc-w-cancel">取消</button>
-      <span class="sub">跨午夜时段暂不支持；随卡片保存后应用</span>
-    </div>
-  </form>
-  <div class="row-form"><button id="tc-wr-open-add">添加时段规则</button></div>
-  <div class="sub" style="margin-top:6px">按时段/额度自动切换将于后续版本提供</div>
   <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin-top:6px" hidden></div>
 
   <div class="row-form">
@@ -285,9 +265,7 @@ async function refreshAll() {
   renderConnState();
   await Promise.all([refreshEffective(), loadTrimmc()]);
   await fillModelSelect();
-  tcFillDefaultModelSelect();
   tcFillStrategySelects();
-  tcFillDefaultModelSelect();
 }
 
 async function refreshEffective() {
@@ -303,33 +281,41 @@ async function refreshEffective() {
     '<b>一致性</b><span>' + (actual === e.model ? '<span class="ok">✓ 一致</span>' : '<span class="err">✗ 不一致</span>') + '</span>';
 }
 
-// ── D19 默认模型下拉动态填充（官方五名+空选）──
-function tcFillDefaultModelSelect() {
-  const sel = $('tc-default-model');
-  if (!sel) return;
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">（留空=回落引擎默认）</option>';
-  const catalog = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
-  for (const m of catalog) {
-    const o = document.createElement('option');
-    o.value = m; o.textContent = m;
-    sel.appendChild(o);
-  }
-  sel.value = prev;
-}
-
-// ── D19 策略表单下拉填充 ──
+// ── 层2 段A：策略表单 v4 填充（模型集下拉+规则多选勾选列表）──
 function tcFillStrategySelects() {
-  const catalog = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
-  for (const selId of ['tc-s-model', 'tc-s-default']) {
-    const sel = $(selId);
-    if (!sel) continue;
-    sel.innerHTML = '';
-    for (const m of catalog) {
+  const msSel = $('tc-s-modelset');
+  if (msSel) {
+    const prev = msSel.value;
+    msSel.innerHTML = '<option value="">（请选择模型集）</option>';
+    for (const [id, ms] of Object.entries(tcModelSets)) {
       const o = document.createElement('option');
-      o.value = m; o.textContent = m;
-      sel.appendChild(o);
+      o.value = id; o.textContent = ms.name + '（' + ms.entry_ids.length + ' 条目）';
+      msSel.appendChild(o);
     }
+    if (prev && tcModelSets[prev]) msSel.value = prev;
+    const emptyHint = $('tc-s-ms-empty');
+    if (emptyHint) emptyHint.hidden = Object.keys(tcModelSets).length > 0;
+  }
+  const ruleBox = $('tc-s-rules');
+  if (ruleBox) {
+    ruleBox.innerHTML = '';
+    for (const [id, r] of Object.entries(tcRules)) {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:13px;margin:2px 0';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = id; cb.dataset.ruleId = id;
+      const typeBadge = r.type === 'time' ? '时段' : r.type === 'default' ? '默认' : '额度';
+      const summary = r.type === 'time'
+        ? (r.windows ?? []).map((w) => w.start + '–' + w.end + ' ' + tcWindowModel(w.entry_id)).join('；')
+        : r.type === 'default' ? '全时段用 ' + tcWindowModel(r.entry_id)
+        : '监控 ' + tcWindowModel(r.watch_entry_id) + '→依序转 ' + (r.fallback_ids ?? []).map((f) => tcWindowModel(f)).join('、');
+      const span = document.createElement('span');
+      span.textContent = '「' + r.name + '」[' + typeBadge + '] ' + summary;
+      label.appendChild(cb); label.appendChild(span);
+      ruleBox.appendChild(label);
+    }
+    const emptyHint = $('tc-s-rule-empty');
+    if (emptyHint) emptyHint.hidden = Object.keys(tcRules).length > 0;
   }
 }
 
@@ -356,12 +342,15 @@ async function fillModelSelect() {
 
 // ── 眼睛切换（三处输入框复用；仅当前输入值可见性）──
 function wireEyeToggle(inputId, eyeId) {
+  const conceal = () => { const i = $(inputId); i.type = 'password'; $(eyeId).textContent = '👁'; };
   $(eyeId).onclick = () => {
     const input = $(inputId);
     const reveal = input.type === 'password';
     input.type = reveal ? 'text' : 'password';
     $(eyeId).textContent = reveal ? '🚫' : '👁';
   };
+  // 加固（BOD 23:2x ④）：显影=临时态，失焦即回遮蔽——明文不驻屏
+  $(inputId).addEventListener('blur', conceal);
 }
 
 // ═══ TriMMC 信息卡（S2 交互唯一模式 + S4 只写卡片→待应用 + D7 脏追踪）═══
@@ -554,7 +543,6 @@ $('tc-save').onclick = async () => {
     rules: tcWindowRules.map((wr) => ({ ...wr })),
     strategies: tcStrategies,
     active_strategy_id: tcActiveStrategy,
-    default_model: $('tc-default-model').value || null,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
@@ -617,8 +605,8 @@ function tcRenderWindowRules() {
   emptyHint.hidden = tcWindowRules.length > 0;
   if (tcWindowRules.length === 0) {
     emptyHint.textContent = activeStrategy
-      ? '当前无卡级独立时段规则——活动策略「' + activeStrategy.name + '」的时段规则见上方策略详情'
-      : '暂无时段规则。点「添加时段规则」创建。';
+      ? '当前无生效时段规则——活动策略「' + activeStrategy.name + '」未引用时段型规则'
+      : '暂无生效时段规则（未启用策略——全部使用系统默认）。';
   }
   // D15/增补件4②：chips 行（已启用条目派生只读）——固定使用概念退役后的派生展示
   const all = { ...tcMirror, ...tcEntries };
@@ -626,31 +614,6 @@ function tcRenderWindowRules() {
   document.getElementById('tc-chips').textContent = chips.length > 0
     ? chips.map((id) => id + '（' + all[id].model + '）').join(' · ')
     : '暂无已启用条目';
-  const wsel = document.getElementById('tc-w-entry');
-  if (wsel) {
-    const prev = wsel.value;
-    wsel.innerHTML = '';
-    Object.keys(all).filter((id) => all[id].enabled !== false).forEach((id) => {
-      const o = document.createElement('option');
-      o.value = id; o.textContent = id + '（' + all[id].model + '）';
-      wsel.appendChild(o);
-    });
-    if (prev && Array.from(wsel.options).some((o) => o.value === prev)) wsel.value = prev;
-  }
-  tcWindowRules.forEach((wr, i) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td><button class="danger" data-del>删除</button></td>';
-    tr.children[0].textContent = wr.windows.map((w) => w.start + '–' + w.end).join(', ');
-    tr.children[1].textContent = wr.entry_id + '（' + (all[wr.entry_id]?.model ?? '?') + '）';
-    tr.children[2].textContent = String(wr.priority);
-    tr.children[3].textContent = wr.enabled ? '✓' : '✗';
-    tr.querySelector('[data-del]').onclick = () => {
-      tcWindowRules.splice(i, 1);
-      tcRenderWindowRules();
-      tcMarkDirty();
-    };
-    tb.appendChild(tr);
-  });
   // D5 回落提示（v4 语义 2026-09-14）：applied 卡活动策略 default 规则条目被停用=
   // 引擎事实——「已回落：条目 X 已停用」（fixed 规则退役，default 承其位）
   const activeS = tcActiveStrategy ? tcStrategies[tcActiveStrategy] : null;
@@ -667,33 +630,6 @@ function tcRenderWindowRules() {
     tip.textContent = '';
   }
 }
-(function wireWindowRuleForm() {
-  const openBtn = document.getElementById('tc-wr-open-add');
-  if (!openBtn) return;
-  openBtn.onclick = () => { document.getElementById('tc-wr-form').hidden = false; document.getElementById('tc-w-time-err').textContent = ''; };
-  document.getElementById('tc-w-cancel').onclick = () => { document.getElementById('tc-wr-form').hidden = true; };
-  document.getElementById('tc-w-save').onclick = () => {
-    const entryId = document.getElementById('tc-w-entry').value;
-    const start = document.getElementById('tc-w-start').value.trim();
-    const end = document.getElementById('tc-w-end').value.trim();
-    const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
-    const errEl = document.getElementById('tc-w-time-err');
-    if (!entryId) { errEl.textContent = '暂无可用条目'; return; }
-    if (!timeRe.test(start) || !timeRe.test(end)) { errEl.textContent = '时间格式须为 HH:MM'; return; }
-    if (start >= end) { errEl.textContent = '结束时间需晚于开始时间'; return; }
-    tcWindowRules.push({
-      rule_id: 'trimmc-win:' + entryId + ':' + start + '-' + end,
-      type: 'window', entry_id: entryId,
-      windows: [{ start: start, end: end }],
-      priority: Number(document.getElementById('tc-w-priority').value) || 10,
-      enabled: document.getElementById('tc-w-enabled').checked,
-    });
-    document.getElementById('tc-wr-form').hidden = true;
-    tcRenderWindowRules();
-    tcMarkDirty();
-    tcMsg('时段规则已加入本地卡片，点「保存卡片」生效（保存后待应用）', 'warn');
-  };
-})();
 
 // ═══ D19→v4 三实体（策略=一等实体；策略={命名,目的,引用模型集,引用规则[]}）═══
 let tcStrategies = {};   // 策略字典（id -> StrategyEntity v4）
@@ -791,17 +727,17 @@ function tcRenderStrategyTable() {
 }
 
 function tcOpenStrategyForm(editId) {
-  // v4 兼容补丁期（2026-09-14 23:1x）：策略新增/编辑表单为 v3 写法，层2 五区
-  // 重构落地前禁入口（保存会被服务端 v4 校验拒——与其让用户撞 400，不如明示
-  // 升级中；切换/查看/应用不受影响）。
-  tcMsg('策略编辑正在升级为三实体形态（模型集勾选+规则名引用），即将开放——查看与切换不受影响', 'warn');
-  return;
+  // 层2 段A（2026-09-14 23:3x）：v4 引用式表单（名+目的+模型集下拉+规则多选）
+  tcFillStrategySelects();
   tcEditingId = editId ?? null;
-  $('tc-str-form-title').textContent = editId ? '编辑策略 ' + editId : '新增策略';
+  $('tc-str-form-title').textContent = editId ? '编辑策略「' + tcStrategies[editId]?.name + '」' : '新增策略';
   const s = editId ? tcStrategies[editId] : null;
   $('tc-s-name').value = s?.name ?? '';
   $('tc-s-purpose').value = s?.purpose ?? '';
-  $('tc-s-enabled').checked = s ? s.enabled : true;
+  $('tc-s-modelset').value = s?.model_set_id ?? '';
+  for (const cb of document.querySelectorAll('#tc-s-rules input[type=checkbox]')) {
+    cb.checked = !!(s?.rule_ids?.includes(cb.dataset.ruleId));
+  }
   $('tc-str-form').hidden = false;
 }
 
@@ -809,17 +745,22 @@ $('tc-s-cancel').onclick = () => { $('tc-str-form').hidden = true; };
 $('tc-s-save').onclick = () => {
   const name = $('tc-s-name').value.trim();
   if (!name) return tcMsg('策略名称必填', 'err');
-  const model = $('tc-s-model').value;
+  const model_set_id = $('tc-s-modelset').value;
+  if (!model_set_id) return tcMsg('请选择模型集（暂无则先在「模型集」区创建）', 'err');
+  const rule_ids = Array.from(document.querySelectorAll('#tc-s-rules input[type=checkbox]'))
+    .filter((cb) => cb.checked).map((cb) => cb.dataset.ruleId);
   const purpose = $('tc-s-purpose').value.trim();
-  const id = tcEditingId ?? ('str-' + Date.now());
+  const id = tcEditingId ?? ('st_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
   tcStrategies[id] = {
-    name, purpose, models: [model], default_model: model, enabled: $('tc-s-enabled').checked,
-    rules: tcStrategies[id]?.rules ?? [],
+    name, ...(purpose ? { purpose } : {}), model_set_id, rule_ids,
     created_at: tcStrategies[id]?.created_at ?? new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
   $('tc-str-form').hidden = true;
   tcRenderStrategyTable();
+  tcRenderStrategySel();
+  tcRenderStrategyDetail();
+  tcRenderWindowRules();
   tcMarkDirty();
 };
 
@@ -861,25 +802,6 @@ async function loadTrimmc() {
   // 退役，本地态恒空（旧 v3 读法对字典调 .filter 会 TypeError 中断整渲染链，
   // CEO 走查「三区全空」根因）。
   tcWindowRules = [];
-  // D16: 默认模型字段载入回填（卡 default_model → 下拉；缺省=空选回落引擎）
-  const dmSel = document.getElementById('tc-default-model');
-  if (dmSel) {
-    dmSel.innerHTML = '<option value="">（留空=回落引擎默认）</option>';
-    const catalog = ['deepseek-flash', 'deepseek-v4-pro', 'GLM-5.3-Flash', 'GLM-5.3', 'TMV'];
-    for (const m of catalog) {
-      const o = document.createElement('option');
-      o.value = m; o.textContent = m;
-      dmSel.appendChild(o);
-    }
-    const want = tcCard && tcCard.default_model ? tcCard.default_model : '';
-    dmSel.value = want;
-    if (dmSel.value !== want) {
-      const o = document.createElement('option');
-      o.value = want; o.textContent = want + '（历史值）';
-      dmSel.appendChild(o);
-      dmSel.value = want;
-    }
-  }
   $('tc-dirty').textContent = '';
   // D19→v4 三实体 hydrate：卡数据灌入本地态（真浏览器走查实证缺此赋值=
   // 下拉永空"暂无策略"，jjdom/断言双盲区——2026-09-14）

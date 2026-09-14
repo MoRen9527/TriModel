@@ -186,7 +186,7 @@ describe('T3: UI — card DOM channel-vocabulary absence (通道词汇零出现)
     // Card section has no apply/push button (保存卡片=COS 拉取语义，非推送)
     const cardSection = html.slice(html.indexOf('【TriMMC 信息】'), html.indexOf('【本机策略（高级）】'));
     assert.equal(cardSection.includes('id="tc-push"'), false);
-    assert.ok(cardSection.includes('按时段/额度自动切换将于后续版本提供'), 'reserved-capability copy must be present');
+    // 层2 段A：额度已进 v4 schema（quota 实体）——「后续版本」占位文案随之退役。
   });
 });
 
