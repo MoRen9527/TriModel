@@ -149,10 +149,16 @@ describe('S8.2: jsdom 首启五断言', () => {
   it('本地侧: 域标签+应用到本机按钮（runtime-info 驱动；点击 POST apply）', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const card = {
-      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
-      provider_entries: {}, rules: [],
-      strategies: { s1: { name: '工作时段', purpose: '', models: ['GLM-5.3'], rules: [{ type: 'window', windows: [{ start: '09:00', end: '18:00' }], model: 'GLM-5.3', priority: 10, enabled: true }], default_model: 'GLM-5.3', enabled: true, created_at: 'x', updated_at: 'x' } },
+      version: 4, machine: { name: 'm' }, connection: { name: '本机' },
+      provider_entries: { e1: { provider: 'glm', model: 'GLM-5.3', api_key_encrypted: 'QUFB', enabled: true, updated_at: 'x' } },
+      model_sets: { ms1: { name: '工作集', entry_ids: ['e1'], created_at: 'x', updated_at: 'x' } },
+      rules: {
+        r1: { name: '工作时段#时段', type: 'time', enabled: true, windows: [{ start: '09:00', end: '18:00', entry_id: 'e1' }], created_at: 'x', updated_at: 'x' },
+        r2: { name: '工作时段#默认', type: 'default', enabled: true, entry_id: 'e1', created_at: 'x', updated_at: 'x' },
+      },
+      strategies: { s1: { name: '工作时段', purpose: '', model_set_id: 'ms1', rule_ids: ['r1', 'r2'], created_at: 'x', updated_at: 'x' } },
       active_strategy_id: 's1', deleted_strategy_ids: [],
+      default_model: 'GLM-5.3',
       status: { state: 'pending', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null },
     };
     const dom = bootUi(log, [(url: string, _init?: RequestInit) => {
@@ -176,7 +182,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     await waitFor(() => Array.from((d.getElementById('tc-strategy-sel') as HTMLSelectElement).options).some((o) => o.value === 's1'));
     assert.ok(Array.from((d.getElementById('tc-strategy-sel') as HTMLSelectElement).options).some((o) => o.value === 's1'), '连接后策略下拉必须含卡内策略（hydrate）');
     assert.equal((d.getElementById('tc-str-detail') as HTMLElement).textContent.includes('工作时段'), true, '策略详情渲染');
-    assert.equal((d.getElementById('tc-str-rules-body') as HTMLElement).children.length, 1, '策略规则列表渲染');
+    assert.equal((d.getElementById('tc-str-rules-body') as HTMLElement).children.length, 2, '策略规则列表渲染（v4：1 time 窗行+1 default 行）');
     // 点击 → POST apply 发出 + 成功提示
     d.getElementById('tc-apply').click();
     await waitFor(() => log.some((c) => c.url.includes('trimmc-card/apply') && c.init?.method === 'POST'));
@@ -198,9 +204,9 @@ describe('S8.2: jsdom 首启五断言', () => {
     // 401: stale admin token -> badge stays non-pending, error message shown
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const appliedCard = {
-      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
+      version: 4, machine: { name: 'm' }, connection: { name: '本机' },
       provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: 'QUFB', enabled: true, updated_at: 'x' } },
-      rules: [], status: { state: 'applied', at: 'x' },
+      model_sets: {}, rules: {}, strategies: {}, active_strategy_id: null, status: { state: 'applied', at: 'x' },
       reserved: { quota_switch: null, instances_group: null, env_tag: null },
     };
     const dom = bootUi(log, [(url: string, init?: RequestInit) => {
@@ -254,9 +260,12 @@ describe('S8.2: jsdom 首启五断言', () => {
   it('D5: on-disk disabled entry under applied card shows fallback tip (engine fact)', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const appliedCardDisabled = {
-      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
+      version: 4, machine: { name: 'm' }, connection: { name: '本机' },
       provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: 'QUFB', enabled: false, updated_at: 'x' } },
-      rules: [{ rule_id: 'trimmc:e1', type: 'fixed', entry_id: 'e1' }],
+      model_sets: { ms: { name: '集', entry_ids: ['e1'], created_at: 'x', updated_at: 'x' } },
+      rules: { rd: { name: '默认模型', type: 'default', enabled: true, entry_id: 'e1', created_at: 'x', updated_at: 'x' } },
+      strategies: { s1: { name: '策略', model_set_id: 'ms', rule_ids: ['rd'], created_at: 'x', updated_at: 'x' } },
+      active_strategy_id: 's1',
       status: { state: 'applied', at: 'x' },
       reserved: { quota_switch: null, instances_group: null, env_tag: null },
     };
@@ -277,9 +286,9 @@ describe('S8.2: jsdom 首启五断言', () => {
   it('D5b: derivation source is the disk mirror - dirty (unsaved) toggle cannot fabricate fallback', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const appliedCard = {
-      version: 2, machine: { name: 'm' }, connection: { name: '本机' },
+      version: 4, machine: { name: 'm' }, connection: { name: '本机' },
       provider_entries: { e1: { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: 'QUFB', enabled: true, updated_at: 'x' } },
-      rules: [{ rule_id: 'trimmc:e1', type: 'fixed', entry_id: 'e1' }],
+      model_sets: {}, rules: {}, strategies: {}, active_strategy_id: null,
       status: { state: 'applied', at: 'x' },
       reserved: { quota_switch: null, instances_group: null, env_tag: null },
     };
@@ -358,9 +367,9 @@ describe('S5 迁移器: keys.enc → card synthetic entries (幂等)', () => {
   it('roundtrip guard: loadCard tolerates auto_imported extra field', () => {
     const cardPath = join(dir, 'tolerant.json');
     const raw = {
-      version: 2, machine: { name: 'm' }, connection: { name: 'c' },
+      version: 4, machine: { name: 'm' }, connection: { name: 'c' },
       provider_entries: { 'auto:deepseek': { provider: 'deepseek', model: 'deepseek-v4-pro', api_key_encrypted: encrypt('sk-auto').toString('base64'), enabled: true, updated_at: 'x', auto_imported: true } },
-      rules: [], status: { state: 'pending', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null },
+      model_sets: {}, rules: {}, strategies: {}, active_strategy_id: null, status: { state: 'pending', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null },
     };
     writeFileSync(cardPath, JSON.stringify(raw));
     const doc = loadCard(cardPath);

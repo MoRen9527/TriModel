@@ -48,7 +48,7 @@ function bootUiWithCard(card: unknown | null): { dom: JSDOM; d: Document } {
 
 describe('D16: default-model load backfill', () => {
   it('card with default_model → dropdown selects it after load', async () => {
-    const card = { version: 2, machine: { name: 'm' }, connection: { name: 'c' }, provider_entries: {}, rules: [], default_model: 'GLM-5.3', status: { state: 'applied', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null } };
+    const card = { version: 4, machine: { name: 'm' }, connection: { name: 'c' }, provider_entries: {}, model_sets: {}, rules: {}, strategies: {}, active_strategy_id: null, default_model: 'GLM-5.3', status: { state: 'applied', at: 'x' }, reserved: { quota_switch: null, instances_group: null, env_tag: null } };
     const { dom, d } = bootUiWithCard(card);
     // jsdom 异步加载时序：等待 boot+refreshAll 的 fetch 链 resolve（轮询条件化，
     // 禁固定 sleep——竞态确定性）
