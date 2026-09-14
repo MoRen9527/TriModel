@@ -116,6 +116,19 @@
     </div>
   </form>
 
+  <h3>模型集 <button class="primary" id="tc-ms-add" style="margin-left:8px;font-size:12px;padding:2px 8px">+ 新增模型集</button></h3>
+  <table id="tc-ms-table"><thead><tr><th>集名</th><th>条目</th><th>条目数</th><th>操作</th></tr></thead><tbody id="tc-ms-body"></tbody></table>
+  <div id="tc-ms-empty" class="sub" style="margin-top:6px">暂无模型集。点「新增模型集」从模型信息条目勾选组成。</div>
+  <form class="card-form" id="tc-ms-form" hidden>
+    <h3 id="tc-ms-form-title">新增模型集</h3>
+    <div class="field"><label>集名（必填）</label><input id="tc-ms-name" placeholder="例如 主力组合"></div>
+    <div class="field" style="align-items:flex-start"><label>勾选条目（≥1）</label><div id="tc-ms-entries" style="max-height:140px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px"></div><span id="tc-ms-entry-empty" class="sub" hidden>暂无可用条目——请先在「模型信息」区录入</span></div>
+    <div class="row-form">
+      <button type="button" class="primary" id="tc-ms-save">保存模型集</button>
+      <button type="button" id="tc-ms-cancel">取消</button>
+    </div>
+  </form>
+
   <h3>活动策略</h3>
   <div class="sub" style="margin:-6px 0 10px">以下策略应用于 <span id="tc-domain-label">本地域（TriMLC/TriRLC）</span></div>
   <div class="row-form">
@@ -535,12 +548,15 @@ $('tc-save').onclick = async () => {
   const prevLabel = saveBtn.textContent;
   saveBtn.textContent = '保存中…';
   const doc = {
-    version: 2,
+    version: 4,
     machine: { name: tcCard?.machine?.name || '' },
     connection: { name },
     provider_entries: tcEntries,            // D7：只发脏条目（后端合并）
     deleted_entry_ids: tcDeleted,           // D7：删除通道
-    rules: tcWindowRules.map((wr) => ({ ...wr })),
+    model_sets: tcModelSets,                // 层2 段B：模型集实体（后端合并）
+    deleted_model_set_ids: tcDeletedModelSets,
+    rules: tcRules,                         // 层2 段C：规则实体（后端合并）
+    deleted_rule_ids: tcDeletedRules,
     strategies: tcStrategies,
     active_strategy_id: tcActiveStrategy,
     status: { state: 'pending', at: new Date().toISOString() },
@@ -634,6 +650,8 @@ function tcRenderWindowRules() {
 // ═══ D19→v4 三实体（策略=一等实体；策略={命名,目的,引用模型集,引用规则[]}）═══
 let tcStrategies = {};   // 策略字典（id -> StrategyEntity v4）
 let tcActiveStrategy = null;  // 活动策略 id（「活动策略」词汇定稿，「当前策略」退役）
+let tcDeletedModelSets = [];  // 段B：模型集删除通道（PUT 显式移除）
+let tcDeletedRules = [];      // 段C：规则删除通道（PUT 显式移除）
 let tcModelSets = {};    // v4 模型集字典（id -> ModelSetEntity）
 let tcRules = {};        // v4 规则实体字典（id -> RuleEntity 三型）
 
@@ -642,6 +660,77 @@ function tcWindowModel(entryId) {
   const all = { ...tcMirror, ...tcEntries };
   return all[entryId]?.model ?? '?';
 }
+
+// ── 层2 段B：模型集区（勾选条目的命名分组；被策略引用禁删）──
+function tcRenderModelSets() {
+  const tb = $('tc-ms-body');
+  if (!tb) return;
+  tb.innerHTML = '';
+  $('tc-ms-empty').hidden = Object.keys(tcModelSets).length > 0;
+  for (const [id, ms] of Object.entries(tcModelSets)) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td><button data-edit style="margin-right:4px">编辑</button><button class="danger" data-del>删除</button></td>';
+    tr.children[0].textContent = ms.name;
+    tr.children[1].textContent = ms.entry_ids.map((eid) => eid + '（' + (tcMirror[eid]?.model ?? tcEntries[eid]?.model ?? '?') + '）').join('、') || '（空）';
+    tr.children[2].textContent = String(ms.entry_ids.length);
+    tr.querySelector('[data-edit]').onclick = () => tcOpenModelSetForm(id);
+    tr.querySelector('[data-del]').onclick = () => {
+      // 守卫：被策略引用禁删（服务端同款，UI 预检减往返）
+      const ref = Object.values(tcStrategies).find((st) => st.model_set_id === id);
+      if (ref) { tcMsg('该模型集正被策略「' + ref.name + '」引用，请先解除引用', 'err'); return; }
+      delete tcModelSets[id];
+      tcDeletedModelSets.push(id);
+      tcRenderModelSets();
+      tcFillStrategySelects();
+      tcMarkDirty();
+    };
+    tb.appendChild(tr);
+  }
+}
+
+function tcOpenModelSetForm(editId) {
+  const box = $('tc-ms-entries');
+  box.innerHTML = '';
+  const all = { ...tcMirror, ...tcEntries };
+  const ids = Object.keys(all).sort();
+  $('tc-ms-entry-empty').hidden = ids.length > 0;
+  const editing = editId ? tcModelSets[editId] : null;
+  for (const eid of ids) {
+    const label = document.createElement('label');
+    label.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:13px;margin:2px 0';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = eid; cb.dataset.entryId = eid;
+    if (editing && editing.entry_ids.includes(eid)) cb.checked = true;
+    const span = document.createElement('span');
+    span.textContent = eid + '（' + all[eid].provider + ' · ' + all[eid].model + (all[eid].enabled ? '' : ' · 已停用') + '）';
+    label.appendChild(cb); label.appendChild(span);
+    box.appendChild(label);
+  }
+  tcEditingMsId = editId ?? null;
+  $('tc-ms-form-title').textContent = editId ? '编辑模型集「' + tcModelSets[editId]?.name + '」' : '新增模型集';
+  $('tc-ms-name').value = editing?.name ?? '';
+  $('tc-ms-form').hidden = false;
+}
+let tcEditingMsId = null;
+
+$('tc-ms-add').onclick = () => tcOpenModelSetForm(null);
+$('tc-ms-cancel').onclick = () => { $('tc-ms-form').hidden = true; };
+$('tc-ms-save').onclick = () => {
+  const name = $('tc-ms-name').value.trim();
+  if (!name) return tcMsg('模型集名称必填', 'err');
+  if (Object.values(tcModelSets).some((m) => m.name === name && tcModelSets[tcEditingMsId] !== m)) {
+    return tcMsg('名称「' + name + '」已存在', 'err');
+  }
+  const entry_ids = Array.from(document.querySelectorAll('#tc-ms-entries input[type=checkbox]'))
+    .filter((cb) => cb.checked).map((cb) => cb.dataset.entryId);
+  if (entry_ids.length === 0) return tcMsg('请至少勾选一个条目', 'err');
+  const id = tcEditingMsId ?? ('ms_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+  tcModelSets[id] = { name, entry_ids, created_at: tcModelSets[id]?.created_at ?? new Date().toISOString(), updated_at: new Date().toISOString() };
+  $('tc-ms-form').hidden = true;
+  tcRenderModelSets();
+  tcFillStrategySelects();
+  tcMarkDirty();
+};
 
 function tcRenderStrategySel() {
   const sel = $('tc-strategy-sel');
@@ -805,11 +894,14 @@ async function loadTrimmc() {
   $('tc-dirty').textContent = '';
   // D19→v4 三实体 hydrate：卡数据灌入本地态（真浏览器走查实证缺此赋值=
   // 下拉永空"暂无策略"，jjdom/断言双盲区——2026-09-14）
-  tcModelSets = tcCard?.model_sets ?? {};
-  tcRules = tcCard?.rules ?? {};
-  tcStrategies = tcCard?.strategies ?? {};
+  tcModelSets = { ...(tcCard?.model_sets ?? {}) };
+  tcRules = { ...(tcCard?.rules ?? {}) };
+  tcStrategies = { ...(tcCard?.strategies ?? {}) };
   tcActiveStrategy = tcCard?.active_strategy_id ?? null;
+  tcDeletedModelSets = [];
+  tcDeletedRules = [];
   tcRender();
+  tcRenderModelSets();
   tcRenderWindowRules();
   tcRenderStrategySel();
   tcRenderStrategyTable();
