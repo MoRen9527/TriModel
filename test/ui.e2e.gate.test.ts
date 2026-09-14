@@ -330,96 +330,94 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     throw new Error('model option "' + val + '" not found within 8s');
   };
 
-  it('W1 (①) D15 改写: 默认模型字段+条目持久 — 选择→保存→reload 保持（第四型完整周期）', async () => {
+  it('W1 (①) v4: 规则实体持久 — 建默认规则→保存→reload 保持（第四型完整周期）', async () => {
     const page = await freshPage();
-    await connectPage(page);
-    await addEntryViaUi(page, 'gate-ui-w2', 'glm', 'GLM-5.3', 'sk-gate-ui-w2-key');
-    // D15: 默认模型字段（可空 select，''=回落引擎默认）——模型表异步填充后选 GLM-5.3；
-    // selectOption 与异步重建竞态（2026-09-12 实测 30s 重试循环）→ 直 DOM 赋值+change 派发（原子）
-    await page.waitForFunction(
-      '() => { const el = document.querySelector("#tc-default-model"); return el instanceof HTMLSelectElement && Array.from(el.options).some((o) => o.value === "GLM-5.3"); }',
-      undefined,
-      { timeout: 8000 },
-    );
-    await page.evaluate(() => {
-      const el = document.querySelector('#tc-default-model') as HTMLSelectElement;
-      el.value = 'GLM-5.3';
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await connectPage(page, 'w1v4');
+    await addEntryViaUi(page, 'gate-ui-w1v4', 'glm', 'GLM-5.3', 'sk-gate-w1v4-key');
+    await page.click('#tc-save');
+    await page.waitForTimeout(700);
+    // v4：默认模型归 default 规则实体（编辑面退役）——经规则区表单创建
+    await page.click('#tc-r-add');
+    await page.selectOption('#tc-r-type', 'default');
+    await page.fill('#tc-r-name', '走查默认');
+    await waitSelectOptions(page, '#tc-r-entry', 1);
+    await page.click('#tc-r-save');
     await page.click('#tc-save');
     await page.waitForTimeout(700);
     await page.reload({ waitUntil: 'domcontentloaded' }); // 第四型：跨刷新持久周期
     await page.waitForTimeout(900);
-    const dm = await page.$eval('#tc-default-model', (el) => (el as HTMLSelectElement).value);
-    assert.equal(dm, 'GLM-5.3', '默认模型字段须随卡持久（reload 后保持）');
+    const rulesText = await page.locator('#tc-r-body').innerText();
+    assert.ok(rulesText.includes('走查默认'), '默认规则实体须随卡持久（reload 后保持）');
+    assert.ok(rulesText.includes('全时段用'), 'default 型摘要正确');
     const entryRows = await page.locator('#tc-entry-body tr').count();
     assert.ok(entryRows >= 1, '条目随卡持久');
     await page.context().close();
   });
 
-  it('W2 (②): time-window rules zone — five columns + add form with field defaults (fixture self-sufficient)', async () => {
+  it('W2 (②) v4: 规则区五列+时段窗默认值（fixture self-sufficient）', async () => {
     const page = await freshPage();
-    await connectPage(page, 'w2');
-    await addEntryViaUi(page, 'gate-ui-w2a', 'glm', 'GLM-5.3', 'sk-gate-w2a-key');
-    await page.click('#tc-save'); // fixture: entry persisted so 目标条目 has a source
+    await connectPage(page, 'w2v4');
+    await addEntryViaUi(page, 'gate-ui-w2v4', 'glm', 'GLM-5.3', 'sk-gate-w2v4-key');
+    await page.click('#tc-save'); // fixture: entry persisted so 窗级条目下拉 has a source
     await page.waitForTimeout(700);
-    await page.click('#tc-wr-open-add');
-    await waitSelectOptions(page, '#tc-w-entry', 1); // 目标条目下拉自卡片条目填充（合并视图）
-    const heads = await page.$eval('#tc-wrules thead', (el) => Array.from(el.querySelectorAll('th')).map((th) => (th.textContent ?? '').trim()));
-    assert.deepEqual(heads, ['时段', '目标条目', '优先级', '启用', '操作'], '五列正身');
-    assert.equal(await page.locator('#tc-wr-empty').isVisible(), true, '空态指引在位');
-    assert.equal(await page.$eval('#tc-wr-form', (el) => (el as HTMLFormElement).hidden), false, '添加表单展开');
-    assert.equal(await page.$eval('#tc-w-start', (el) => (el as HTMLInputElement).value), '09:00', '开始默认 09:00');
-    assert.equal(await page.$eval('#tc-w-end', (el) => (el as HTMLInputElement).value), '18:00', '结束默认 18:00');
-    await page.click('#tc-w-cancel');
+    await page.click('#tc-r-add');
+    const heads = await page.$eval('#tc-r-table thead', (el) => Array.from(el.querySelectorAll('th')).map((th) => (th.textContent ?? '').trim()));
+    assert.deepEqual(heads, ['规则名', '类型', '摘要', '启用', '操作'], '五列正身（v4 规则区）');
+    const ruleRows = await page.locator('#tc-r-body tr').count();
+    assert.ok(ruleRows >= 1, '真卡规则在表（三窗切换/默认模型——真服务非空卡）');
+    assert.equal(await page.$eval('#tc-r-form', (el) => (el as HTMLFormElement).hidden), false, '新增表单展开');
+    const firstWin = await page.$eval('#tc-r-windows .row-form', (row) => ({
+      start: (row.children[0] as HTMLInputElement).value,
+      end: (row.children[1] as HTMLInputElement).value,
+    }));
+    assert.equal(firstWin.start, '09:00', '开始默认 09:00');
+    assert.equal(firstWin.end, '18:00', '结束默认 18:00');
+    await page.click('#tc-r-cancel');
     await page.context().close();
   });
 
-  it('W3 (③) D15 改写: fixed 选择器退役确认 — 无 fixed 选择器+默认模型字段接管+冲突提示按窗口态', async () => {
+  it('W3 (③) v4: 旧编辑面退役回归 — fixed/D10 表单/默认模型编辑面零残留', async () => {
     const page = await freshPage();
-    await connectPage(page, 'w3');
-    // D15: tc-r-entry 退役（fixed 引擎分支收尾，type 收窄 window 单型）
-    assert.equal(await page.locator('#tc-r-entry').count(), 0, 'fixed 选择器已退役（DOM 零残留）');
-    assert.equal(await page.locator('#tc-default-model').count(), 1, '默认模型字段接管（可空=回落引擎默认）');
-    // D15: 冲突提示元素整体退役（fixed 分支收尾=无冲突可提，id 争议随之消解）
-    assert.equal(await page.locator('#tc-fixed-active').count(), 0, '冲突提示元素已退役（fixed 分支收尾）');
-    assert.equal(await page.locator('#tc-fixed-tip').count(), 0, '旧 tip 元素零残留');
-    // 卡 schema: rules 仅 window 型（trimmc-win: 前缀域），零 fixed 混写
-    const card = await (await fetch(`http://127.0.0.1:${port}/v1/config/trimmc-card`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } })).json();
-    const rules = card.card?.rules ?? [];
-    assert.ok(rules.every((r: { type?: string }) => r.type !== 'fixed'), '卡 rules 零 fixed 型（window 单型收窄）');
+    await connectPage(page, 'w3v4');
+    for (const gone of ['#tc-r-entry-old', '#tc-fixed-active', '#tc-fixed-tip', '#tc-default-model', '#tc-s-default', '#tc-wr-open-add', '#tc-wr-form', '#tc-w-entry']) {
+      assert.equal(await page.locator(gone).count(), 0, `${gone} 已退役（DOM 零残留）`);
+    }
+    // v4 新面在位：规则区+模型集区+策略表单三实体
+    assert.equal(await page.locator('#tc-r-table').count(), 1, '规则区在位');
+    assert.equal(await page.locator('#tc-ms-table').count(), 1, '模型集区在位');
+    assert.equal(await page.locator('#tc-s-modelset').count(), 1, '策略表单模型集下拉在位');
     await page.context().close();
   });
 
-  it('W4 (④): start >= end rejected with 人话 copy, rule not added (跨午夜不暴露) — fixture self-sufficient', async () => {
+  it('W4 (④) v4: 规则表单 start >= end 人话拒收（跨午夜不暴露）', async () => {
     const page = await freshPage();
-    await connectPage(page, 'w4');
-    await addEntryViaUi(page, 'gate-ui-w4a', 'deepseek', 'deepseek-v4-pro', 'sk-gate-w4a-key');
+    await connectPage(page, 'w4v4');
+    await addEntryViaUi(page, 'gate-ui-w4v4', 'deepseek', 'deepseek-v4-pro', 'sk-gate-w4v4-key');
     await page.click('#tc-save');
     await page.waitForTimeout(700);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(900);
-    const rowsBefore = await page.locator('#tc-wr-body tr').count();
-    await page.click('#tc-wr-open-add');
-    await waitSelectOptions(page, '#tc-w-entry', 1);
-    await page.fill('#tc-w-start', '22:00');
-    await page.fill('#tc-w-end', '06:00');
-    await page.click('#tc-w-save');
+    const rowsBefore = await page.locator('#tc-r-body tr').count();
+    await page.click('#tc-r-add');
+    await page.fill('#tc-r-name', '跨午夜走查');
+    await page.fill('#tc-r-windows .row-form input[type=time] >> nth=0', '22:00');
+    await page.fill('#tc-r-windows .row-form input[type=time] >> nth=1', '06:00');
+    await page.click('#tc-r-save');
     await page.waitForTimeout(300);
-    const err = await page.locator('#tc-w-time-err').textContent();
-    assert.ok(/结束时间需晚于开始时间/.test(err ?? ''), `人话拒收文案，实际: ${err}`);
-    assert.equal(await page.$eval('#tc-wr-form', (el) => (el as HTMLFormElement).hidden), false, '拒收后表单保持（不静默吞）');
-    const rowsAfter = await page.locator('#tc-wr-body tr').count();
+    const msg = await page.locator('#tc-msg').textContent();
+    assert.ok(/结束时间需晚于开始时间/.test(msg ?? ''), `人话拒收文案，实际: ${msg}`);
+    assert.equal(await page.$eval('#tc-r-form', (el) => (el as HTMLFormElement).hidden), false, '拒收后表单保持（不静默吞）');
+    const rowsAfter = await page.locator('#tc-r-body tr').count();
     assert.equal(rowsAfter, rowsBefore, '拒收规则不得入表');
-    await page.click('#tc-w-cancel');
+    await page.click('#tc-r-cancel');
     await page.context().close();
   });
 
-  it('W5 (⑤): scope small-print in place — 以下策略应用于 TriMMC（sg）', async () => {
+  it('W5 (⑤) v4: 域标签动态化（runtime-info 驱动）— 作用域小字随域显', async () => {
     const page = await freshPage();
     const body = await page.evaluate(() => document.body.innerText);
-    assert.ok(body.includes('以下策略应用于 TriMMC（sg）'), '作用域小字在位');
-    assert.ok(body.includes('时区：Asia/Shanghai'), '时区副注显式（D10 正身）');
+    assert.ok(body.includes('以下策略应用于'), '作用域小字框架在位');
+    assert.ok(body.includes('本地域'), '本地实例域标签=本地域（runtime-info 驱动动态值；sg 域部署时由 TRIMODEL_DOMAIN_LABEL 显 sg）');
     await page.context().close();
   });
 });
