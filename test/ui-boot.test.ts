@@ -223,7 +223,18 @@ describe('LG-036 TriMMC（sg）栏（2026-09-16 CTO 方案 c6a6e512）', () => {
     await waitFor(() => (d.getElementById('fb-sg-msg') as HTMLElement).textContent.includes('不可达'));
     retireUi(dom);
   });
+
+  it('CPO 警示文案 verbatim 在卷（两栏同构同句；LG-036 尾件）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, [okFor]);
+    await new Promise((r) => setTimeout(r, 120));
+    const zone = (dom.window.document.getElementById('fb-zone') as HTMLElement).textContent ?? '';
+    const WARN = '写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚';
+    assert.equal(zone.split(WARN).length - 1, 2, '两栏各一句（本机+sg 同构同句，verbatim）');
+    retireUi(dom);
+  });
 });
+
 
 describe('S8.2: jsdom 首启五断言', () => {
   it('断言① 无令牌态：连接设置自动展开+引导可见+数据面板禁用', async () => {

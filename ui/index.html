@@ -100,6 +100,7 @@
     <label>模型</label><input id="fb-model" placeholder="例如 deepseek-flash[1M]" style="width:200px" autocomplete="off">
     <button class="primary" id="fb-restore">还原兜底</button>
   </div>
+  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚</div>
   <div id="fb-msg" class="msg"></div>
 
   <h3 style="margin-top:16px">TriMMC（sg）</h3>
@@ -113,6 +114,7 @@
     <button id="fb-sg-token-eye" class="eye">👁</button>
     <button class="primary" id="fb-sg-restore">还原兜底</button>
   </div>
+  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚</div>
   <div class="sub" style="margin-top:4px">sg 凭据仅本次会话使用，不保存；写入后 sg 侧会话重启后生效</div>
   <div id="fb-sg-msg" class="msg"></div>
 </section>
