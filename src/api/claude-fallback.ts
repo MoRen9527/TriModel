@@ -14,8 +14,14 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { maskKey } from '../secure-keys.js';
 
-/** 目标文件：服务端所宿机的 Claude Code 用户设置（env 明文 token 载体，设计如此）。 */
+/** 目标文件：服务端所宿机的 Claude Code 用户设置（env 明文 token 载体，设计如此）。
+ * TRIMODEL_CLAUDE_SETTINGS 可钉位（照 D9 TRIMODEL_CARD_FILE 同族）——真链路测试
+ * 用它指向临时文件，防误写真实用户设置。 */
+export const SETTINGS_FILE_ENV = 'TRIMODEL_CLAUDE_SETTINGS';
+
 export function settingsPath(): string {
+  const env = process.env[SETTINGS_FILE_ENV]?.trim();
+  if (env) return env;
   return join(homedir(), '.claude', 'settings.json');
 }
 

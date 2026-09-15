@@ -119,8 +119,11 @@ async function main(): Promise<void> {
       // GET-only static UI plane, handled before the JSON dispatcher
       if ((req.method ?? 'GET') === 'GET' && serveStatic(url, res)) return;
 
-      // PUT /v1/config/policy needs the request body; other routes ignore it
-      const rawBody = (req.method ?? '') === 'PUT' ? await readRawBody(req) : undefined;
+      // Body-bearing methods need the request body; GET/DELETE etc. ignore it.
+      // （2026-09-15 修：原仅 PUT 读体——POST /v1/config/claude-fallback/restore
+      // 体被丢致 handler 收空→必 400；读体条件扩 POST。真链路回归案守此位。）
+      const method = req.method ?? '';
+      const rawBody = method === 'PUT' || method === 'POST' ? await readRawBody(req) : undefined;
 
       const result = await dispatch(client, req.method ?? 'GET', url, reqHeaders, rawBody);
       res.writeHead(result.statusCode, result.headers);
