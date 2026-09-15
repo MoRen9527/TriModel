@@ -6,6 +6,7 @@ import { handleModels } from './models.js';
 import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeysStatus } from './keys.js';
 import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, handleApplyStrategy } from './trimmc-card.js';
 import { handleRuntimeInfo } from './runtime-info.js';
+import { handleGetClaudeFallback, handlePostClaudeFallbackRestore } from './claude-fallback.js';
 import { handleGetPolicy, handlePutPolicy } from './policy.js';
 
 export type RouteResult = {
@@ -95,6 +96,16 @@ export async function dispatch(
   // LG-035 本地侧（2026-09-14）：运行时信息（无鉴权只读，供 UI 标注域与功能开关）
   if (url === '/v1/config/runtime-info' && method === 'GET') {
     const result = handleRuntimeInfo();
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // Claude 直连兜底（2026-09-15 CEO 直令）：GET 无鉴权读现状；POST 管理令牌 fail-closed
+  if (url === '/v1/config/claude-fallback' && method === 'GET') {
+    const result = handleGetClaudeFallback(headers['authorization']);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+  if (url === '/v1/config/claude-fallback/restore' && method === 'POST') {
+    const result = handlePostClaudeFallbackRestore(headers['authorization'], rawBody);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 

@@ -87,6 +87,20 @@
   <div class="row-form"><button id="refreshNow">刷新</button></div>
 </section>
 
+<!-- ═══ 直连兜底（2026-09-15 CEO 直令）：TriModel 不可用时的应急通道 ═══ -->
+<section id="fb-zone">
+  <h2>直连兜底 <span class="sub">TriModel 配置不可信时的应急通道：手填三项直写本机设置，重启会话后生效</span></h2>
+  <div class="kv" id="fb-current"></div>
+  <div class="row-form">
+    <label>服务地址</label><input id="fb-baseurl" placeholder="https://..." style="width:240px" autocomplete="off">
+    <label>API 密钥</label><input id="fb-key" type="password" placeholder="sk-..." autocomplete="off" style="width:200px">
+    <button id="fb-eye" class="eye">👁</button>
+    <label>模型</label><input id="fb-model" placeholder="例如 deepseek-flash[1M]" style="width:200px" autocomplete="off">
+    <button class="primary" id="fb-restore">还原兜底</button>
+  </div>
+  <div id="fb-msg" class="msg"></div>
+</section>
+
 <!-- ═══ 【TriMMC 信息】主卡（S1 主位：实线+云图标+「保存后待应用」）═══ -->
 <section class="card-main">
   <h2>☁ 【TriMMC 信息】 <span id="tc-badge" class="badge none">未配置</span></h2>
@@ -239,8 +253,10 @@ async function boot() {
   wireEyeToggle('token', 'token-eye');
   wireEyeToggle('adminToken', 'admin-eye');
   wireEyeToggle('tc-e-key', 'tc-e-eye');
+  wireEyeToggle('fb-key', 'fb-eye');
   renderConnState();
   await loadRuntimeInfo();
+  await loadFallbackInfo(); // 兜底区独立取数（无鉴权读；不参与卡片禁用链）
   if (!apiToken() && !adminToken()) {
     // ①⑤根治：全数据面板禁用态+自动展开连接设置+引导
     $('conn-settings').open = true;
@@ -300,7 +316,7 @@ $('conn-save').onclick = async () => {
 // ── 状态条 + 策略列表 + 密钥状态 ──
 async function refreshAll() {
   renderConnState();
-  await Promise.all([refreshEffective(), loadTrimmc()]);
+  await Promise.all([refreshEffective(), loadTrimmc(), loadFallbackInfo()]);
   await fillModelSelect();
   tcFillStrategySelects();
 }
@@ -401,6 +417,51 @@ let tcDeletedStrategyIds = []; // D19：删除的策略 id
 let tcEditingId = null;
 
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
+
+// ── 直连兜底（2026-09-15 CEO 直令）：无鉴权读现状；写入需管理令牌（服务端 fail-closed）──
+function fbMsg(text, cls) { const n = $('fb-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); }
+
+async function loadFallbackInfo() {
+  const r = await api('/v1/config/claude-fallback', { headers: adminHeaders() }).catch(() => ({ status: 0, body: {} }));
+  const el = $('fb-current');
+  if (r.status !== 200) { el.innerHTML = '<b>当前状态</b><span class="err">读取失败，稍后点「刷新」重试</span>'; return; }
+  const b = r.body;
+  el.innerHTML = '<b>当前服务地址</b><span>' + (b.base_url ?? '（未设置）') + '</span>'
+    + '<b>当前模型</b><span>' + (b.model ?? '（未设置）') + '</span>'
+    + (b.api_key_masked ? '<b>当前密钥</b><span>' + b.api_key_masked + '</span>' : '');
+}
+
+$('fb-restore').onclick = async () => {
+  const baseUrl = $('fb-baseurl').value.trim();
+  const apiKey = $('fb-key').value.trim();
+  const model = $('fb-model').value.trim();
+  if (!baseUrl) return fbMsg('请填写服务地址', 'err');
+  if (!/^https?:\/\/.+/i.test(baseUrl)) return fbMsg('服务地址需以 http:// 或 https:// 开头', 'err');
+  if (!apiKey) return fbMsg('请填写 API 密钥', 'err');
+  if (apiKey.length < 16) return fbMsg('API 密钥长度不足（至少 16 位），请核对后重填', 'err');
+  if (!model) return fbMsg('请填写模型名称', 'err');
+  const btn = $('fb-restore');
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = '写入中…';
+  try {
+    const r = await api('/v1/config/claude-fallback/restore', {
+      method: 'POST', headers: adminHeaders(),
+      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model }),
+    });
+    if (r.status === 200) {
+      fbMsg(r.body.message ?? '已写入。重启会话后生效。', 'ok');
+      $('fb-key').value = ''; // 密钥不回显：写后清空输入框
+      await loadFallbackInfo();
+    } else if (r.status === 401) {
+      fbMsg('管理令牌不正确或未填写：请先在页头「连接设置」填入管理令牌', 'err');
+    } else if (r.status === 503) {
+      fbMsg('兜底写入未启用：请先在服务端配置管理令牌', 'err');
+    } else {
+      fbMsg(humanize(r.status, r.body.error), 'err');
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
+};
 
 function tcBadge() {
   const b = $('tc-badge');
