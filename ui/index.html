@@ -87,9 +87,11 @@
   <div class="row-form"><button id="refreshNow">刷新</button></div>
 </section>
 
-<!-- ═══ 直连兜底（2026-09-15 CEO 直令）：TriModel 不可用时的应急通道 ═══ -->
+<!-- ═══ 直连兜底（2026-09-15 CEO 直令；LG-036 两套分栏 2026-09-16）═══ -->
 <section id="fb-zone">
-  <h2>直连兜底 <span class="sub">TriModel 配置不可信时的应急通道：手填三项直写本机设置，重启会话后生效</span></h2>
+  <h2>直连兜底 <span class="sub">TriModel 配置不可信时的应急通道：手填三项直写目标机设置，重启会话后生效</span></h2>
+
+  <h3 style="margin-top:4px">TriMLC（本机）</h3>
   <div class="kv" id="fb-current"></div>
   <div class="row-form">
     <label>服务地址</label><input id="fb-baseurl" placeholder="https://..." style="width:240px" autocomplete="off">
@@ -99,6 +101,20 @@
     <button class="primary" id="fb-restore">还原兜底</button>
   </div>
   <div id="fb-msg" class="msg"></div>
+
+  <h3 style="margin-top:16px">TriMMC（sg）</h3>
+  <div class="kv" id="fb-sg-current"></div>
+  <div class="row-form">
+    <label>服务地址</label><input id="fb-sg-baseurl" placeholder="https://..." style="width:240px" autocomplete="off">
+    <label>API 密钥</label><input id="fb-sg-key" type="password" placeholder="sk-..." autocomplete="off" style="width:200px">
+    <button id="fb-sg-eye" class="eye">👁</button>
+    <label>模型</label><input id="fb-sg-model" placeholder="例如 glm-5.3[1M]" style="width:200px" autocomplete="off">
+    <label>sg 管理令牌</label><input id="fb-sg-token" type="password" placeholder="sg 管理令牌" autocomplete="off" style="width:200px">
+    <button id="fb-sg-token-eye" class="eye">👁</button>
+    <button class="primary" id="fb-sg-restore">还原兜底</button>
+  </div>
+  <div class="sub" style="margin-top:4px">sg 凭据仅本次会话使用，不保存；写入后 sg 侧会话重启后生效</div>
+  <div id="fb-sg-msg" class="msg"></div>
 </section>
 
 <!-- ═══ 【TriMMC 信息】主卡（S1 主位：实线+云图标+「保存后待应用」）═══ -->
@@ -254,9 +270,14 @@ async function boot() {
   wireEyeToggle('adminToken', 'admin-eye');
   wireEyeToggle('tc-e-key', 'tc-e-eye');
   wireEyeToggle('fb-key', 'fb-eye');
+  wireEyeToggle('fb-sg-key', 'fb-sg-eye');
+  wireEyeToggle('fb-sg-token', 'fb-sg-token-eye');
   renderConnState();
   await loadRuntimeInfo();
-  await loadFallbackInfo(); // 兜底区独立取数（无鉴权读；不参与卡片禁用链）
+  // 兜底区独立取数（无鉴权读；不参与卡片禁用链）——**非阻塞**：sg 栏经远程
+  // 通道往返慢（秒级），禁占 boot 关键路径（连接态/禁用链判定先行；区块自行异步填充）。
+  loadFallbackInfo();
+  loadFallbackSg();
   if (!apiToken() && !adminToken()) {
     // ①⑤根治：全数据面板禁用态+自动展开连接设置+引导
     $('conn-settings').open = true;
@@ -316,7 +337,9 @@ $('conn-save').onclick = async () => {
 // ── 状态条 + 策略列表 + 密钥状态 ──
 async function refreshAll() {
   renderConnState();
-  await Promise.all([refreshEffective(), loadTrimmc(), loadFallbackInfo()]);
+  await Promise.all([refreshEffective(), loadTrimmc()]);
+  loadFallbackInfo(); // 非阻塞（同上：兜底区自填充）
+  loadFallbackSg();
   await fillModelSelect();
   tcFillStrategySelects();
 }
@@ -457,6 +480,65 @@ $('fb-restore').onclick = async () => {
       fbMsg('兜底写入未启用：请先在服务端配置管理令牌', 'err');
     } else {
       fbMsg(humanize(r.status, r.body.error), 'err');
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
+};
+
+// ── LG-036 TriMMC（sg）栏：status 读（无鉴权，X-SG-Admin-Token 转发）+restore 写（本地令牌+sg 令牌）──
+function fbSgMsg(text, cls) { const n = $('fb-sg-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); }
+
+async function loadFallbackSg() {
+  const el = $('fb-sg-current');
+  const sgToken = $('fb-sg-token').value.trim();
+  const headers = sgToken ? { 'x-sg-admin-token': sgToken } : {};
+  const r = await api('/v1/config/claude-fallback/sg/status', { headers }).catch(() => ({ status: 0, body: {} }));
+  if (r.status !== 200) { el.innerHTML = '<b>sg 通道</b><span class="err">读取失败，稍后点「刷新」重试</span>'; return; }
+  const b = r.body;
+  const ch = b.channel || {};
+  const okCls = ch.state === 'ok' ? 'ok' : 'warn';
+  let html = '<b>sg 通道</b><span class="' + okCls + '">' + (ch.label ?? '（未知）') + '</span>';
+  if (ch.state === 'ok') {
+    html += '<b>当前服务地址</b><span>' + (b.base_url ?? '（未设置）') + '</span>'
+      + '<b>当前模型</b><span>' + (b.model ?? '（未设置）') + '</span>'
+      + (b.api_key_masked ? '<b>当前密钥</b><span>' + b.api_key_masked + '</span>' : '');
+  }
+  el.innerHTML = html;
+}
+
+$('fb-sg-restore').onclick = async () => {
+  const baseUrl = $('fb-sg-baseurl').value.trim();
+  const apiKey = $('fb-sg-key').value.trim();
+  const model = $('fb-sg-model').value.trim();
+  const sgToken = $('fb-sg-token').value.trim();
+  if (!baseUrl) return fbSgMsg('请填写服务地址', 'err');
+  if (!/^https?:\/\/.+/i.test(baseUrl)) return fbSgMsg('服务地址需以 http:// 或 https:// 开头', 'err');
+  if (!apiKey) return fbSgMsg('请填写 API 密钥', 'err');
+  if (apiKey.length < 16) return fbSgMsg('API 密钥长度不足（至少 16 位），请核对后重填', 'err');
+  if (!model) return fbSgMsg('请填写模型名称', 'err');
+  if (!sgToken) return fbSgMsg('请填写 sg 管理令牌（用于 sg 侧鉴权）', 'err');
+  const btn = $('fb-sg-restore');
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = '写入中…';
+  try {
+    const r = await api('/v1/config/claude-fallback/sg/restore', {
+      method: 'POST', headers: adminHeaders(),
+      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model, sg_admin_token: sgToken }),
+    });
+    if (r.status === 200) {
+      fbSgMsg(r.body.message ?? '兜底直连已写入 sg 侧。sg 侧会话重启后生效。', 'ok');
+      $('fb-sg-key').value = ''; // 凭据不回显：写后清空（sg 令牌保留供连续操作，刷新即失）
+      await loadFallbackSg();
+    } else if (r.status === 401 && r.body.channel && r.body.channel.state === 'token_rejected') {
+      fbSgMsg('sg 令牌不正确（请核对 sg 管理令牌）', 'err');
+    } else if (r.status === 401) {
+      fbSgMsg('管理令牌不正确或未填写：请先在页头「连接设置」填入管理令牌', 'err');
+    } else if (r.status === 503) {
+      fbSgMsg(r.body.error ?? '兜底写入未启用', 'err');
+    } else if (r.status === 502) {
+      fbSgMsg(r.body.error ?? 'sg 通道不可达（请检查网络或联系运维）', 'err');
+    } else {
+      fbSgMsg(humanize(r.status, r.body.error), 'err');
     }
   } finally {
     btn.disabled = false; btn.textContent = prev;

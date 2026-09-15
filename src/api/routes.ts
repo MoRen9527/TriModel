@@ -7,6 +7,7 @@ import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeys
 import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, handleApplyStrategy } from './trimmc-card.js';
 import { handleRuntimeInfo } from './runtime-info.js';
 import { handleGetClaudeFallback, handlePostClaudeFallbackRestore } from './claude-fallback.js';
+import { handleGetClaudeFallbackSg, handlePostClaudeFallbackSgRestore } from './claude-fallback-sg.js';
 import { handleGetPolicy, handlePutPolicy } from './policy.js';
 
 export type RouteResult = {
@@ -106,6 +107,16 @@ export async function dispatch(
   }
   if (url === '/v1/config/claude-fallback/restore' && method === 'POST') {
     const result = handlePostClaudeFallbackRestore(headers['authorization'], rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // LG-036 兜底两套·sg 通道（CTO 方案 c6a6e512）：status 读（本地无鉴权，ssh 转发）+restore 写（本地 fail-closed，ssh 转发）
+  if (url === '/v1/config/claude-fallback/sg/status' && method === 'GET') {
+    const result = await handleGetClaudeFallbackSg({ sgAdminHeader: headers['x-sg-admin-token'] });
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+  if (url === '/v1/config/claude-fallback/sg/restore' && method === 'POST') {
+    const result = await handlePostClaudeFallbackSgRestore(headers['authorization'], rawBody);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 
