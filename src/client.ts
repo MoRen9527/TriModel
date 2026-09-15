@@ -165,6 +165,20 @@ registry['claude-sonnet-4-20250514'] = {
   return registry;
 }
 
+/**
+ * P0-1: Thrown when a streaming call fails after at least one StreamEvent has
+ * already been yielded to the caller. At that point fallback must not restart a
+ * second generation (it would silently splice two models' outputs together);
+ * this named error lets callers distinguish a mid-stream abort from a plain
+ * upstream error and own the retry decision. `cause` carries the original error.
+ */
+export class StreamAbortedError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'StreamAbortedError';
+  }
+}
+
 export class ModelClient {
   private providers: Map<string, Provider> = new Map();
   private registry: ModelRegistry;
@@ -460,6 +474,21 @@ export class ModelClient {
   }
 
   /** CTO-003 P1: Streaming chat with provider fallback (same pattern as chat(), with depth limit). */
+  // P0-1 fallback contract (see also StreamAbortedError above):
+  // - Fallback (chat()-style recursion on route.fallback with _depth+1) is allowed
+  //   ONLY on a pre-first-event failure: zero StreamEvents have reached the caller.
+  // - Once >=1 event has been yielded, fallback is FORBIDDEN even when route.fallback
+  //   exists: restarting a second model silently splices its full fresh output onto
+  //   the partial first-model stream — text becomes truncated-A + full-B, and tool_call
+  //   deltas corrupt because StreamEvent.tool_calls merge by index at the caller
+  //   (types.ts StreamEvent).
+  // - Post-emission failure ALWAYS throws StreamAbortedError (message names the failing
+  //   model, `cause` carries the original error) — likewise when no fallback
+  //   is configured — so upper layers identify a mid-stream abort by error type alone.
+  // - Pre-first-event failure without fallback rethrows the original error untouched,
+  //   same surface as chat().
+  // Retry ownership is the caller's: a post-abort retry replaces the partial output;
+  // this generator never appends a second model's events to it.
   async *stream(model: string, messages: Message[], options?: ChatOptions, _depth = 0): AsyncGenerator<StreamEvent> {
     console.error(`[trimodel-client][dbg] STREAM model=${model} depth=${_depth} msgs=${messages.length} known=${!!this.registry[model]}`);
     // LG-006 链模式（同 chat 分支语义；noRelay=主棒单发）
@@ -481,11 +510,25 @@ export class ModelClient {
       throw new Error(`Provider not found: ${route.primary}`);
     }
 
+    // P0-1 emission tracker: one flag per attempt, scoped to this frame only (never an
+    // instance/module field) so nested fallback frames cannot read or clobber it. It is
+    // declared in the scope shared by try/catch — ES block scoping makes a flag declared
+    // inside try{} itself invisible to catch — and is incremented BEFORE each yield so
+    // the first handed-out event flips it ahead of any downstream suspension.
+    let emitted = false;
     try {
       for await (const event of provider.stream(messages, { ...options, model })) {
+        emitted = true;
         yield event;
       }
     } catch (error) {
+      if (emitted) {
+        // Partial output already reached the caller: refuse to splice, surface the abort.
+        throw new StreamAbortedError(
+          `Stream aborted-in-stream: model '${model}' failed after partial events were already yielded to the caller; silent fallback splice is forbidden (audit P0-1), original failure attached as cause.`,
+          { cause: error },
+        );
+      }
       if (route.fallback) {
         const reason = error instanceof Error ? error.message : String(error);
         console.warn(`[trimodel] ${model} failed (depth=${_depth}, reason: ${reason.slice(0, 300)}), trying stream fallback ${route.fallback}`);
