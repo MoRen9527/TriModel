@@ -171,4 +171,29 @@ describe('claude-fallback: POST restore（管理令牌 fail-closed）', () => {
     assert.ok((r.body as { error: string }).error.includes(path), '附路径');
     assert.equal(readFileSync(path, 'utf-8'), before, '不覆盖坏文件');
   });
+
+  it('F-1 双载体：既有 API_KEY 存在 → 同写同值（消灭残留）+幂等含 API_KEY 一致性', () => {
+    // 场景：迁移机/手配机 env 以 ANTHROPIC_API_KEY 为载体（无 AUTH_TOKEN 或并存）
+    const legacyApiKeyDoc = {
+      env: { ANTHROPIC_API_KEY: 'sk-legacy-carrier-key-old', ANTHROPIC_BASE_URL: 'https://old.example.com', ANTHROPIC_MODEL: 'old-m', KEEP: 'x' },
+      model: 'old-m',
+    };
+    writeFileSync(path, JSON.stringify(legacyApiKeyDoc, null, 2) + '\n');
+    const r1 = handlePostClaudeFallbackRestore(ADMIN, body, { settingsPath: path });
+    assert.equal(r1.statusCode, 200);
+    const doc = JSON.parse(readFileSync(path, 'utf-8'));
+    assert.equal(doc.env.ANTHROPIC_API_KEY, 'sk-new-token-abcdefghij', 'F-1：API_KEY 载体同写同值');
+    assert.equal(doc.env.ANTHROPIC_AUTH_TOKEN, 'sk-new-token-abcdefghij', 'AUTH_TOKEN 照写');
+    assert.ok((r1.body as { restored: { keys_written: string[] } }).restored.keys_written.includes('ANTHROPIC_API_KEY'), '回执含载体键');
+    // 幂等复点：API_KEY 已同值 → already_same（不重写）
+    const before = readFileSync(path, 'utf-8');
+    const r2 = handlePostClaudeFallbackRestore(ADMIN, body, { settingsPath: path });
+    assert.equal((r2.body as { restored: { already_same: boolean } }).restored.already_same, true, 'F-1：幂等判据含 API_KEY 一致性');
+    assert.equal(readFileSync(path, 'utf-8'), before, '零重写');
+    // 无 API_KEY 载体的文件（基线 fixture）：键不新增（不无中生有）
+    writeFileSync(path, JSON.stringify(baseSettings(), null, 2) + '\n');
+    handlePostClaudeFallbackRestore(ADMIN, body, { settingsPath: path });
+    const plain = JSON.parse(readFileSync(path, 'utf-8'));
+    assert.equal('ANTHROPIC_API_KEY' in plain.env, false, '无载体不新增（AUTH_TOKEN 单载体照旧）');
+  });
 });

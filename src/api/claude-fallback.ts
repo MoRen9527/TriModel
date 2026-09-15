@@ -8,7 +8,11 @@
 //                                            模型档位 9 键全族 verbatim 同值。
 //
 // 语义：TriModel 配置面不好用时的直连兜底通道——不依赖 TriModel 数据（卡/策略/引擎零触碰），
-// 写后重启会话即直连。写前备份 settings.json.bak-<ts>；其余字段保留；密钥不回显。
+// 写后重启会话即直连。写前备份 settings.json.bak-<ts>；其余字段值级保留（序列化统一
+// 2 空格缩进——逐字节仅幂等路径成立）；密钥不回显。
+// 凭据键族（F-1，CTO 22xx 审）：AUTH_TOKEN 为主载体；既有迁移/手配机可能以 API_KEY
+// 为载体——检测到存在即同写同值（应急语义=消灭一切残留旧密钥，两载体并存会致
+// 「写面成功、生效面未必新值」）。
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, copyFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -146,11 +150,14 @@ export function handlePostClaudeFallbackRestore(
   const fileExisted = existsSync(path);
   const doc = read.doc;
 
-  // 幂等：三值已全等（地址+密钥+模型档位全族）→ 明示「已是该值」不重写不备份
+  // 幂等：三值已全等（地址+密钥+模型档位全族）+ 凭据键族一致（F-1：既有
+  // API_KEY 载体须已同值——否则须再写一轮消灭残留）→ 明示「已是该值」不重写
   const prevEnv = (doc.env ?? {}) as Record<string, unknown>;
+  const hasApiKeyCarrier = 'ANTHROPIC_API_KEY' in prevEnv;
   const alreadySame = prevEnv.ANTHROPIC_BASE_URL === baseUrl
     && prevEnv.ANTHROPIC_AUTH_TOKEN === apiKey
-    && MODEL_TIER_KEYS.every((k) => prevEnv[k] === model);
+    && MODEL_TIER_KEYS.every((k) => prevEnv[k] === model)
+    && (!hasApiKeyCarrier || prevEnv.ANTHROPIC_API_KEY === apiKey);
   if (alreadySame) {
     return {
       statusCode: 200,
@@ -174,13 +181,15 @@ export function handlePostClaudeFallbackRestore(
     }
   }
 
-  // env 子集写入（其余键逐字保留——展开既有 env 再覆写目标键）
+  // env 子集写入（其余键值级保留——展开既有 env 再覆写目标键）
   doc.env = {
     ...prevEnv,
     ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_AUTH_TOKEN: apiKey,
   };
   for (const k of MODEL_TIER_KEYS) doc.env[k] = model;
+  // F-1：既有 API_KEY 载体存在 → 同写同值（消灭残留旧密钥；应急语义两载体都通）
+  if (hasApiKeyCarrier) doc.env.ANTHROPIC_API_KEY = apiKey;
 
   // 序列化沿用现役格式（2 空格缩进；尾换行随原文件）——其余字段逐字保留
   const trailing = read.raw.endsWith('\n') ? '\n' : '';
@@ -201,7 +210,7 @@ export function handlePostClaudeFallbackRestore(
       restored: {
         base_url: baseUrl,
         model,
-        keys_written: ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', ...MODEL_TIER_KEYS],
+        keys_written: ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', ...(hasApiKeyCarrier ? ['ANTHROPIC_API_KEY'] : []), ...MODEL_TIER_KEYS],
         file_created: !fileExisted,
         backup: backupPath,
         already_same: false,
