@@ -25,3 +25,11 @@ policies/*.tmp
 .migration-backup*/
 *.pre-v4.bak.json
 .cto-walkthrough/
+
+# 481 清零线·COS 一次性走查/调试产物（可再生产物：结论已沉淀 TriMetaverse 2026-W37/lg-035-cos-prewalkthrough-v2.md 等；截图证据已归位 test/evidence/lg-035-walkthrough/）
+cos-headed.mjs
+cos-prewalk3.mjs
+cos-prewalk4.mjs
+cos-prewalk-result.txt
+minimal-repro.mjs
+d16p.txt
