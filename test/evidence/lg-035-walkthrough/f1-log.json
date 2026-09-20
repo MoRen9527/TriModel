@@ -1,0 +1,16 @@
+[
+ "F1 tokens present: api=true admin=true trilc=false",
+ "TriModel /health → 200",
+ "daemon /health (no auth) → 401",
+ "daemon internal probe SKIPPED (TRILC_INTERNAL_TOKEN not found)",
+ "S1 empty-state: {\"settingsOpen\":true,\"guideHidden\":false,\"dot\":\"dot idle\",\"label\":\"未连接\"}",
+ "S2 connected: {\n \"dot\": \"dot ok\",\n \"label\": \"已连接\",\n \"effective\": \"当前模型deepseek-v4-pro来源默认配置一致性✓ 一致\",\n \"badge\": \"未配置\",\n \"tcHead\": \"\",\n \"errStatus\": \"(hidden)\",\n \"errCard\": \"(hidden)\",\n \"fallbackTip\": \"(hidden)\",\n \"entryRows\": 0\n}",
+ "S2 network: [\"GET /config/trimmc-card → 200\",\"GET /config/policy → 200\",\"GET /config/keys/secure/status → 200\",\"GET /config/policy → 200\",\"GET /config/trimmc-card → 200\",\"GET /config/keys → 200\",\"GET /models → 200\"]",
+ "S3a api-only: {\"dot\":\"dot warn\",\"label\":\"缺少管理令牌（卡片功能不可用）\",\"guide\":\"请填入 API 令牌与管理令牌\"}",
+ "S3b admin-only: {\"dot\":\"dot warn\",\"label\":\"缺少管理令牌（卡片功能不可用）\"}",
+ "S4 provider options: [\"deepseek\",\"glm\",\"trimetaverse\"]",
+ "S4 models(all): [\"deepseek-flash\",\"deepseek-v4-pro\",\"GLM-5.3-Flash\",\"GLM-5.3\",\"TMV\"] → after glm: [\"GLM-5.3-Flash\",\"GLM-5.3\"] (级联过滤生效)",
+ "S4 short-key validation: {\"formStillOpen\":true,\"modelErr\":\"\",\"msg\":\"密钥长度不足（至少 16 位），请核对是否复制完整\"}",
+ "S5 policy zone: {\n \"zoneOpen\": false,\n \"zoneExists\": true,\n \"rows\": []\n}",
+ "S6 duplication counts after reload: {\"fallbackTipCount\":0,\"refreshBtnCount\":1,\"reservedCount\":1}"
+]

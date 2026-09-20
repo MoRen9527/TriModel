@@ -1,0 +1,11 @@
+[
+ "DAEMON security-state: /internal/* no-header → 401 {\"error\":\"unauthorized: missing or invalid X-Internal-Token\"",
+ "── TRACK A (isolated test server) ──",
+ "F2[trackA]: {\n \"rows\": 1,\n \"toggleObservation\": \"before=true after=false (翻转生效)\",\n \"editPrefill\": \"{\\\"id\\\":\\\"f2-a-e1\\\",\\\"model\\\":\\\"deepseek-v4-pro\\\",\\\"keyMasked\\\":\\\"\\\"}\",\n \"maskedMsg\": \"检测到占位符，请输入真实密钥\",\n \"msgAfterSave\": \"卡片已保存，等待应用（应用完成后状态变为「已生效」）\",\n \"badge\": \"待应用\"\n}",
+ "TrackA disk: plaintext-leak=false cardPresent=true",
+ "TrackA server entries: [\"f2-a-e1\"] enabled=[true]",
+ "── TRACK B (real 3333, snapshot-restore) ──",
+ "F2[trackB]: {\n \"rows\": 1,\n \"toggleObservation\": \"before=true after=false (翻转生效)\",\n \"editPrefill\": \"{\\\"id\\\":\\\"f2-b-e1\\\",\\\"model\\\":\\\"deepseek-v4-pro\\\",\\\"keyMasked\\\":\\\"\\\"}\",\n \"maskedMsg\": \"检测到占位符，请输入真实密钥\",\n \"msgAfterSave\": \"卡片已保存，等待应用（应用完成后状态变为「已生效」）\",\n \"badge\": \"待应用\"\n}",
+ "TrackB server entries: [\"f2-b-e1\"]",
+ "TrackB real card restored: snapshot restored"
+]

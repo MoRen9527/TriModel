@@ -1,0 +1,139 @@
+{
+ "t0": {
+  "checkpoint": "T0-post-connect",
+  "ui": {
+   "sel_value": "",
+   "sel_options": [
+    ""
+   ],
+   "sel_disabled": false,
+   "fixed_active_hidden": true,
+   "entry_rows": 0,
+   "entry_ids_dom": [],
+   "tcMirror_keys": "not-on-window"
+  },
+  "server": {
+   "provider_entry_ids": [],
+   "rules": [],
+   "status": "pending"
+  },
+  "net_so_far": [
+   "GET /config/trimmc-card → 200",
+   "GET /config/policy → 200",
+   "GET /config/keys/secure/status → 200",
+   "GET /config/policy → 200",
+   "GET /config/trimmc-card → 200",
+   "GET /config/keys → 200",
+   "GET /models → 200"
+  ]
+ },
+ "t1": {
+  "checkpoint": "T1-post-save-pre-reload (sel=entry:triage-glm)",
+  "ui": {
+   "sel_value": "entry:triage-glm",
+   "sel_options": [
+    "entry:triage-ds",
+    "entry:triage-glm"
+   ],
+   "sel_disabled": false,
+   "fixed_active_hidden": true,
+   "entry_rows": 2,
+   "entry_ids_dom": [
+    "triage-dsdeepseekdee",
+    "triage-glmglmGLM-5.3"
+   ],
+   "tcMirror_keys": "not-on-window"
+  },
+  "server": {
+   "provider_entry_ids": [
+    "triage-ds",
+    "triage-glm"
+   ],
+   "rules": [
+    {
+     "rule_id": "trimmc:triage-glm",
+     "type": "fixed",
+     "entry_id": "triage-glm"
+    }
+   ],
+   "status": "pending"
+  },
+  "net_so_far": [
+   "GET /config/trimmc-card → 200",
+   "GET /config/policy → 200",
+   "GET /config/keys/secure/status → 200",
+   "GET /config/policy → 200",
+   "GET /config/trimmc-card → 200",
+   "GET /config/keys → 200",
+   "GET /models → 200",
+   "PUT /config/trimmc-card → 200",
+   "GET /config/trimmc-card → 200"
+  ]
+ },
+ "t2": {
+  "checkpoint": "T2-post-reload (期望=sel 保持 entry:triage-glm)",
+  "ui": {
+   "sel_value": "entry:triage-glm",
+   "sel_options": [
+    "entry:triage-ds",
+    "entry:triage-glm"
+   ],
+   "sel_disabled": false,
+   "fixed_active_hidden": true,
+   "entry_rows": 2,
+   "entry_ids_dom": [
+    "triage-dsdeepseekdee",
+    "triage-glmglmGLM-5.3"
+   ],
+   "tcMirror_keys": "not-on-window"
+  },
+  "server": {
+   "provider_entry_ids": [
+    "triage-ds",
+    "triage-glm"
+   ],
+   "rules": [
+    {
+     "rule_id": "trimmc:triage-glm",
+     "type": "fixed",
+     "entry_id": "triage-glm"
+    }
+   ],
+   "status": "pending"
+  },
+  "net_so_far": [
+   "GET /config/trimmc-card → 200",
+   "GET /config/policy → 200",
+   "GET /config/keys/secure/status → 200",
+   "GET /config/policy → 200",
+   "GET /config/trimmc-card → 200",
+   "GET /config/keys → 200",
+   "GET /models → 200",
+   "PUT /config/trimmc-card → 200",
+   "GET /config/trimmc-card → 200",
+   "GET /config/policy → 200",
+   "GET /config/keys/secure/status → 200",
+   "GET /config/trimmc-card → 200",
+   "GET /config/policy → 200",
+   "GET /config/keys → 200",
+   "GET /models → 200"
+  ]
+ },
+ "netSeq": [
+  "GET /config/trimmc-card → 200",
+  "GET /config/policy → 200",
+  "GET /config/keys/secure/status → 200",
+  "GET /config/policy → 200",
+  "GET /config/trimmc-card → 200",
+  "GET /config/keys → 200",
+  "GET /models → 200",
+  "PUT /config/trimmc-card → 200",
+  "GET /config/trimmc-card → 200",
+  "GET /config/policy → 200",
+  "GET /config/keys/secure/status → 200",
+  "GET /config/trimmc-card → 200",
+  "GET /config/policy → 200",
+  "GET /config/keys → 200",
+  "GET /models → 200"
+ ]
+}
