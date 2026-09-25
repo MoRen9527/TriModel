@@ -87,20 +87,38 @@
   <div class="row-form"><button id="refreshNow">刷新</button></div>
 </section>
 
-<!-- ═══ 直连兜底（2026-09-15 CEO 直令；LG-036 两套分栏 2026-09-16）═══ -->
+<!-- ═══ 连接配置页（v2，TASK-TRIMODEL-RECOVERY-LADDER-01 波① 2026-09-25；前身=直连兜底 2026-09-15 CEO 直令；LG-036 sg 栏沿旧）═══ -->
 <section id="fb-zone">
-  <h2>直连兜底 <span class="sub">TriModel 配置不可信时的应急通道：手填三项直写目标机设置，重启会话后生效</span></h2>
+  <h2>连接配置 <span class="sub">本机 Claude Code 连到哪个后端——日常便利层，不担兜底；模板式切换，只填密钥一项</span></h2>
+  <div class="warn" style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:10px">
+    ⚠ TriModel 服务不可用时请用命令恢复（本页不承担应急兜底）：
+    <code id="fb-recover-cmd" style="word-break:break-all">powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Code\ai\TriCompany\scripts\ops\local\restore-claude-direct.ps1"</code>
+    <button id="fb-cmd-copy" style="margin-left:6px">复制命令</button>
+  </div>
 
-  <h3 style="margin-top:4px">TriMLC（本机）</h3>
+  <h3 style="margin-top:4px">本机（TriMLC 域）</h3>
   <div class="kv" id="fb-current"></div>
   <div class="row-form">
-    <label>服务地址</label><input id="fb-baseurl" placeholder="https://..." style="width:240px" autocomplete="off">
-    <label>API 密钥</label><input id="fb-key" type="password" placeholder="sk-..." autocomplete="off" style="width:200px">
+    <label>目的地模板</label><select id="fb-tpl" style="width:220px"><option value="">读取中…</option></select>
+    <label>API 密钥 <b class="sub">（唯一必填项）</b></label><input id="fb-key" type="password" placeholder="粘贴平台 API Key" autocomplete="off" style="width:200px">
     <button id="fb-eye" class="eye">👁</button>
-    <label>模型</label><input id="fb-model" placeholder="例如 deepseek-flash[1M]" style="width:200px" autocomplete="off">
-    <button class="primary" id="fb-restore">还原兜底</button>
+    <button id="fb-inject" title="服务端读独立钥文件（settings.presets/.deploy-key）直接写入，钥值不经页面显示">从独立钥文件注入</button>
   </div>
-  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚</div>
+  <div class="sub" id="fb-tpl-hint" style="margin-top:2px"></div>
+  <div class="row-form" style="margin-top:8px">
+    <button id="fb-preview">预览变更</button>
+    <button class="primary" id="fb-restore" disabled title="先点「预览变更」确认改动范围后再写入">确认写入</button>
+    <span class="sub" id="fb-step-hint">写前先预览：确认将变更的配置项</span>
+  </div>
+  <div id="fb-diff-box" hidden style="margin-top:8px">
+    <table id="fb-diff"><thead><tr><th>配置项</th><th>变更</th><th>现值</th><th>写入值</th></tr></thead><tbody></tbody></table>
+  </div>
+  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置（保留近 5 份），写后自动校验失败即回滚</div>
+  <div class="row-form" style="margin-top:8px">
+    <button id="fb-bak-list">备份清单</button>
+    <span class="sub" id="fb-bak-info">一键回滚：从备份恢复原设置</span>
+  </div>
+  <div id="fb-bak-box" hidden style="margin-top:6px"></div>
   <div id="fb-msg" class="msg"></div>
 
   <h3 style="margin-top:16px">TriMMC（sg）</h3>
@@ -279,6 +297,7 @@ async function boot() {
   // 兜底区独立取数（无鉴权读；不参与卡片禁用链）——**非阻塞**：sg 栏经远程
   // 通道往返慢（秒级），禁占 boot 关键路径（连接态/禁用链判定先行；区块自行异步填充）。
   loadFallbackInfo();
+  loadFbTemplates();
   loadFallbackSg();
   if (!apiToken() && !adminToken()) {
     // ①⑤根治：全数据面板禁用态+自动展开连接设置+引导
@@ -443,7 +462,7 @@ let tcEditingId = null;
 
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
 
-// ── 直连兜底（2026-09-15 CEO 直令）：无鉴权读现状；写入需管理令牌（服务端 fail-closed）──
+// ── 连接配置页 v2（波① 2026-09-25）：模板切换+预览门控+独立钥注入+备份回滚；写入需管理令牌（服务端 fail-closed）──
 function fbMsg(text, cls) { const n = $('fb-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); }
 
 async function loadFallbackInfo() {
@@ -456,25 +475,87 @@ async function loadFallbackInfo() {
     + (b.api_key_masked ? '<b>当前密钥</b><span>' + b.api_key_masked + '</span>' : '');
 }
 
+// 模板表（服务端出，无鉴权只读；选模板后唯一必填=密钥）
+const fbTemplates = [];
+async function loadFbTemplates() {
+  const sel = $('fb-tpl');
+  const r = await api('/v1/config/claude-fallback/templates').catch(() => null);
+  if (!r || r.status !== 200 || !Array.isArray(r.body.templates)) { sel.innerHTML = '<option value="">模板读取失败</option>'; return; }
+  fbTemplates.length = 0;
+  for (const t of r.body.templates) fbTemplates.push(t);
+  sel.innerHTML = '';
+  for (const t of fbTemplates) {
+    const o = document.createElement('option');
+    o.value = t.id; o.textContent = t.label + (t.deployed ? '' : '（候批未启用）');
+    if (!t.deployed) o.disabled = true;
+    sel.appendChild(o);
+  }
+  fbSyncTplHint();
+}
+function fbCurrentTpl() { return fbTemplates.find((t) => t.id === $('fb-tpl').value) ?? null; }
+function fbSyncTplHint() {
+  const t = fbCurrentTpl();
+  $('fb-tpl-hint').textContent = t ? ('地址 ' + t.base_url + ' · 模型 ' + t.model + '（模板自带，无需手填）') : '';
+}
+$('fb-tpl').onchange = () => { fbSyncTplHint(); fbResetPreview(); };
+
+// 预览门控（五门④「diff 预览确认」的 UI 半边）：未预览=写入按钮禁用
+function fbResetPreview() {
+  $('fb-restore').disabled = true;
+  $('fb-step-hint').textContent = '写前先预览：确认将变更的配置项';
+  $('fb-diff-box').hidden = true;
+}
+function fbTriplet() {
+  const t = fbCurrentTpl();
+  return { base_url: t?.base_url ?? '', api_key: $('fb-key').value.trim(), model: t?.model ?? '' };
+}
+function fbRenderDiff(diff) {
+  const tb = $('fb-diff').querySelector('tbody');
+  tb.innerHTML = '';
+  for (const row of diff) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td>';
+    tr.children[0].textContent = row.key;
+    tr.children[1].textContent = row.changed ? '变更' : '不变';
+    tr.children[2].textContent = row.before === null ? '（未设置）' : String(row.before);
+    tr.children[3].textContent = row.after === null ? '（未设置）' : String(row.after);
+    tb.appendChild(tr);
+  }
+  $('fb-diff-box').hidden = false;
+}
+$('fb-preview').onclick = async () => {
+  const body = fbTriplet();
+  if (!body.base_url) return fbMsg('请先选择目的地模板', 'err');
+  if (!body.api_key) return fbMsg('请填写 API 密钥', 'err');
+  const r = await api('/v1/config/claude-fallback/preview', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(body) }).catch(() => null);
+  if (!r) return fbMsg('无法连接配置服务，请确认 TriModel 正在运行', 'err');
+  if (r.status === 200) {
+    fbRenderDiff(r.body.diff ?? []);
+    $('fb-restore').disabled = false;
+    $('fb-step-hint').textContent = '预览通过：确认上表变更后点「确认写入」';
+    fbMsg(r.body.message ?? '预览完成（零写入）', 'ok');
+  } else if (r.status === 401) {
+    fbMsg('管理令牌不正确或未填写：请先在页头「连接设置」填入管理令牌', 'err');
+  } else {
+    fbMsg(humanize(r.status, r.body.error), 'err');
+  }
+};
 $('fb-restore').onclick = async () => {
-  const baseUrl = $('fb-baseurl').value.trim();
-  const apiKey = $('fb-key').value.trim();
-  const model = $('fb-model').value.trim();
-  if (!baseUrl) return fbMsg('请填写服务地址', 'err');
-  if (!/^https?:\/\/.+/i.test(baseUrl)) return fbMsg('服务地址需以 http:// 或 https:// 开头', 'err');
-  if (!apiKey) return fbMsg('请填写 API 密钥', 'err');
-  if (apiKey.length < 16) return fbMsg('API 密钥长度不足（至少 16 位），请核对后重填', 'err');
-  if (!model) return fbMsg('请填写模型名称', 'err');
+  const body = fbTriplet();
+  if (!body.api_key) return fbMsg('请填写 API 密钥', 'err');
   const btn = $('fb-restore');
   btn.disabled = true; const prev = btn.textContent; btn.textContent = '写入中…';
+  let keepGated = false; // 写入成功=保持预览门控（须重新预览才能再写）；失败=恢复可点便于重试
   try {
     const r = await api('/v1/config/claude-fallback/restore', {
       method: 'POST', headers: adminHeaders(),
-      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model }),
+      body: JSON.stringify(body),
     });
     if (r.status === 200) {
       fbMsg(r.body.message ?? '已写入。重启会话后生效。', 'ok');
-      $('fb-key').value = ''; // 密钥不回显：写后清空输入框
+      $('fb-key').value = ''; // 密钥不回显：写后清空输入框（掩码红线）
+      fbResetPreview();
+      keepGated = true;
       await loadFallbackInfo();
     } else if (r.status === 401) {
       fbMsg('管理令牌不正确或未填写：请先在页头「连接设置」填入管理令牌', 'err');
@@ -484,7 +565,88 @@ $('fb-restore').onclick = async () => {
       fbMsg(humanize(r.status, r.body.error), 'err');
     }
   } finally {
+    if (!keepGated) btn.disabled = false;
+    btn.textContent = prev;
+  }
+};
+// 独立钥注入：服务端读 .deploy-key 直写（钥值不经页面）；缺位=fail-closed 人话报错
+$('fb-inject').onclick = async () => {
+  const t = fbCurrentTpl();
+  if (!t) return fbMsg('请先选择目的地模板', 'err');
+  const btn = $('fb-inject');
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = '注入中…';
+  try {
+    const r = await api('/v1/config/claude-fallback/inject-key', { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ template: t.id }) }).catch(() => null);
+    if (!r) return fbMsg('无法连接配置服务，请确认 TriModel 正在运行', 'err');
+    if (r.status === 200) {
+      fbMsg(r.body.message ?? '已从独立钥文件写入。重启会话后生效。', 'ok');
+      fbResetPreview();
+      await loadFallbackInfo();
+    } else {
+      fbMsg(humanize(r.status, r.body.error), 'err');
+    }
+  } finally {
     btn.disabled = false; btn.textContent = prev;
+  }
+};
+// 备份清单+一键回滚（两击确认防误触；回滚前服务端自动备份当前态）
+$('fb-bak-list').onclick = async () => {
+  const box = $('fb-bak-box');
+  const r = await api('/v1/config/claude-fallback/backups', { headers: adminHeaders() }).catch(() => null);
+  if (!r || r.status !== 200) { box.hidden = false; box.textContent = '备份清单读取失败（需管理令牌）'; return; }
+  const baks = r.body.backups ?? [];
+  box.hidden = false;
+  box.innerHTML = '';
+  if (baks.length === 0) { box.textContent = '暂无备份（首次写入后会自动生成）'; return; }
+  const info = document.createElement('div');
+  info.className = 'sub';
+  info.textContent = '共 ' + baks.length + ' 份（保留近 ' + r.body.keep + ' 份' + (r.body.sentinel ? '；轮换已冻结豁免' : '') + '）。回滚前会自动备份当前配置。';
+  box.appendChild(info);
+  for (const bk of baks) {
+    const row = document.createElement('div');
+    row.className = 'row-form';
+    const label = document.createElement('span');
+    label.className = 'sub';
+    label.style.flex = '1';
+    label.textContent = bk.file.replace(/^settings\.json\.bak-/, '') + '（' + new Date(bk.mtime).toLocaleString() + '）';
+    const btn = document.createElement('button');
+    btn.textContent = '回滚到此';
+    btn.onclick = () => {
+      if (btn.dataset.armed !== '1') {
+        btn.dataset.armed = '1'; btn.textContent = '确认回滚'; btn.className = 'danger';
+        setTimeout(() => { btn.dataset.armed = ''; btn.textContent = '回滚到此'; btn.className = ''; }, 5000);
+        return;
+      }
+      fbDoRollback(bk.file, label);
+    };
+    row.appendChild(label); row.appendChild(btn);
+    box.appendChild(row);
+  }
+};
+async function fbDoRollback(file, label) {
+  label.textContent = '回滚中…';
+  const r = await api('/v1/config/claude-fallback/rollback', { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ backup: file }) }).catch(() => null);
+  if (!r) { label.textContent = '无法连接配置服务'; return; }
+  if (r.status === 200) {
+    fbMsg(r.body.message ?? '已回滚。重启会话后生效。', 'ok');
+    label.textContent = '已回滚';
+    fbResetPreview();
+    await loadFallbackInfo();
+  } else {
+    label.textContent = '回滚未完成';
+    fbMsg(humanize(r.status, r.body.error), 'err');
+  }
+}
+// 应急命令复制（127.0.0.1 为安全上下文，clipboard 可用；失败兜底=选中文本）
+$('fb-cmd-copy').onclick = async () => {
+  const code = $('fb-recover-cmd');
+  try {
+    await navigator.clipboard.writeText(code.textContent);
+    fbMsg('恢复命令已复制，粘贴到 PowerShell 即可执行', 'ok');
+  } catch {
+    const range = document.createRange(); range.selectNodeContents(code);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    fbMsg('已选中命令文本，请手动 Ctrl+C 复制', 'warn');
   }
 };
 

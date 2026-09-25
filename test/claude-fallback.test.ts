@@ -10,6 +10,8 @@ import { handleGetClaudeFallback, handlePostClaudeFallbackRestore, MODEL_TIER_KE
 
 const ADMIN = 'Bearer fb-secret';
 const ORIGINAL_ADMIN = process.env.TRIMODEL_ADMIN_TOKEN;
+// 审计行落点钉进临时域（v2 writeEnvSubset 会 appendAudit；不钉则写仓库根 config-audit.log 垃圾）
+process.env.TRIMODEL_AUDIT_LOG = join(tmpdir(), 'fb-audit-' + process.pid + '.log');
 
 /** 现役同款基线文件（含其余键做「逐字节保留」断言）。 */
 function baseSettings() {

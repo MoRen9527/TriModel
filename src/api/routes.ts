@@ -6,7 +6,7 @@ import { handleModels } from './models.js';
 import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeysStatus } from './keys.js';
 import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, handleApplyStrategy } from './trimmc-card.js';
 import { handleRuntimeInfo } from './runtime-info.js';
-import { handleGetClaudeFallback, handlePostClaudeFallbackRestore } from './claude-fallback.js';
+import { handleGetClaudeFallback, handlePostClaudeFallbackRestore, handlePostClaudeFallbackPreview, handleGetClaudeFallbackBackups, handlePostClaudeFallbackRollback, handlePostClaudeFallbackInjectKey, listTemplates } from './claude-fallback.js';
 import { handleGetClaudeFallbackSg, handlePostClaudeFallbackSgRestore } from './claude-fallback-sg.js';
 import { handleGetPolicy, handlePutPolicy } from './policy.js';
 
@@ -107,6 +107,28 @@ export async function dispatch(
   }
   if (url === '/v1/config/claude-fallback/restore' && method === 'POST') {
     const result = handlePostClaudeFallbackRestore(headers['authorization'], rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // 连接配置页 v2（TASK-TRIMODEL-RECOVERY-LADDER-01 波①，2026-09-25）：五门写路径端点族。
+  // 独立 URL 空间只增不改（LG-035 冻结面零触碰延续纪律）。
+  if (url === '/v1/config/claude-fallback/preview' && method === 'POST') {
+    const result = handlePostClaudeFallbackPreview(headers['authorization'], rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+  if (url === '/v1/config/claude-fallback/backups' && method === 'GET') {
+    const result = handleGetClaudeFallbackBackups(headers['authorization']);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+  if (url === '/v1/config/claude-fallback/rollback' && method === 'POST') {
+    const result = handlePostClaudeFallbackRollback(headers['authorization'], rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+  if (url === '/v1/config/claude-fallback/templates' && method === 'GET') {
+    return { statusCode: 200, headers: jsonHeaders, body: { object: 'config.claude-fallback.templates', templates: listTemplates() } };
+  }
+  if (url === '/v1/config/claude-fallback/inject-key' && method === 'POST') {
+    const result = handlePostClaudeFallbackInjectKey(headers['authorization'], rawBody);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 

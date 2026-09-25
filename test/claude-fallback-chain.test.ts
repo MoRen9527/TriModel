@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TOKEN = 'fb-chain-secret';
+// 审计行落点钉进临时域（v2 writeEnvSubset 会 appendAudit；不钉则写仓库根 config-audit.log 垃圾）
+process.env.TRIMODEL_AUDIT_LOG = join(tmpdir(), 'fb-audit-chain-' + process.pid + '.log');
 
 function freePort(): Promise<number> {
   return new Promise((resolveP, reject) => {

@@ -142,11 +142,6 @@ function channel(state: SgChannelState) {
   return { state, label: SG_CHANNEL_LABELS[state] };
 }
 
-function localAdminOk(authHeader: string | undefined): boolean {
-  const adminToken = process.env.TRIMODEL_ADMIN_TOKEN ?? '';
-  return Boolean(adminToken) && authHeader === `Bearer ${adminToken}`;
-}
-
 function localRequireAdmin(authHeader: string | undefined): { statusCode: 503 | 401; body: Record<string, unknown> } | null {
   const adminToken = process.env.TRIMODEL_ADMIN_TOKEN ?? '';
   if (!adminToken) {
