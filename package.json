@@ -28,6 +28,7 @@
     "lint:fix": "eslint src/ test/ --fix --max-warnings 200"
   },
   "dependencies": {
+    "@trimetaverse/tricode": "file:../TriCode",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
