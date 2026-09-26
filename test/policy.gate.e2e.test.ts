@@ -176,7 +176,19 @@ describe('GATE L3+anchor③: E2E full chain + daemon real-chain poll (single lif
 
     // anchor③ poller: real TriRLC key-cache in a child process (cross-repo via file URL,
     // kept out of this repo's tsc rootDir). Stubs annotated inside the script body.
-    const keyCacheTs = resolve(REPO_ROOT, '..', 'TriRLC', 'src', 'config', 'key-cache.ts');
+    // LG-054 基座适配（STE）：跨机仓名解析——TRIRLC_HOME 钉位优先 → 新名 TriRLC → 旧名
+    // TriLC（R-HY 现役旧名位）。防版本错位：文本面充分性三锚（导出符号缺一即 fail 带归因）。
+    const kcRel = join('src', 'config', 'key-cache.ts');
+    const keyCacheTs = [
+      process.env.TRIRLC_HOME ? join(process.env.TRIRLC_HOME, kcRel) : '',
+      resolve(REPO_ROOT, '..', 'TriRLC', kcRel),
+      resolve(REPO_ROOT, '..', 'TriLC', kcRel),
+    ].filter((p) => p !== '' && existsSync(p))[0];
+    assert.ok(keyCacheTs, `key-cache.ts not found in TriRLC/TriLC siblings (${resolve(REPO_ROOT, '..')}) — set TRIRLC_HOME to pin`);
+    const kcSrc = readFileSync(keyCacheTs, 'utf-8');
+    for (const fn of ['onKeyCacheUpdated', 'applyKeyCacheToEnvironment', 'initKeyCache']) {
+      assert.ok(kcSrc.includes(fn), `key-cache adequacy anchor missing: ${fn} (${keyCacheTs} 版本错位?)`);
+    }
     const scriptPath = join(workDir, 'poll-child.mjs');
     writeFileSync(scriptPath, `
 const { pathToFileURL } = await import('node:url');
@@ -236,13 +248,23 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
     assert.equal(init.defaultModel, 'deepseek-v4-pro', 'initial fetch before any policy');
   });
 
-  it('P4-guard: default bind is loopback (netstat LISTENING line shows 127.0.0.1:port)', async () => {
+  it('P4-guard: default bind is loopback (listener table shows 127.0.0.1:port)', async () => {
+    // LG-054 基座适配（STE）：win32=netstat -ano（LISTENING）；linux=ss -tln（LISTEN）→
+    // 旧 net-tools netstat -tln 兜底。断言语义跨平台不变：监听行在位+绑回环。
     const out = await new Promise<string>((resolveP, reject) => {
-      execFile('netstat', ['-ano'], (err, stdout) =>
-        (err ? reject(err instanceof Error ? err : new Error(String(err))) : resolveP(stdout)));
+      if (process.platform === 'win32') {
+        execFile('netstat', ['-ano'], (err, stdout) =>
+          (err ? reject(err instanceof Error ? err : new Error(String(err))) : resolveP(stdout)));
+        return;
+      }
+      execFile('ss', ['-tln'], (err, stdout) => {
+        if (!err) { resolveP(stdout); return; }
+        execFile('netstat', ['-tln'], (err2, stdout2) =>
+          (err2 ? reject(err instanceof Error ? err : new Error(String(err))) : resolveP(stdout2)));
+      });
     });
-    const line = out.split('\n').find((l) => l.includes(`:${port}`) && l.includes('LISTENING'));
-    assert.ok(line, `netstat LISTENING line for :${port} not found`);
+    const line = out.split('\n').find((l) => l.includes(`:${port}`) && l.includes('LISTEN'));
+    assert.ok(line, `listener line for :${port} not found`);
     assert.ok(line.includes(`127.0.0.1:${port}`), `bind must be loopback, got: ${line.trim()}`);
   });
 
