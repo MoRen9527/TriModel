@@ -888,7 +888,8 @@ $('tc-save').onclick = async () => {
     deleted_model_set_ids: tcDeletedModelSets,
     rules: tcRules,                         // 层2 段C：规则实体（后端合并）
     deleted_rule_ids: tcDeletedRules,
-    strategies: tcStrategies,
+    strategies: tcStrategies,               // 层2 段D：策略实体（后端合并）
+    deleted_strategy_ids: tcDeletedStrategyIds,  // 波⑤ D1：策略删除通道（服务端 0b4ed36 已通，活动守卫 400）
     active_strategy_id: tcActiveStrategy,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
@@ -1285,6 +1286,7 @@ function tcRenderStrategyTable() {
     tr.querySelector('[data-del]').onclick = () => {
       if (tcActiveStrategy === id) { tcMsg('活动策略使用中，请先切换', 'err'); return; }
       delete tcStrategies[id];
+      tcDeletedStrategyIds.push(id);   // 波⑤ D1：删除通道接线（对齐 tcDeletedModelSets/tcDeletedRules 形态）
       tcRenderStrategyTable();
       tcMarkDirty();
     };
@@ -1377,6 +1379,7 @@ async function loadTrimmc() {
   tcActiveStrategy = tcCard?.active_strategy_id ?? null;
   tcDeletedModelSets = [];
   tcDeletedRules = [];
+  tcDeletedStrategyIds = [];   // 波⑤ D1：hydrate 清空对齐三实体族形态（保存后经 loadTrimmc 间接清）
   tcRender();
   tcRenderModelSets();
   tcRenderRules();
