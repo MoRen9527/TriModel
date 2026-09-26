@@ -139,26 +139,47 @@ describe('proxy: upstream route table (official catalog exact match)', () => {
   });
 });
 
+// ── LG-054 B 案（STE，2026-09-26）──
+// 缺陷①（R-HY 实败）：本 describe before() 未自设 GLM_API_KEY——「policy window
+// hit」案经 env fallback 依赖 ambient 环境键（dev 机有真席位键恒绿；R-HY 裸机无
+// →resolveUpstream env fallback 空→'no-api-key' 败。R-HY /tmp/tm-test-full.log
+// 栈「'no-api-key' !== 'ok'」与本机 env -u GLM_API_KEY 复现逐字吻合）→ 基座自含：
+// before() 自设哨兵键，ambient 非依赖面（skip 方案不适用——无事可 skip）。
+// 缺陷②（伴生勘得）：下两案原字面窗 ['00:00','23:59'] 端斥语义（policy.ts
+// PolicyWindow：start 含 end 斥）=每日 23:59:00-24:00 有 60 秒未命中空洞→env 兜底
+// deepseek→断言错位。改 now±8h 计算窗：跨午夜包裹窗引擎支持（windowMatches
+// start>end 分支），policy.gate.e2e policyFor 同型，全天候确定命中。
+function alwaysHitWindow(model: string, id: string, priority: number): PolicyShape {
+  const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
+  const [h, m] = fmt.format(new Date()).split(':').map(Number);
+  const now = h * 60 + m;
+  const at = (x: number): string => `${String(Math.floor((((x % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String((((x % 1440) + 1440) % 1440) % 60).padStart(2, '0')}`;
+  return {
+    version: '1',
+    schedules: [{ id, target: 'daemon-default', model, windows: [{ start: at(now - 480), end: at(now + 480) }], timezone: 'Asia/Shanghai', enabled: true, priority }],
+  };
+}
+
 describe('proxy: body rewrite correctness', () => {
   const ORIGINAL_KEY = process.env.DEEPSEEK_API_KEY;
+  const ORIGINAL_GLM = process.env.GLM_API_KEY;
   const ORIGINAL_CARD = process.env.TRIMODEL_CARD_FILE;
   const ORIGINAL_DEFAULT = process.env.TRIMODEL_DEFAULT_MODEL;
   before(() => {
     process.env.TRIMODEL_CARD_FILE = join(tmpdir(), 'trimodel-rewrite-test-no-card.json');
     delete process.env.TRIMODEL_DEFAULT_MODEL;
     process.env.DEEPSEEK_API_KEY = 'sk-ds-rewrite-test';
+    process.env.GLM_API_KEY = 'sk-glm-rewrite-test'; // LG-054 B 案缺陷①：基座自含，ambient GLM 键非依赖面
   });
   after(() => {
     if (ORIGINAL_KEY === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = ORIGINAL_KEY;
+    if (ORIGINAL_GLM === undefined) delete process.env.GLM_API_KEY; else process.env.GLM_API_KEY = ORIGINAL_GLM;
     if (ORIGINAL_CARD === undefined) delete process.env.TRIMODEL_CARD_FILE; else process.env.TRIMODEL_CARD_FILE = ORIGINAL_CARD;
     if (ORIGINAL_DEFAULT === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = ORIGINAL_DEFAULT;
   });
 
   it('policy window hit: model rewritten to schedule model + route follows', () => {
-    const glmWindow: PolicyShape = {
-      version: '1',
-      schedules: [{ id: 'glm-win', target: 'daemon-default', model: 'GLM-5.3', windows: [{ start: '00:00', end: '23:59' }], timezone: 'Asia/Shanghai', enabled: true, priority: 10 }],
-    };
+    const glmWindow = alwaysHitWindow('GLM-5.3', 'glm-win', 10); // 缺陷②：计算窗替代字面端斥窗（60 秒空洞消除）
     const out = rewriteMessagesBody('{"model":"cc-placeholder","messages":[{"role":"user","content":"hi"}],"max_tokens":100}', new Date(), glmWindow);
     assert.equal(out.code, 'ok');
     const body = JSON.parse(out.body!) as { model: string };
@@ -194,10 +215,7 @@ describe('proxy: body rewrite correctness', () => {
     assert.equal(rewriteMessagesBody('{broken', new Date(), null).code, 'bad-json');
     const ORIGINAL_GLM = process.env.GLM_API_KEY;
     delete process.env.GLM_API_KEY;
-    const glmWindow: PolicyShape = {
-      version: '1',
-      schedules: [{ id: 'g', target: 'daemon-default', model: 'GLM-5.3', windows: [{ start: '00:00', end: '23:59' }], timezone: 'Asia/Shanghai', enabled: true, priority: 1 }],
-    };
+    const glmWindow = alwaysHitWindow('GLM-5.3', 'g', 1); // 缺陷②：计算窗替代字面端斥窗（60 秒空洞消除）
     assert.equal(rewriteMessagesBody('{"model":"x"}', new Date(), glmWindow).code, 'no-api-key');
     if (ORIGINAL_GLM === undefined) delete process.env.GLM_API_KEY; else process.env.GLM_API_KEY = ORIGINAL_GLM;
   });
