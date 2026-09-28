@@ -4,8 +4,10 @@
 //   ② pull 坏密文条目：跳过+warnings+skipped 计数（decrypt_failed 行为面形态）
 //   ③ apply 无卡：404+零 apply 审计行（apply_rejected 行为面形态）
 // 沙箱纪律同 FSD 卷（T7 活体生产面零接触）：三钉位 env 钉 mkdtemp。
-// 注：案②③同时固化「两归因码无 emit 点」现势行为面——候 CTO 裁（STE §九
-// 对表发现）：若裁补 emit 点，本两案断言随裁更新（reason 字段断言加入）。
+// 注：案②③固化「两归因码无 emit 点」行为面。CTO 裁 1（de6d49f8）已下：
+// (乙) decrypt_failed server 侧**不补不降维**→案②断言为定案形态（勘正确认
+// pull_denied 在役有 emit，本卷口径即两码）；(甲) status/apply 非 200 补 emit
+// 归 FSD N3-N5——届时案③断言随裁更新（apply_rejected 事件断言加入）。
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';

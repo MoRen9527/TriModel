@@ -124,7 +124,8 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     server = bootServer(false); // phase 1: E1 first-launch (empty-token) surface
     await waitHealth();
     if (!pw || !CHROMIUM) throw new Error('precondition skipped — describe guard should have skipped this suite');
-    browser = await pw.chromium.launch({ executablePath: CHROMIUM, headless: true });
+    // LG-058 裁 2(b)（de6d49f8）：重载机超时裕量 bump 封顶 2x——launch 180s→360s。
+    browser = await pw.chromium.launch({ executablePath: CHROMIUM, headless: true, timeout: 360_000 });
   });
 
   after(async () => {
@@ -143,7 +144,8 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     if (!browser) throw new Error('browser not initialised');
     const ctx = await browser.newContext(); // fresh localStorage per scenario
     const page = await ctx.newPage();
-    await page.goto(`http://127.0.0.1:${port}/ui`, { waitUntil: 'domcontentloaded' });
+    // LG-058 裁 2(b)：goto 默认 30s→60s（freshPage 为全部 goto 单点）。
+    await page.goto(`http://127.0.0.1:${port}/ui`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page.waitForTimeout(waitMs);
     return page;
   }
@@ -282,7 +284,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
   it('E8: full-page screenshot evidence lands non-trivially', async () => {
     const page = await freshPage();
     const shot = join(workDir, 'e8-fullpage.png');
-    await page.screenshot({ path: shot, fullPage: true });
+    await page.screenshot({ path: shot, fullPage: true, timeout: 60_000 }); // LG-058 裁 2(b)：30s→60s
     const size = statSync(shot).size;
     assert.ok(size > 10_000, `screenshot should be substantive, got ${size} bytes`);
     await page.context().close();
@@ -344,7 +346,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.click('#tc-r-save');
     await page.click('#tc-save');
     await page.waitForTimeout(700);
-    await page.reload({ waitUntil: 'domcontentloaded' }); // 第四型：跨刷新持久周期
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 }); // 第四型：跨刷新持久周期；LG-058 裁 2(b)：30s→60s
     await page.waitForTimeout(900);
     const rulesText = await page.locator('#tc-r-body').innerText();
     assert.ok(rulesText.includes('走查默认'), '默认规则实体须随卡持久（reload 后保持）');
@@ -395,7 +397,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await addEntryViaUi(page, 'gate-ui-w4v4', 'deepseek', 'deepseek-v4-pro', 'sk-gate-w4v4-key');
     await page.click('#tc-save');
     await page.waitForTimeout(700);
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 }); // LG-058 裁 2(b)：30s→60s
     await page.waitForTimeout(900);
     const rowsBefore = await page.locator('#tc-r-body tr').count();
     await page.click('#tc-r-add');
