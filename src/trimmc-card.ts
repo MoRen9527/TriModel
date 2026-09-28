@@ -23,6 +23,7 @@ import { fileURLToPath } from 'url';
 import { hostname } from 'node:os';
 import { decrypt, encrypt } from './security/key-encryptor.js';
 import { isCatalogModel, MODEL_CATALOG_LIST } from './model-catalog.js';
+import { preSaveCardGuard } from './card-write-guard.js';
 
 export const CARD_VERSION = 4;
 
@@ -522,6 +523,10 @@ function upgradeCardV4Windows(doc: TrimmcCardDocument): TrimmcCardDocument | nul
 export function saveCard(doc: TrimmcCardDocument, pathOverride?: string): void {
   // D9: writes go to the canonical path only (pathOverride = test seam).
   const target = pathOverride ?? canonicalCardPath();
+  // LG-058 P0①：写前守卫（备份先行+轮换+幂等短路+write 审计）——纯增量挂载，
+  // 写语义零变（短路=跳过；守卫 throw=拒写）。机制真源=card-write-guard.ts。
+  const guard = preSaveCardGuard(doc, target);
+  if (guard.skipped) return;
   // D6 同族：目标目录可能不存在（fresh 卡/测试注入路径）——首存自建。
   mkdirSync(dirname(target), { recursive: true });
   const tmp = `${target}.tmp`;

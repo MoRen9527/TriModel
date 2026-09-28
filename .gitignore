@@ -33,3 +33,12 @@ cos-prewalk4.mjs
 cos-prewalk-result.txt
 minimal-repro.mjs
 d16p.txt
+
+# LG-058 P0 face 数据域（服务端 cwd 运行时数据文件）
+face-events.jsonl
+face-ledger.json
+config-audit.log
+trimmc-card.json.bak-*
+trimlc-card.json.bak-*
+trirmc-card.json.bak-*
+trirlc-card.json.bak-*

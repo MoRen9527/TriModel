@@ -5,6 +5,8 @@ import { handleHealth } from './health.js';
 import { handleModels } from './models.js';
 import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeysStatus } from './keys.js';
 import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, handleApplyStrategy } from './trimmc-card.js';
+import { handleGetConfigCard, handlePutConfigCard, handlePutConfigCardStatus, handlePostConfigCardApply } from './config-cards.js';
+import type { PullRequestOrigin } from './config-cards.js';
 import { handleRuntimeInfo } from './runtime-info.js';
 import { handleGetClaudeFallback, handlePostClaudeFallbackRestore, handlePostClaudeFallbackPreview, handleGetClaudeFallbackBackups, handlePostClaudeFallbackRollback, handlePostClaudeFallbackInjectKey, listTemplates } from './claude-fallback.js';
 import { handleGetClaudeFallbackSg, handlePostClaudeFallbackSgRestore } from './claude-fallback-sg.js';
@@ -22,6 +24,7 @@ export async function dispatch(
   url: string,
   headers: Record<string, string>,
   rawBody?: string,
+  origin?: PullRequestOrigin,
 ): Promise<RouteResult> {
   const jsonHeaders = { 'content-type': 'application/json' };
 
@@ -146,6 +149,37 @@ export async function dispatch(
   if (url === '/v1/config/trimmc-card/apply' && method === 'POST') {
     const result = handleApplyStrategy(headers['authorization']);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // ── LG-058 P0 泛化卡面端点族：/v1/config/cards/{face}[/status|/apply] ──
+  // {face} 不在册=404（防枚举）；query 面仅泛化族解析（?view=managed|pull）。
+  if (url.startsWith('/v1/config/cards/')) {
+    const qIdx = url.indexOf('?');
+    const pathPart = qIdx >= 0 ? url.slice(0, qIdx) : url;
+    const search = qIdx >= 0 ? url.slice(qIdx) : '';
+    const m = pathPart.match(/^\/v1\/config\/cards\/([a-z]+)(?:\/(status|apply))?$/);
+    if (!m) {
+      return { statusCode: 404, headers: jsonHeaders, body: { error: 'Not found', path: url } };
+    }
+    const face = m[1];
+    const sub = m[2];
+    if (!sub && method === 'GET') {
+      const result = handleGetConfigCard(headers['authorization'], face, search, origin);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    if (!sub && method === 'PUT') {
+      const result = handlePutConfigCard(headers['authorization'], face, rawBody);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    if (sub === 'status' && method === 'PUT') {
+      const result = handlePutConfigCardStatus(headers['authorization'], face, rawBody);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    if (sub === 'apply' && method === 'POST') {
+      const result = handlePostConfigCardApply(headers['authorization'], face);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    return { statusCode: 404, headers: jsonHeaders, body: { error: 'Not found', path: url } };
   }
 
   // 404 for unhandled routes

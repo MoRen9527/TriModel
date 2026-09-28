@@ -125,7 +125,7 @@ async function main(): Promise<void> {
       const method = req.method ?? '';
       const rawBody = method === 'PUT' || method === 'POST' ? await readRawBody(req) : undefined;
 
-      const result = await dispatch(client, req.method ?? 'GET', url, reqHeaders, rawBody);
+      const result = await dispatch(client, req.method ?? 'GET', url, reqHeaders, rawBody, { remoteAddress: req.socket.remoteAddress });
       res.writeHead(result.statusCode, result.headers);
       res.end(JSON.stringify(result.body));
     } catch (err) {
