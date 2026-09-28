@@ -61,6 +61,21 @@
   .switch:checked { background: var(--ok); }
   .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
   .switch:checked::after { left: 18px; }
+  /* ── P2 四域面 IA（LG-058 P2；CPO cpo-product-plan §4）── */
+  .page-panel { min-width: 0; }
+  #page-menu { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); }
+  .menu-btn { border: 1px solid var(--border); background: transparent; border-radius: 6px; padding: 4px 12px; font-size: 13px; }
+  .menu-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* 折叠自适应（§4.2 情形 1，按数判非按期判）：有实数据卡 ≥4 → 左菜单（宽屏增强）；
+     ≤3 → 顶部细条（默认）；窄屏 → 横滑 chip 条（情形 3）。 */
+  body.menu-full #app-layout { display: flex; gap: 14px; align-items: flex-start; }
+  body.menu-full #page-menu { flex-direction: column; flex: 0 0 210px; align-items: stretch; margin-top: 0; }
+  body.menu-full .menu-btn { text-align: left; }
+  body.menu-full #page-main { flex: 1; min-width: 0; }
+  @media (max-width: 720px) {
+    body.menu-full #app-layout { display: block; }
+    body.menu-full #page-menu { flex-wrap: nowrap; overflow-x: auto; }
+  }
 </style>
 </head>
 <body>
@@ -79,68 +94,98 @@
   </div>
 </details>
 
-<!-- ═══ 状态条（S1：零输入控件，只读）═══ -->
-<section>
-  <h2>当前生效</h2>
-  <div id="error-status" class="error-panel" hidden></div>
-  <div class="kv" id="effective"></div>
-  <div class="row-form"><button id="refreshNow">刷新</button></div>
-</section>
+<!-- ═══ P2 导航层（左菜单/顶部细条自适应；CPO IA §4.1）═══ -->
+<nav id="page-menu" aria-label="配置页导航"></nav>
 
-<!-- ═══ 连接配置页（v2，TASK-TRIMODEL-RECOVERY-LADDER-01 波① 2026-09-25；前身=直连兜底 2026-09-15 CEO 直令；LG-036 sg 栏沿旧）═══ -->
-<section id="fb-zone">
-  <h2>连接配置 <span class="sub">本机 Claude Code 连到哪个后端——日常便利层，不担兜底；模板式切换，只填密钥一项</span></h2>
-  <div class="warn" style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:10px">
-    ⚠ TriModel 服务不可用时请用命令恢复（本页不承担应急兜底）：
-    <code id="fb-recover-cmd" style="word-break:break-all">powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Code\ai\TriCompany\scripts\ops\local\restore-claude-direct.ps1"</code>
-    <button id="fb-cmd-copy" style="margin-left:6px">复制命令</button>
-  </div>
+<div id="app-layout">
+<main id="page-main">
 
-  <h3 style="margin-top:4px">本机（TriMLC 域）</h3>
-  <div class="kv" id="fb-current"></div>
-  <div class="row-form">
-    <label>目的地模板</label><select id="fb-tpl" style="width:220px"><option value="">读取中…</option></select>
-    <label>API 密钥 <b class="sub">（唯一必填项）</b></label><input id="fb-key" type="password" placeholder="粘贴平台 API Key" autocomplete="off" style="width:200px">
-    <button id="fb-eye" class="eye">👁</button>
-    <button id="fb-inject" title="服务端读独立钥文件（settings.presets/.deploy-key）直接写入，钥值不经页面显示">从独立钥文件注入</button>
-  </div>
-  <div class="sub" id="fb-tpl-hint" style="margin-top:2px"></div>
-  <div class="row-form" style="margin-top:8px">
-    <button id="fb-preview">预览变更</button>
-    <button class="primary" id="fb-restore" disabled title="先点「预览变更」确认改动范围后再写入">确认写入</button>
-    <span class="sub" id="fb-step-hint">写前先预览：确认将变更的配置项</span>
-  </div>
-  <div id="fb-diff-box" hidden style="margin-top:8px">
-    <table id="fb-diff"><thead><tr><th>配置项</th><th>变更</th><th>现值</th><th>写入值</th></tr></thead><tbody></tbody></table>
-  </div>
-  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置（保留近 5 份），写后自动校验失败即回滚</div>
-  <div class="row-form" style="margin-top:8px">
-    <button id="fb-bak-list">备份清单</button>
-    <span class="sub" id="fb-bak-info">一键回滚：从备份恢复原设置</span>
-  </div>
-  <div id="fb-bak-box" hidden style="margin-top:6px"></div>
-  <div id="fb-msg" class="msg"></div>
+<!-- ═══ 总览层：当前生效 + 四域面一行一卡健康摘要（默认视图）═══ -->
+<div id="panel-overview" class="page-panel">
+  <section>
+    <h2>当前生效</h2>
+    <div id="error-status" class="error-panel" hidden></div>
+    <div class="kv" id="effective"></div>
+    <div class="row-form"><button id="refreshNow">刷新</button></div>
+  </section>
+  <section>
+    <h2>四域面总览 <span class="sub">每张卡从哪拉配置、现在用什么、健不健康</span></h2>
+    <table id="ov-table"><thead><tr><th>域面卡</th><th>状态</th><th>上次拉取</th><th>操作</th></tr></thead><tbody id="ov-body"></tbody></table>
+    <div class="sub" style="margin-top:6px" id="ov-menu-note"></div>
+  </section>
+</div>
 
-  <h3 style="margin-top:16px">TriMMC（sg）</h3>
-  <div class="kv" id="fb-sg-current"></div>
-  <div class="row-form">
-    <label>服务地址</label><input id="fb-sg-baseurl" placeholder="https://..." style="width:240px" autocomplete="off">
-    <label>API 密钥</label><input id="fb-sg-key" type="password" placeholder="sk-..." autocomplete="off" style="width:200px">
-    <button id="fb-sg-eye" class="eye">👁</button>
-    <label>模型</label><input id="fb-sg-model" placeholder="例如 glm-5.3[1M]" style="width:200px" autocomplete="off">
-    <label>sg 管理令牌</label><input id="fb-sg-token" type="password" placeholder="sg 管理令牌" autocomplete="off" style="width:200px">
-    <button id="fb-sg-token-eye" class="eye">👁</button>
-    <button class="primary" id="fb-sg-restore">还原兜底</button>
-  </div>
-  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚</div>
-  <div class="sub" style="margin-top:4px">sg 凭据仅本次会话使用，不保存；写入后 sg 侧会话重启后生效</div>
-  <div id="fb-sg-msg" class="msg"></div>
-</section>
+<!-- ═══ TriMLC · 本机 卡（操作层；一致面八项+卡特有面；本机栏=fallback 模板切换并入此卡，消双门）═══ -->
+<div id="panel-card-mlc" class="page-panel" hidden>
+  <section>
+    <h2>TriMLC · 本机 <span id="cf-mlc-badge" class="badge none">未连接</span> <span class="sub">M 面 · 本地域 · 本机 8713</span></h2>
 
-<!-- ═══ 【TriMMC 信息】主卡（S1 主位：实线+云图标+「保存后待应用」）═══ -->
-<section class="card-main">
-  <h2>☁ 【TriMMC 信息】 <span id="tc-badge" class="badge none">未配置</span></h2>
-  <div class="sub" style="margin:-6px 0 10px">保存后待应用</div>
+    <h3>拉取状态</h3>
+    <div class="kv" id="cf-mlc-pull"><b>读数</b><span class="idle">暂无——连接后显示</span></div>
+
+    <h3>现役配置</h3>
+    <div class="kv" id="cf-mlc-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>
+    <table id="cf-mlc-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th></tr></thead><tbody></tbody></table>
+
+    <h3>模板切换</h3>
+    <div class="sub" style="margin:-4px 0 6px">本机栏——本机 Claude Code 的 settings 写入面：选目的地模板，只填密钥一项</div>
+    <div class="kv" id="fb-current"></div>
+    <div class="row-form">
+      <label>目的地模板</label><select id="fb-tpl" style="width:220px"><option value="">读取中…</option></select>
+      <label>API 密钥 <b class="sub">（唯一必填项）</b></label><input id="fb-key" type="password" placeholder="粘贴平台 API Key" autocomplete="off" style="width:200px">
+      <button id="fb-eye" class="eye">👁</button>
+      <button id="fb-inject" title="服务端读独立钥文件（settings.presets/.deploy-key）直接写入，钥值不经页面显示">从独立钥文件注入</button>
+    </div>
+    <div class="sub" id="fb-tpl-hint" style="margin-top:2px"></div>
+    <div class="row-form" style="margin-top:8px">
+      <button id="fb-preview">预览变更</button>
+      <button class="primary" id="fb-restore" disabled title="先点「预览变更」确认改动范围后再写入">确认写入</button>
+      <span class="sub" id="fb-step-hint">写前先预览：确认将变更的配置项</span>
+    </div>
+    <div id="fb-diff-box" hidden style="margin-top:8px">
+      <table id="fb-diff"><thead><tr><th>配置项</th><th>变更</th><th>现值</th><th>写入值</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置（保留近 5 份），写后自动校验失败即回滚</div>
+    <div id="fb-msg" class="msg"></div>
+
+    <h3>备份与回滚</h3>
+    <div class="row-form" style="margin-top:4px">
+      <button id="fb-bak-list">备份清单</button>
+      <span class="sub" id="fb-bak-info">一键回滚：从备份恢复原设置</span>
+    </div>
+    <div id="fb-bak-box" hidden style="margin-top:6px"></div>
+
+    <h3>审计行</h3>
+    <div class="sub" id="cf-mlc-audit">台账摘要：暂无记录</div>
+
+    <h3>不可用时</h3>
+    <div class="sub">本机控制器自动用最近一次拉取的缓存，再退到出厂默认；服务恢复后自动回到卡面配置。写面拒绝（未启用管理令牌）时页面如实提示，稍后重试。</div>
+
+    <h3>CLI 对照</h3>
+    <div class="sub">页面上能做的事，命令行同样能做：<code>trimlc config pull｜show｜verify｜cache</code></div>
+
+    <h3>本卡特有</h3>
+    <div class="sub" id="cf-mlc-special">
+      L2 settings 写入面=上方「模板切换」区（本机栏，原独立区块已并入此卡消双门）；
+      L1 watchdog=TriMLC-Watchdog 保活 8713（态候接线）；
+      形态=开发/演练（非 sg 服务域）。
+    </div>
+  </section>
+</div>
+
+<!-- ═══ TriRLC · 本机 卡（rlc/mmc/rmc 三卡由脚本按同一模板渲染进此容器）═══ -->
+<div id="panel-card-rlc" class="page-panel" hidden></div>
+<!-- ═══ TriMMC · sg 卡 ═══ -->
+<div id="panel-card-mmc" class="page-panel" hidden></div>
+<!-- ═══ TriRMC · 河源 卡 ═══ -->
+<div id="panel-card-rmc" class="page-panel" hidden></div>
+
+<!-- ═══ TriModel 策略卡（参照层；LG-035 面——v4 卡本体=模型集/规则/策略/活动策略，
+     原混杂卡正名归位（CPO IA §〇.1；旧栏目名随 P2 批窗退役，字面零出现，测试锚定）。
+     走查冻结期纪律：本卡页内布局零改动，菜单仅外层挂锚点零位移。═══ -->
+<div id="panel-strategy" class="card-main page-panel" hidden>
+  <h2>☁ TriModel 策略卡（本机过渡位实例） <span id="tc-badge" class="badge none">未配置</span></h2>
+  <div class="sub" style="margin:-6px 0 10px">LG-035 面 · 常态只读（编辑窗候 CEO 终验）；保存后待应用</div>
   <div id="error-card" class="error-panel" hidden></div>
 
   <h3>机器信息</h3>
@@ -243,14 +288,161 @@
     <span id="tc-dirty" class="sub"></span>
   </div>
   <div id="tc-msg" class="msg"></div>
-</section>
+</div>
 
-<!-- 本机策略折叠区已删除（D13，CEO 裁）：本页单语义化=TriMMC 卡纯度；本机直生效语义归位 TriRLC 卡四卡规划 -->
+<!-- ═══ 连接配置（导航层第 4 组；fb-zone 过渡期保留——本机栏已并入 TriMLC 卡，
+     此入口收敛为 sg 栏+帮助，终态随 M2 消化；CPO IA §4.1）═══ -->
+<div id="panel-connect" class="page-panel" hidden>
+<section id="fb-zone">
+  <h2>连接配置 <span class="sub">本机 Claude Code 连到哪个后端——日常便利层，不担兜底</span></h2>
+  <div class="warn" style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:10px">
+    ⚠ TriModel 服务不可用时请用命令恢复（本页不承担应急兜底）：
+    <code id="fb-recover-cmd" style="word-break:break-all">powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Code\ai\TriCompany\scripts\ops\local\restore-claude-direct.ps1"</code>
+    <button id="fb-cmd-copy" style="margin-left:6px">复制命令</button>
+  </div>
+
+  <h3 style="margin-top:4px">TriMMC（sg）</h3>
+  <div class="kv" id="fb-sg-current"></div>
+  <div class="row-form">
+    <label>服务地址</label><input id="fb-sg-baseurl" placeholder="https://..." style="width:240px" autocomplete="off">
+    <label>API 密钥</label><input id="fb-sg-key" type="password" placeholder="sk-..." autocomplete="off" style="width:200px">
+    <button id="fb-sg-eye" class="eye">👁</button>
+    <label>模型</label><input id="fb-sg-model" placeholder="例如 glm-5.3[1M]" style="width:200px" autocomplete="off">
+    <label>sg 管理令牌</label><input id="fb-sg-token" type="password" placeholder="sg 管理令牌" autocomplete="off" style="width:200px">
+    <button id="fb-sg-token-eye" class="eye">👁</button>
+    <button class="primary" id="fb-sg-restore">还原兜底</button>
+  </div>
+  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚</div>
+  <div class="sub" style="margin-top:4px">sg 凭据仅本次会话使用，不保存；写入后 sg 侧会话重启后生效</div>
+  <div id="fb-sg-msg" class="msg"></div>
+</section>
+</div>
+
+</main>
+</div>
 
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
 const TZ = 'Asia/Shanghai';
+
+// ═══ P2 四域面卡 IA（LG-058 P2；CPO cpo-product-plan §3.A/§3.B/§4）═══
+// 一致面八项=卡模板锁死（①卡头身份行 ②拉取状态区 ③现役配置查看 ④模板切换
+// ⑤备份与回滚 ⑥审计行 ⑦降级话术 ⑧CLI 对照行）；卡特有面=追加区块禁进模板位。
+// TriMLC 卡为静态正形（fb 本机栏并入④⑤槽位）；rlc/mmc/rmc 由本段按同一模板
+// 渲染进容器。菜单折叠自适应=按「有实数据卡数」判（≥4 左菜单，≤3 顶部细条）。
+
+const FACE_UI_IDS = ['mlc', 'rlc', 'mmc', 'rmc'];
+
+const FACE_META = {
+  mlc: {
+    nav: 'TriMLC · 本机', meta: 'M 面 · 本地域 · 本机 8713',
+    pull: 'TriModel 本机实例（keys 分发面 → 卡面 pull）',
+    cli: 'trimlc config pull｜show｜verify｜cache',
+    static: true, // 卡体为静态 HTML 正形（fb 本机栏并入）
+  },
+  rlc: {
+    nav: 'TriRLC · 本机', meta: 'R 面 · 本地域 · 本机 8711（寄居过渡）',
+    pull: 'TriModel 本机实例（keys 分发面 → 卡面 pull）',
+    cli: 'trirlc config pull｜show｜verify｜cache',
+    tpl: '<div class="sub">候建——模板切换入口随后续批次开通；现役通道=命令行（见下方对照行）</div>',
+    bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
+    special: 'daemon 健康=8711 /healthz（态候接线）；寄居过渡形态——本机进程代管 R 面本地域，终态=独立部署本地 PC（候排）。',
+  },
+  mmc: {
+    nav: 'TriMMC · sg', meta: 'M 面 · 服务域 · sg 8710',
+    pull: 'TriModel（sg 出面走本机 8460 代理）',
+    cli: 'trimmc config pull｜show｜verify｜cache',
+    tpl: '<div class="sub">TriMMC（sg）侧的模型写入走「连接配置」页的 sg 栏（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
+    bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
+    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面（PUT 卡面），daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本 face 卡文件现役=LG-035 策略卡过渡位（trimmc-card.json），策略内容见「TriModel 策略卡」；TriMMC 专属卡候文件迁移方案。',
+  },
+  rmc: {
+    nav: 'TriRMC · 河源', meta: 'R 面 · 服务域 · 河源 8712',
+    pull: 'TriModel（现役拉取端点=同机过渡位 河源 3333；独立服务器位候迁）',
+    cli: 'trirmc config pull｜show｜verify｜cache',
+    tpl: '<div class="sub">候建——模板切换入口随后续批次开通；现役通道=命令行（见下方对照行）</div>',
+    bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
+    special: '周平面迁移 cron 关联行：每周日 23:00 平面迁移由本机 cron 驱动，迁移窗内拉取态可能短暂波动（态候接线）；域锚约束：卡密文域=创建机+用户，禁跨机复制卡文件，消费机在自身域内重加密。',
+  },
+};
+
+const DEG_LINE = '本机控制器自动用最近一次拉取的缓存，再退到出厂默认；服务恢复后自动回到卡面配置。写面拒绝（未启用管理令牌）时页面如实提示，稍后重试。';
+
+/** 一致面八项卡体（rlc/mmc/rmc 渲染正形；与静态 mlc 卡同构同序）。 */
+function faceCardHtml(f) {
+  const m = FACE_META[f];
+  return '<section>'
+    + `<h2>${m.nav} <span id="cf-${f}-badge" class="badge none">未连接</span> <span class="sub">${m.meta}</span></h2>`
+    + '<h3>拉取状态</h3>'
+    + `<div class="kv" id="cf-${f}-pull"><b>读数</b><span class="idle">暂无——连接后显示</span></div>`
+    + '<h3>现役配置</h3>'
+    + `<div class="kv" id="cf-${f}-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>`
+    + `<table id="cf-${f}-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th></tr></thead><tbody></tbody></table>`
+    + '<h3>模板切换</h3>'
+    + `<div id="cf-${f}-tpl">${m.tpl}</div>`
+    + '<h3>备份与回滚</h3>'
+    + `<div id="cf-${f}-bak">${m.bak}</div>`
+    + '<h3>审计行</h3>'
+    + `<div class="sub" id="cf-${f}-audit">台账摘要：暂无记录</div>`
+    + '<h3>不可用时</h3>'
+    + `<div class="sub">${DEG_LINE}</div>`
+    + '<h3>CLI 对照</h3>'
+    + `<div class="sub">页面上能做的事，命令行同样能做：<code>${m.cli}</code></div>`
+    + '<h3>本卡特有</h3>'
+    + `<div class="sub" id="cf-${f}-special">${m.special}</div>`
+    + '</section>';
+}
+
+// 导航层（§4.1：总览默认 + 四角色卡 + 策略卡 + 连接配置）
+const VIEWS = [
+  { id: 'overview', label: '当前生效' },
+  { id: 'card-mlc', label: FACE_META.mlc.nav },
+  { id: 'card-rlc', label: FACE_META.rlc.nav },
+  { id: 'card-mmc', label: FACE_META.mmc.nav },
+  { id: 'card-rmc', label: FACE_META.rmc.nav },
+  { id: 'strategy', label: 'TriModel 策略卡', title: 'LG-035 面 · 常态只读（编辑窗候 CEO 终验）' },
+  { id: 'connect', label: '连接配置' },
+];
+
+function buildMenu() {
+  const nav = $('page-menu');
+  nav.innerHTML = '';
+  for (const v of VIEWS) {
+    const b = document.createElement('button');
+    b.className = 'menu-btn';
+    b.dataset.view = v.id;
+    b.textContent = v.label;
+    if (v.title) b.title = v.title;
+    b.onclick = () => switchView(v.id);
+    nav.appendChild(b);
+  }
+}
+
+function switchView(id) {
+  for (const v of VIEWS) {
+    const p = $('panel-' + v.id);
+    if (p) p.hidden = v.id !== id;
+  }
+  for (const b of document.querySelectorAll('#page-menu .menu-btn')) {
+    b.classList.toggle('active', b.dataset.view === id);
+  }
+  try { window.location.hash = '#' + id; } catch { /* jsdom hash 只读兼容 */ }
+}
+
+// 指路按钮（不嵌套二级页：卡内指路，不复制通道）——事件委托覆盖脚本渲染的按钮
+document.addEventListener('click', (ev) => {
+  const t = ev.target instanceof Element ? ev.target.closest('[data-goto]') : null;
+  if (t) switchView(t.dataset.goto);
+});
+
+// 渲染 rlc/mmc/rmc 三卡（mlc 静态正形已在 HTML 中）
+for (const f of FACE_UI_IDS) {
+  if (!FACE_META[f].static) {
+    const host = $('panel-card-' + f);
+    if (host) host.innerHTML = faceCardHtml(f);
+  }
+}
 
 function msg(el, text, cls) { const n = $(el); n.textContent = text || ''; n.hidden = !text; if (cls) n.className = cls; }
 
@@ -292,6 +484,9 @@ async function boot() {
   wireEyeToggle('fb-key', 'fb-eye');
   wireEyeToggle('fb-sg-key', 'fb-sg-eye');
   wireEyeToggle('fb-sg-token', 'fb-sg-token-eye');
+  buildMenu();
+  const hashView = window.location.hash ? window.location.hash.slice(1) : '';
+  switchView(VIEWS.some((v) => v.id === hashView) ? hashView : 'overview');
   renderConnState();
   await loadRuntimeInfo();
   // 兜底区独立取数（无鉴权读；不参与卡片禁用链）——**非阻塞**：sg 栏经远程
@@ -304,6 +499,7 @@ async function boot() {
     $('conn-settings').open = true;
     $('conn-guide').hidden = false;
     setDataPanelsDisabled(true);
+    renderFaceCards(); // 四卡诚实态：未连接（不发请求）
     return;
   }
   setDataPanelsDisabled(false);
@@ -355,10 +551,10 @@ $('conn-save').onclick = async () => {
   }
 };
 
-// ── 状态条 + 策略列表 + 密钥状态 ──
+// ── 状态条 + 策略列表 + 密钥状态 + 四域面卡 ──
 async function refreshAll() {
   renderConnState();
-  await Promise.all([refreshEffective(), loadTrimmc()]);
+  await Promise.all([refreshEffective(), loadTrimmc(), loadFaceCards()]);
   loadFallbackInfo(); // 非阻塞（同上：兜底区自填充）
   loadFallbackSg();
   await fillModelSelect();
@@ -377,6 +573,115 @@ async function refreshEffective() {
     '<b>来源</b><span>' + (e.source === 'policy' ? '策略' : '默认配置') + '</span>' +
     '<b>一致性</b><span>' + (actual === e.model ? '<span class="ok">✓ 一致</span>' : '<span class="err">✗ 不一致</span>') + '</span>';
 }
+
+// ═══ 四域面卡数据面（managed 视图：掩码+状态+台账摘要；P2 随批接线）═══
+const faceState = {}; // face -> managed body | null（null=未连接/读取失败，如实呈现）
+
+async function loadFaceCards() {
+  if (!adminToken()) {
+    for (const f of FACE_UI_IDS) faceState[f] = null;
+    renderFaceCards();
+    return;
+  }
+  await Promise.all(FACE_UI_IDS.map(async (f) => {
+    const r = await api('/v1/config/cards/' + f + '?view=managed', { headers: adminHeaders() }).catch(() => ({ status: 0, body: {} }));
+    faceState[f] = r.status === 200 ? r.body : null;
+  }));
+  renderFaceCards();
+}
+
+/** 诚实三态徽标：已生效（在役）/待应用·失败（降级）/未配置·读取失败（断链候选，如实）。 */
+function faceBadge(f) {
+  const s = faceState[f];
+  if (!s) return ['未连接', 'none'];
+  if (!s.card_file_present) return ['未配置', 'none'];
+  const st = s.card?.status?.state;
+  if (st === 'applied') return ['已生效', 'applied'];
+  if (st === 'pending') return ['待应用', 'pending'];
+  if (st === 'failed') return ['失败', 'failed'];
+  return ['未配置', 'none'];
+}
+
+function facePullSummary(f) {
+  const ledger = faceState[f]?.ledger?.faces?.[f];
+  if (!ledger || !ledger.last_pull_at) return '暂无拉取记录';
+  return ledger.last_pull_at + '（' + (ledger.last_pull_from ?? '?') + '，' + (ledger.last_pull_result ?? '?') + '）';
+}
+
+function renderFaceCards() {
+  for (const f of FACE_UI_IDS) {
+    const badge = $('cf-' + f + '-badge');
+    if (!badge) continue;
+    const s = faceState[f];
+    const [text, cls] = faceBadge(f);
+    badge.textContent = text;
+    badge.className = 'badge ' + cls;
+    const pull = $('cf-' + f + '-pull');
+    pull.innerHTML = '<b>拉取源</b><span>' + FACE_META[f].pull + '</span>'
+      + '<b>上次拉取</b><span>' + facePullSummary(f) + '</span>';
+    const cfg = $('cf-' + f + '-cfg');
+    const tbl = $('cf-' + f + '-entries');
+    if (!s || !s.card_file_present) {
+      cfg.innerHTML = '<b>读数</b><span class="idle">' + (s ? '卡未配置（如实显示，不造数）' : '未连接或读取失败——先在页头连接') + '</span>';
+      if (tbl) tbl.hidden = true;
+    } else {
+      cfg.innerHTML = '<b>当前模型</b><span>' + (s.card?.default_model || '（未设置）') + '</span>';
+      if (tbl) {
+        const tb = tbl.querySelector('tbody');
+        tb.innerHTML = '';
+        const masked = s.entries_masked ?? {};
+        for (const [id, m] of Object.entries(masked)) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td></td><td></td><td></td><td></td>';
+          tr.children[0].textContent = id;
+          tr.children[1].textContent = m.model ?? '-';
+          tr.children[2].textContent = m.masked ?? '••••';
+          tr.children[3].textContent = m.enabled ? '✓' : '✗';
+          tb.appendChild(tr);
+        }
+        tbl.hidden = Object.keys(masked).length === 0;
+      }
+    }
+    const audit = $('cf-' + f + '-audit');
+    const applied = s?.ledger?.faces?.[f]?.applied_state;
+    audit.textContent = '台账摘要：应用回写态=' + (applied ?? '暂无回写') + '；' + facePullSummary(f);
+  }
+  renderOv();
+  updateMenuMode();
+}
+
+function renderOv() {
+  const tb = $('ov-body');
+  if (!tb) return;
+  tb.innerHTML = '';
+  for (const f of FACE_UI_IDS) {
+    const [text, cls] = faceBadge(f);
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td><span class="badge none"></span></td><td></td><td><button data-goto="card-' + f + '">打开</button></td>';
+    tr.children[0].textContent = FACE_META[f].nav;
+    const b = tr.querySelector('span.badge');
+    b.textContent = text;
+    b.className = 'badge ' + cls;
+    tr.children[2].textContent = facePullSummary(f);
+    tb.appendChild(tr);
+  }
+}
+
+/** 折叠自适应（§4.2 情形 1）：按「有实数据卡数」判——≥4 左菜单，≤3 顶部细条。 */
+function updateMenuMode() {
+  const withData = FACE_UI_IDS.filter((f) => faceState[f]?.card_file_present).length;
+  document.body.classList.toggle('menu-full', withData >= 4);
+  const note = $('ov-menu-note');
+  if (note) {
+    note.textContent = '菜单形态：' + (withData >= 4 ? '左侧菜单' : '顶部细条')
+      + '（有实数据卡 ' + withData + '/4' + (withData >= 4 ? '' : '；四卡全数据后自动展开为左侧菜单') + '）';
+  }
+}
+
+window.addEventListener('hashchange', () => {
+  const v = window.location.hash ? window.location.hash.slice(1) : '';
+  if (VIEWS.some((x) => x.id === v)) switchView(v);
+});
 
 // ── 层2 段A：策略表单 v4 填充（模型集下拉+规则多选勾选列表）──
 function tcFillStrategySelects() {
@@ -450,7 +755,7 @@ function wireEyeToggle(inputId, eyeId) {
   $(inputId).addEventListener('blur', conceal);
 }
 
-// ═══ TriMMC 信息卡（S2 交互唯一模式 + S4 只写卡片→待应用 + D7 脏追踪）═══
+// ═══ TriModel 策略卡（LG-035 v4：S2 交互唯一模式 + S4 只写卡片→待应用 + D7 脏追踪）═══
 // D7 保存语义：tcEntries=脏条目（用户新增/编辑，持明文）；tcMirror=GET 只读
 // 镜像（密文条目回显）；保存=只发脏条目+deleted（后端合并），镜像永不回写。
 let tcCard = null;
@@ -463,6 +768,7 @@ let tcEditingId = null;
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
 
 // ── 连接配置页 v2（波① 2026-09-25）：模板切换+预览门控+独立钥注入+备份回滚；写入需管理令牌（服务端 fail-closed）──
+// P2 结构注：本机栏（模板切换+备份回滚）已并入 TriMLC 卡；此处仅 sg 栏+应急帮助。
 function fbMsg(text, cls) { const n = $('fb-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); }
 
 async function loadFallbackInfo() {
@@ -638,15 +944,16 @@ async function fbDoRollback(file, label) {
   }
 }
 // 应急命令复制（127.0.0.1 为安全上下文，clipboard 可用；失败兜底=选中文本）
+// P2 注：复制反馈走本页 sg 栏消息位（fb-msg 已随本机栏并入 TriMLC 卡）。
 $('fb-cmd-copy').onclick = async () => {
   const code = $('fb-recover-cmd');
   try {
     await navigator.clipboard.writeText(code.textContent);
-    fbMsg('恢复命令已复制，粘贴到 PowerShell 即可执行', 'ok');
+    fbSgMsg('恢复命令已复制，粘贴到 PowerShell 即可执行', 'ok');
   } catch {
     const range = document.createRange(); range.selectNodeContents(code);
     const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
-    fbMsg('已选中命令文本，请手动 Ctrl+C 复制', 'warn');
+    fbSgMsg('已选中命令文本，请手动 Ctrl+C 复制', 'warn');
   }
 };
 
@@ -1371,8 +1678,8 @@ async function loadTrimmc() {
   // CEO 走查「三区全空」根因）。
   tcWindowRules = [];
   $('tc-dirty').textContent = '';
-  // D19→v4 三实体 hydrate：卡数据灌入本地态（真浏览器走查实证缺此赋值=
-  // 下拉永空"暂无策略"，jjdom/断言双盲区——2026-09-14）
+  // D19→v4 三实体载入：卡数据灌入本地态（真浏览器走查实证缺此赋值=
+  // 下拉永空"暂无策略"，jsdom/断言双盲区——2026-09-14）
   tcModelSets = { ...(tcCard?.model_sets ?? {}) };
   tcRules = { ...(tcCard?.rules ?? {}) };
   tcStrategies = { ...(tcCard?.strategies ?? {}) };

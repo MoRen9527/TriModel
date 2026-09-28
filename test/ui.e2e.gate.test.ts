@@ -148,6 +148,13 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     return page;
   }
 
+  // ── P2 四卡面（LG-058）适配：策略卡操作面收敛进 panel-strategy 单页面板——
+  // 门族驱动先切视图（语义零变更，只加导航步；hash 随 reload 保持=跨刷新周期不受扰）。
+  async function gotoStrategy(page: Page): Promise<void> {
+    await page.click('#page-menu .menu-btn[data-view="strategy"]');
+    await page.waitForFunction(() => !(document.querySelector('#panel-strategy') as HTMLElement | null)?.hidden, undefined, { timeout: 8000 });
+  }
+
   it('E1 (empty-token first launch): settings auto-expanded + guide visible + data panels disabled + idle dot', async () => {
     const page = await freshPage(800);
     assert.equal(await page.$eval('#conn-settings', (el) => (el as HTMLDetailsElement).open), true, '连接设置自动展开（boot 源码语义①）');
@@ -157,7 +164,11 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     assert.ok(((await page.locator('#conn-dot').getAttribute('class')) ?? '').includes('idle'), '连接点=idle');
     const label = await page.locator('#conn-label').textContent();
     assert.equal(label, '未连接');
+    // P2：策略卡内容在 panel-strategy（默认总览视图下隐藏）——切视图后验空态指引
+    await page.click('#page-menu .menu-btn[data-view="strategy"]');
+    await page.waitForFunction(() => !(document.querySelector('#panel-strategy') as HTMLElement | null)?.hidden, undefined, { timeout: 8000 });
     assert.ok(await page.locator('#tc-empty-entries').isVisible(), '卡片空态指引可见=数据面板禁用态');
+    assert.ok(await page.$eval('#panel-strategy', (el) => (el as HTMLElement).classList.contains('disabled-panel')), '数据面板禁用态（disabled-panel 链在位）');
     await page.context().close();
   });
 
@@ -187,6 +198,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.fill('#adminToken', ADMIN_TOKEN);
     await page.click('#conn-save');
     await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 6000 });
+    await gotoStrategy(page); // P2：策略卡面在单页面板内
     await page.click('#tc-open-add');
     const subsets: Record<string, string[]> = CATALOG_SUBSETS;
     for (const [provider, expected] of Object.entries(subsets)) {
@@ -208,6 +220,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.fill('#adminToken', ADMIN_TOKEN);
     await page.click('#conn-save');
     await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 6000 });
+    await gotoStrategy(page); // P2：策略卡面在单页面板内
     await page.fill('#tc-conn', 'ste-gate-machine'); // 机器名称必填（保存前置校验，探针实证）
     await page.click('#tc-open-add');
     await page.fill('#tc-e-id', 'gate-ui-e2e');
@@ -298,6 +311,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.click('#conn-save', { timeout: 60_000 }); // LG-058 门审裁：click 30→60s（2x 封顶同护栏）
     // LG-058 门审附带发现授权：三参签名修正——{timeout:8000} 曾落 arg 位，实际 30s 默认限在跑（Timeout 30000ms 报错为证）；断言语义零变更
     await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), undefined, { timeout: 8000 });
+    await gotoStrategy(page); // P2：策略卡面在单页面板内
     await page.fill('#tc-conn', 'ste-machine-' + tag); // S10 必填：连接解禁后填（面板先禁用）
     await page.waitForTimeout(500); // settle initial card fetches (async re-render guard)
   }
@@ -417,6 +431,7 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
 
   it('W5 (⑤) v4: 域标签动态化（runtime-info 驱动）— 作用域小字随域显', async () => {
     const page = await freshPage();
+    await gotoStrategy(page); // P2：作用域小字随策略卡面板（innerText 不含 hidden 面板文本）
     const body = await page.evaluate(() => document.body.innerText);
     assert.ok(body.includes('以下策略应用于'), '作用域小字框架在位');
     assert.ok(body.includes('本地域'), '本地实例域标签=本地域（runtime-info 驱动动态值；sg 域部署时由 TRIMODEL_DOMAIN_LABEL 显 sg）');

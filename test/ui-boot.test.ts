@@ -310,13 +310,20 @@ describe('S8.2: jsdom 首启五断言', () => {
     retireUi(dom);
   });
 
-  it('断言⑤ TriMMC 卡片区域通道词汇+结构词汇零出现', () => {
+  it('断言⑤ 全文件通道词汇+结构词汇零出现（P2 四卡面扩全文件口径）+旧栏目名零出现', () => {
+    // P2 结构升级（LG-058）：旧断言按 slice 两锚取卡片区——四卡面重构后旧标记
+    // 双双退场，slice 退化空串=空转通过。升级为全文件扫描（含 script 段），
+    // 并锚定旧标记真实缺席（防断言口径再次空转）。
     const html = readFileSync(UI_PATH, 'utf-8');
-    const cardZone = html.slice(html.indexOf('【TriMMC 信息】'), html.indexOf('【本机策略（高级）】'));
     const banned = ['SSH', 'ssh', '隧道', 'tunnel', '候选池', '子栏', '固定规则', '规则表', '悬挂引用', '回显污染', '水合', '推送', '选为固定使用', '即生效'];
     for (const w of banned) {
-      assert.equal(cardZone.includes(w), false, `结构/通道词汇 '${w}' 禁入卡片区域`);
+      assert.equal(html.includes(w), false, `结构/通道词汇 '${w}' 禁入全文件`);
     }
+    // CPO P2 对表（cpo-p2-ia-conformance 实现注意点 3）：旧栏目名施工中零出现，
+    // 四卡正名结构替代；字面零出现含注释段（测试锚定）。
+    assert.equal(html.includes('TriMMC 信息'), false, '旧栏目名（TriMMC+信息 连字）禁再现');
+    assert.equal(html.includes('【TriMMC 信息】'), false, '旧 slice 锚点一已退场');
+    assert.equal(html.includes('【本机策略（高级）】'), false, '旧 slice 锚点二已退场');
   });
 
   it('D17: badge is server-confirmation bound - 401 keeps non-pending, 200 flips to pending', async () => {
