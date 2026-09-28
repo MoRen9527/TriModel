@@ -174,11 +174,18 @@ function candidateCardPaths(): string[] {
  * (rename-style, keys.enc family). Idempotent: skips when canonical exists or
  * legacy absent.
  */
-export function migrateLegacyDistCard(legacyOverride?: string, canonicalOverride?: string): { migrated: boolean; reason?: 'already-canonical' | 'no-legacy' } {
+export function migrateLegacyDistCard(legacyOverride?: string, canonicalOverride?: string): { migrated: boolean; reason?: 'already-canonical' | 'no-legacy' | 'disabled' } {
   const legacy = legacyOverride ?? legacyCardPath();
   const canonical = canonicalOverride ?? canonicalCardPath();
   if (existsSync(canonical)) return { migrated: false, reason: 'already-canonical' };
   if (!existsSync(legacy)) return { migrated: false, reason: 'no-legacy' };
+  // LG-058 族1 整改补丁（2026-09-28）：E2E 钉沙箱（TRIMODEL_CARD_FILE 指
+  // 沙箱路径）时 dist-adjacent 活卡会被本迁移 rename 进沙箱、随用后清理
+  // 连带丢失——真实事故 2026-09-28（活卡恢复自 09-27 备份）。test seam 开关：
+  // TRIMODEL_DISABLE_BOOT_MIGRATIONS=1 → skip（部署/boot 语义零变）。
+  if (process.env.TRIMODEL_DISABLE_BOOT_MIGRATIONS === '1') {
+    return { migrated: false, reason: 'disabled' };
+  }
   // D6 同族：目标目录首存自建（canonical 的父目录可能尚不存在）
   mkdirSync(dirname(canonical), { recursive: true });
   renameSync(legacy, canonical);

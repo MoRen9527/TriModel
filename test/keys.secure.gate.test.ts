@@ -164,6 +164,7 @@ describe('GATE S5 E2E: card-key live chain over real HTTP server (single boot)',
       TRIMODEL_API_TOKEN: API_TOKEN,
       TRIMODEL_ADMIN_TOKEN: ADMIN_TOKEN,
       TRIMODEL_CARD_FILE: CARD_FILE,
+      TRIMODEL_DISABLE_BOOT_MIGRATIONS: '1', // 族1 补丁:防 boot 链 migrate 把 dist-adjacent 活卡吸进沙箱
       TRIMODEL_DEFAULT_MODEL: 'deepseek-v4-pro', // pin baseline for transition asserts
       DEEPSEEK_API_KEY: ENV_KEY,
     };
