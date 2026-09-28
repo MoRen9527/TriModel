@@ -253,6 +253,10 @@ function legacyPoliciesDir(): string {
 /** Boot 迁移：legacy 位策略文件 → 规范位（逐文件 rename，规范位无同名时；幂等）。 */
 export function migrateLegacyPoliciesDir(): { migrated: string[] } {
   const migrated: string[] = [];
+  // 测试沙箱 seam（与 trimmc-card.ts 卡面迁移同族）：禁迁移时 boot 零触碰
+  // legacy/规范位文件——E2E 钉 TRIMODEL_POLICIES_DIR 后防生产 policies/* 被
+  // rename 进测试 workDir（族1 卡面盗取同型风险，2026-09-28 FSD 补）。
+  if (process.env.TRIMODEL_DISABLE_BOOT_MIGRATIONS === '1') return { migrated };
   const legacy = legacyPoliciesDir();
   const canonical = policiesDir();
   if (legacy === canonical || !existsSync(legacy)) return { migrated };
@@ -304,7 +308,9 @@ export function evaluateForMachine(machine: string, now: Date = new Date()): Pol
 }
 
 /** Boot one-shot migration: legacy repo-root policy.json → policies/local.json. */
-export function migrateLegacyPolicy(): { migrated: boolean; reason?: 'already-local' | 'no-legacy' | 'already-migrated' } {
+export function migrateLegacyPolicy(): { migrated: boolean; reason?: 'already-local' | 'no-legacy' | 'already-migrated' | 'disabled' } {
+  // 同上 seam：禁迁移防 repo 根 policy.json（生产态）被 rename 进测试钉位目录。
+  if (process.env.TRIMODEL_DISABLE_BOOT_MIGRATIONS === '1') return { migrated: false, reason: 'disabled' };
   const here = dirname(fileURLToPath(import.meta.url));
   const legacy = resolve(here, '..', 'policy.json');
   const local = policyPathForMachine(DEFAULT_MACHINE);

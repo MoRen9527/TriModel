@@ -10,7 +10,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync, copyFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import net from 'node:net';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
@@ -18,8 +18,9 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const POLICY_FILE = join(REPO_ROOT, 'policy.json');
-const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 runtime file
+// 策略面 belt 全撤（2026-09-28 FSD，cj5 第三起实证）：TRIMODEL_POLICIES_DIR
+// 沙箱钉位后仓根策略文件本套零接触——残留的 snap/rm/restore belt 在跨文件
+// 并发下只剩互踩破坏面（他套 restore 后被本套 snap=null→after rm 抹掉）。
 const TRANS_LOG = join(REPO_ROOT, 'model-transitions.jsonl'); // P2 runtime file: this suite's GETs record transitions
 const TOKEN = 'ste-gate-token';
 
@@ -27,11 +28,7 @@ let server: ChildProcess | null = null;
 let poller: ChildProcess | null = null;
 let port = 0;
 let workDir = '';
-let snapshot: string | null = null; // prior policy.json content (null = absent)
-let snapLocal: string | null = null; // S11 policies/local.json
 let savedDefaultModel: string | undefined; // 环境隔离：TRIMODEL_DEFAULT_MODEL 现势摘除前值
-let cardStash: string | null = null; // 卡面隔离：repo 根真卡 stash 路径（null=原无卡）
-const CARD_FILE_REPO = join(REPO_ROOT, 'trimmc-card.json');
 let snapLog: string | null = null; // prior model-transitions.jsonl content (null = absent)
 
 interface PollEvent { type: string; defaultModel?: string; envModel?: string; error?: string }
@@ -76,6 +73,12 @@ function bootServer(p: number): ChildProcess {
   // 卡面隔离（2026-09-14）：server main 注册卡默认层（registerCardDefaultModelFn
   // → loadCard → cwd 卡）——本机现役卡 default_model 会盖过「env 出厂默认」断言。
   env.TRIMODEL_CARD_FILE = join(workDir, 'gate-no-card.json');
+  // 策略面沙箱（2026-09-28 FSD，族1 同型整改）：node:test 默认跨文件并发——
+  // 本套件与 ui/keys 两 E2E 同抢仓根 policy.json/policies/（E4 读到他套
+  // deepseek-flash 写入、L3-R1 重启读盘被他套 before 清空双实证）→ 钉独立
+  // policies 位+禁 boot 迁移（防钉位后 boot 把生产策略 rename 进沙箱）。
+  env.TRIMODEL_POLICIES_DIR = join(workDir, 'policies');
+  env.TRIMODEL_DISABLE_BOOT_MIGRATIONS = '1';
   return spawn(process.execPath, ['--import', 'tsx', join('src', 'server.ts')], {
     cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -157,17 +160,12 @@ describe('GATE L3+anchor③: E2E full chain + daemon real-chain poll (single lif
     // 测试进程+poller 子进程（继承 process.env）一并摘除，出厂默认单源。
     savedDefaultModel = process.env.TRIMODEL_DEFAULT_MODEL;
     delete process.env.TRIMODEL_DEFAULT_MODEL;
-    snapshot = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
-    snapLocal = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
     snapLog = existsSync(TRANS_LOG) ? readFileSync(TRANS_LOG, 'utf-8') : null;
-    // 卡面隔离（2026-09-14 补强）：server main 的 migrateLegacyDistCard 会把
-    // legacy 邻接位（tsx 下=repo 根真卡）rename 到 canonical——先主动搬开真卡
-    // （stash 于 workDir），server 卡层（TRIMODEL_CARD_FILE 钉不存在路径）恒
-    // null，after 原样放回。防真卡被测试搬走/被 v4 迁移改写。
-    cardStash = existsSync(CARD_FILE_REPO) ? join(mkdtempSync(join(tmpdir(), 'ste-gate-card-')), 'trimmc-card.json') : null;
-    if (cardStash) { copyFileSync(CARD_FILE_REPO, cardStash); rmSync(CARD_FILE_REPO); } // EXDEV：跨盘 rename 拒，copy+rm
-    rmSync(POLICY_FILE, { force: true });
-    rmSync(POLICY_LOCAL, { force: true }); // deterministic init: pre-policy env default
+    // 卡/策略面隔离（2026-09-28 FSD 升级）：旧形态=真卡+仓根策略 stash→rm→
+    // after 放回——跨文件并发下 belt 互踩（2026-09-28 三起实证：卡两起+策略
+    // 一起）。现 bootServer 已钉 TRIMODEL_CARD_FILE+TRIMODEL_POLICIES_DIR 沙
+    // 箱+TRIMODEL_DISABLE_BOOT_MIGRATIONS=1（迁移不再触碰仓根），belt 全撤=
+    // 仓根活卡/活策略零触碰；deterministic init 由空沙箱目录天然提供。
     rmSync(TRANS_LOG, { force: true });
     workDir = mkdtempSync(join(tmpdir(), 'ste-gate-'));
     port = await freePort();
@@ -230,15 +228,11 @@ setInterval(() => {}, 1000); // stay alive; parent kills after collecting events
 
   after(() => {
     if (savedDefaultModel === undefined) delete process.env.TRIMODEL_DEFAULT_MODEL; else process.env.TRIMODEL_DEFAULT_MODEL = savedDefaultModel;
-    if (cardStash) { try { copyFileSync(cardStash, CARD_FILE_REPO); } catch { /* stash restore best-effort */ } }
     killChild(poller);
     killChild(server);
     rmSync(workDir, { recursive: true, force: true });
     // snapshot-restore protocol: leave repo root exactly as found
-    if (snapshot === null) rmSync(POLICY_FILE, { force: true });
-    else writeFileSync(POLICY_FILE, snapshot, 'utf-8');
-    if (snapLocal === null) rmSync(POLICY_LOCAL, { force: true });
-    else writeFileSync(POLICY_LOCAL, snapLocal, 'utf-8');
+    // （策略面 belt 已撤——沙箱钉位后仓根策略零接触，见 before 注）
     if (snapLog === null) rmSync(TRANS_LOG, { force: true });
     else writeFileSync(TRANS_LOG, snapLog, 'utf-8');
   });

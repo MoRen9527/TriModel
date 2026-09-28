@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'path';
 import { dispatch } from '../src/api/routes.js';
 import { handleGetTrimmcCard } from '../src/api/trimmc-card.js';
+import { effectiveModel } from '../src/policy.js';
 import { FACES, FACE_IDS, ATTRIBUTION_CODES, isRegisteredFace, faceCardPath, readFaceLedger, faceEventsPath } from '../src/card-faces.js';
 import { buildEntry, emptyCard, saveCard, setActiveStrategy, upsertStrategy } from '../src/trimmc-card.js';
 import type { TrimmcCardDocument } from '../src/trimmc-card.js';
@@ -200,10 +201,17 @@ describe('LG-058 pull view', () => {
       pinEnv('TRIMODEL_FACE_TOKENS', undefined);
     }
   });
-  it('卡缺席=200 card_present:false（404 语义专留 face 不在册）', async () => {
+  it('卡缺席=200 card_present:false；default_model=评估序投影照附（daemon 模型维中继）', async () => {
     const r = await req('GET', '/v1/config/cards/rmc?view=pull', `Bearer ${API_TOKEN}`);
     assert.equal(r.statusCode, 200);
-    assert.equal((r.body as { card_present: boolean }).card_present, false);
+    const body = r.body as { card_present: boolean; default_model: string; default_model_source: string; refresh_interval_s: number; entries: Record<string, unknown> };
+    assert.equal(body.card_present, false);
+    // 单真源对表（L32 基线：载荷 default_model=评估序投影，非卡静态值；
+    // 生产 policy.json 在场也不破断言）
+    assert.equal(body.default_model, effectiveModel().model);
+    assert.equal(body.default_model_source, effectiveModel().source);
+    assert.ok(Number.isFinite(body.refresh_interval_s) && body.refresh_interval_s > 0);
+    assert.deepEqual(body.entries, {});
   });
   it('卡在：受控载荷=启用条目明文+default_model+策略摘要；禁用条目不进载荷', async () => {
     const cardPath = seedCard('rlc');
@@ -213,12 +221,16 @@ describe('LG-058 pull view', () => {
 
     const r = await req('GET', '/v1/config/cards/rlc?view=pull', `Bearer ${API_TOKEN}`);
     assert.equal(r.statusCode, 200);
-    const body = r.body as { card_present: boolean; entries: Record<string, { api_key: string }>; default_model: string | null; strategy: { id: string; name: string } | null; warnings: string[] };
+    const body = r.body as { card_present: boolean; entries: Record<string, { api_key: string }>; default_model: string; default_model_source: string; refresh_interval_s: number; strategy: { id: string; name: string } | null; warnings: string[] };
     assert.equal(body.card_present, true);
     assert.ok(body.entries['e1'], '启用条目在载荷');
     assert.equal(body.entries['e1'].api_key, 'sk-test-sandbox-key-000000'); // 明文仅响应生命周期
     assert.equal(body.entries['e2'], undefined, '禁用条目不进载荷');
-    assert.equal(body.default_model, 'deepseek-v4-pro');
+    // default_model=评估序投影（卡在分支同基线；卡 default_model 经评估序中
+    // 间层仍可达——窗口未命中时 source=card-default）
+    assert.equal(body.default_model, effectiveModel().model);
+    assert.equal(body.default_model_source, effectiveModel().source);
+    assert.ok(Number.isFinite(body.refresh_interval_s) && body.refresh_interval_s > 0);
     assert.equal(body.strategy?.id, 's1');
     assert.equal(body.strategy?.name, '沙箱策略');
   });
@@ -328,6 +340,22 @@ describe('LG-058 status/apply audit + ledger sync', () => {
     const r = await req('POST', '/v1/config/cards/rlc/apply', `Bearer ${ADMIN}`);
     assert.equal(r.statusCode, 200);
     assert.ok(readEvents().some((e) => e.etype === 'apply' && e.face === 'rlc' && e.result === 'ok'));
+  });
+  it('CTO 裁1(甲)：status 非 200（401 错令牌）→ denied 审计行（鉴权拒=写面安全事件）', async () => {
+    seedCard('mlc');
+    const before = readEvents().filter((e) => e.etype === 'status' && e.face === 'mlc').length;
+    const r = await req('PUT', '/v1/config/cards/mlc/status', 'Bearer wrong-token', JSON.stringify({ state: 'applied' }));
+    assert.equal(r.statusCode, 401);
+    const denied = readEvents().filter((e) => e.etype === 'status' && e.face === 'mlc').slice(before);
+    assert.equal(denied.length, 1, 'denied 行恰好一条');
+    assert.equal(denied[0].result, 'denied');
+    assert.equal(denied[0].reason, 'admin_auth');
+  });
+  it('CTO 裁1(甲)：apply 非 200（401）→ denied 审计行；业务 4xx（400 路径）→ failed 映射', async () => {
+    seedCard('rmc');
+    const r = await req('POST', '/v1/config/cards/rmc/apply', 'Bearer wrong-token');
+    assert.equal(r.statusCode, 401);
+    assert.ok(readEvents().some((e) => e.etype === 'apply' && e.face === 'rmc' && e.result === 'denied' && e.reason === 'admin_auth'));
   });
   it('face-events 全账 len-only 值面扫描（A2 前置自证）', () => {
     const hits = scanLenOnly(readEvents());

@@ -8,7 +8,8 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http, { createServer, type Server, type IncomingMessage } from 'node:http';
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { createProxyServer } from '../src/proxy-server.js';
@@ -16,8 +17,9 @@ import { rewriteMessagesBody } from '../src/anthropic-proxy.js';
 import type { PolicyShape } from '../src/policy.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const POLICY_FILE = join(REPO_ROOT, 'policy.json');
-const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 read path
+// 策略面 belt 全撤（2026-09-28 FSD，cj5 第三起实证）：本套 in-process proxy
+// 的 evaluateForMachine 逐调用读 policiesDir()（TRIMODEL_POLICIES_DIR 沙箱即
+// 钉）——仓根策略文件零接触，残留 belt 跨文件并发下只剩互踩破坏面。
 const DS_KEY = 'sk-gate-deepseek-sentinel';
 const GLM_KEY = 'sk-gate-glm-sentinel';
 const TMV_KEY = 'sk-gate-tmv-sentinel';
@@ -26,8 +28,7 @@ let proxy: Server | null = null;
 let mock: Server | null = null;
 let proxyPort = 0;
 let mockPort = 0;
-let policySnap: string | null = null;
-let policyLocalSnap: string | null = null; // S11 read path: policies/local.json
+let policyDirSandbox = ''; // 策略面沙箱位（before 钉 TRIMODEL_POLICIES_DIR；after 清）
 const savedEnv: Record<string, string | undefined> = {};
 
 interface CapturedRequest { headers: IncomingMessage['headers']; body: string; at: number }
@@ -98,10 +99,13 @@ function get(path: string): Promise<{ status: number; text: string }> {
 
 describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
   before(async () => {
-    policySnap = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
-    policyLocalSnap = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
-    rmSync(POLICY_FILE, { force: true }); // deterministic: env-default routing
-    rmSync(POLICY_LOCAL, { force: true }); // S11: stray applied policy would override env pin
+    // 策略面沙箱（2026-09-28 FSD，族1 同型整改）：in-process proxy 的
+    // evaluateForMachine 逐调用读 policiesDir()（env 即钉）——钉独立位后
+    // 跨文件并发下他套对仓根策略文件的写删不再穿透本套件（G2 实证：
+    // gate-e2e 活窗残留把 502 防御案改写成 200）；deterministic init 由
+    // 空沙箱目录天然提供（env-default 路由）。
+    policyDirSandbox = mkdtempSync(join(tmpdir(), 'ste-proxy-pol-'));
+    setEnv('TRIMODEL_POLICIES_DIR', policyDirSandbox);
     setEnv('TRIMODEL_CARD_FILE', join(REPO_ROOT, '.gate-no-card.json')); // 卡优先解析隔离：本机现役卡不穿透（不存在路径=卡面恒空）
     setEnv('DEEPSEEK_API_KEY', DS_KEY);
     setEnv('GLM_API_KEY', GLM_KEY);
@@ -154,10 +158,7 @@ describe('GATE P3-sg: 3334 rewriting proxy (in-process dual server)', () => {
   after(() => {
     proxy?.close();
     mock?.close();
-    if (policySnap === null) rmSync(POLICY_FILE, { force: true });
-    else writeFileSync(POLICY_FILE, policySnap, 'utf-8');
-    if (policyLocalSnap === null) rmSync(POLICY_LOCAL, { force: true });
-    else writeFileSync(POLICY_LOCAL, policyLocalSnap, 'utf-8');
+    rmSync(policyDirSandbox, { recursive: true, force: true }); // 策略沙箱随套件清
     for (const [name, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;

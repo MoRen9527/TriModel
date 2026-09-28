@@ -125,7 +125,11 @@ export interface FaceEvent {
   etype: FaceEventType;
   result: 'ok' | 'denied' | 'failed';
   detail: string;
-  reason?: AttributionCode;
+  // CTO 裁 1(甲)（de6d49f8）：reason 放宽为自由说明域——pull 域语义值仍是
+  // 三归因码枚举（AttributionCode/ATTRIBUTION_CODES 单源承载）；写面审计
+  // （status/apply 非 200）新增 'admin_auth' / `http_<code>` 值。`(string & {})`
+  // 保枚举成员 IDE 提示不塌缩为 string。len-only 纪律不变。
+  reason?: AttributionCode | (string & {});
 }
 
 export function faceEventsPath(): string {

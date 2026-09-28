@@ -114,12 +114,17 @@ describe('LG-058 STE 增补案：pull 坏密文条目（decrypt_failed 行为面
 });
 
 describe('LG-058 STE 增补案：apply 无卡（apply_rejected 行为面）', () => {
-  it('卡缺席 apply：404+零 apply 审计行（现势无 apply_rejected 事件）', async () => {
+  it('卡缺席 apply：404+恰一条 failed 审计行（CTO 裁1(甲) de6d49f8：非 200 补 emit）', async () => {
+    // 断言随裁更新（本文件 L10 预授权：断言随裁更新）——裁1(甲) 落地后
+    // apply 非 200 必落审计行（wrapper 鉴权拒=denied/admin_auth；delegate 非 200
+    // 如 404 无卡=failed/http_<code>）；apply_rejected 归因码仍留 daemon 侧
+    // apply 路径语义（server 侧 404 用 http_404，不冒用归因码）。
     const before = readEvents().filter((e) => e.etype === 'apply').length;
     const r = await req('POST', '/v1/config/cards/rlc/apply', `Bearer ${ADMIN}`);
     assert.equal(r.statusCode, 404);
-    const afterN = readEvents().filter((e) => e.etype === 'apply').length;
-    assert.equal(afterN, before, 'apply 失败不落审计行');
-    assert.ok(!readEvents().some((e) => e.reason === 'apply_rejected'), '现势无 apply_rejected 事件（emit 点缺——§九 对表发现固化）');
+    const rows = readEvents().filter((e) => e.etype === 'apply').slice(before);
+    assert.equal(rows.length, 1, 'apply 非 200 恰补一条审计行（裁1(甲)）');
+    assert.equal(rows[0].result, 'failed');
+    assert.equal(rows[0].reason, 'http_404');
   });
 });

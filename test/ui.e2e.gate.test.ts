@@ -8,7 +8,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, rmSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'path';
@@ -19,9 +19,7 @@ import type { Browser, Page } from 'playwright-core';
 const pw = await import('playwright-core').then((m) => m).catch(() => null);
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const POLICY_FILE = join(REPO_ROOT, 'policy.json');
-const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 runtime file
-const CARD_FILE = join(REPO_ROOT, 'trimmc-card.json'); // E4 writes it via 保存卡片
+let CARD_FILE = ''; // 卡面沙箱位（before 钉 workDir；bootServer env 同源）——仓根活卡零触碰（2026-09-28 FSD 族1 同型整改）
 const API_TOKEN = 'ste-gate-token';
 const ADMIN_TOKEN = 'ste-admin-token';
 const CATALOG_SUBSETS: Record<string, string[]> = {
@@ -60,11 +58,13 @@ const SKIP_REASON = !pw
     : `SKIP (env-gate): chromium unavailable — tried TRIMODEL_E2E_CHROMIUM override then ${join(process.env.LOCALAPPDATA ?? '<LOCALAPPDATA unset>', 'ms-playwright')}/chromium-*/chrome-win(64)/chrome.exe; install via npx playwright install chromium`;
 
 let server: ChildProcess | null = null;
-let snapLocal: string | null = null; // S11 policies/local.json
 let browser: Browser | null = null;
 let port = 0;
 let workDir = '';
-const snap = { policy: null as string | null, card: null as string | null, local: null as string | null };
+// 策略面 belt 全撤（2026-09-28 FSD，cj5 第三起实证）：TRIMODEL_POLICIES_DIR
+// 沙箱钉位后仓根策略文件本套零接触——残留 belt 跨文件并发下只剩互踩破坏面
+// （他套 restore 后被本套 snap=null→after rm 抹掉=今日活策略删除根因）。
+// 卡面 belt 同前撤（L127-129 注）。
 
 function freePort(): Promise<number> {
   return new Promise((resolveP, reject) => {
@@ -88,6 +88,12 @@ function bootServer(withAdmin: boolean): ChildProcess {
   delete env.TRIMODEL_HOST;
   if (withAdmin) env.TRIMODEL_ADMIN_TOKEN = ADMIN_TOKEN;
   else delete env.TRIMODEL_ADMIN_TOKEN;
+  // 策略面沙箱（2026-09-28 FSD，族1 同型整改）：跨文件并发下与 policy/keys
+  // E2E 同抢仓根策略文件（E4 读到他套写入实证）→ 钉独立 policies 位+禁 boot
+  // 迁移（防生产策略被 rename 进沙箱）。
+  env.TRIMODEL_POLICIES_DIR = join(workDir, 'policies');
+  env.TRIMODEL_DISABLE_BOOT_MIGRATIONS = '1';
+  env.TRIMODEL_CARD_FILE = CARD_FILE; // 卡面沙箱：写面落 workDir，仓根活卡零触碰
   return spawn(process.execPath, ['--import', 'tsx', join('src', 'server.ts')], {
     cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -113,13 +119,11 @@ async function waitHealth(timeoutMs = 10000): Promise<void> {
 
 describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP_REASON }, () => {
   before(async () => {
-    snap.policy = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
-    snapLocal = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
-    snap.card = existsSync(CARD_FILE) ? readFileSync(CARD_FILE, 'utf-8') : null;
-    rmSync(POLICY_FILE, { force: true });
-    rmSync(POLICY_LOCAL, { force: true });
-    rmSync(CARD_FILE, { force: true });
     workDir = mkdtempSync(join(tmpdir(), 'ste-ui-e2e-'));
+    // 卡面沙箱（2026-09-28 FSD，族1 同型整改·第三起）：卡 stash/restore belt
+    // 跨文件并发互踩（他套放回后被本套 snap=null→after rm 抹掉实证）→ 卡读写
+    // 全钉 workDir+禁 boot 迁移，仓根活卡零触碰（belt 全撤）。
+    CARD_FILE = join(workDir, 'trimmc-card.json');
     port = await freePort();
     server = bootServer(false); // phase 1: E1 first-launch (empty-token) surface
     await waitHealth();
@@ -132,12 +136,6 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await browser?.close();
     await killAndWait(server);
     rmSync(workDir, { recursive: true, force: true });
-    if (snap.policy === null) rmSync(POLICY_FILE, { force: true });
-    else writeFileSync(POLICY_FILE, snap.policy, 'utf-8');
-    if (snapLocal === null) rmSync(POLICY_LOCAL, { force: true });
-    else writeFileSync(POLICY_LOCAL, snapLocal, 'utf-8');
-    if (snap.card === null) rmSync(CARD_FILE, { force: true });
-    else writeFileSync(CARD_FILE, snap.card, 'utf-8');
   });
 
   async function freshPage(waitMs = 600): Promise<Page> {

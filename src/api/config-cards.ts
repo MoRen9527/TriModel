@@ -18,6 +18,7 @@
 import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, handleApplyStrategy } from './trimmc-card.js';
 import { loadCard } from '../trimmc-card.js';
 import { decrypt } from '../security/key-encryptor.js';
+import { effectiveModel } from '../policy.js';
 import { FACES, isRegisteredFace, faceCardPath, readFaceLedger, updateFaceLedger, appendFaceEvent } from '../card-faces.js';
 import type { FaceId } from '../card-faces.js';
 
@@ -71,6 +72,11 @@ export function pullOriginFrom(remoteAddress: string | undefined): 'loopback' | 
   return a === '127.0.0.1' || a === '::1' ? 'loopback' : 'remote';
 }
 
+/** pull 载荷刷新间隔（keys 端点同源表达式 keys.ts L43；函数级读=测试可钉）。 */
+function pullRefreshIntervalS(): number {
+  return Number(process.env.TRIMODEL_KEY_REFRESH_INTERVAL_S ?? 900);
+}
+
 export interface PullRequestOrigin {
   remoteAddress?: string;
 }
@@ -107,13 +113,23 @@ export function handleGetConfigCard(
   }
   const from = pullOriginFrom(origin?.remoteAddress);
   const doc = loadCard(faceCardPath(face));
+  // default_model=评估序投影（方案 L32 基线「窗口命中→卡 default_model→env」
+  // 本方案不改此语义）——daemon 侧策略跟随（STE gate anchor③）依赖此投影，
+  // 非卡静态值；source 随载荷附（§3.2 生效读数归因）。凭据维仍纯卡面。
+  const eff = effectiveModel();
   if (!doc) {
-    // 在册 face 无卡：200+card_present=false（404 语义专留 face 不在册；daemon 据此落梯）
+    // 在册 face 无卡：200+card_present=false（404 语义专留 face 不在册；
+    // default_model 投影照附——daemon 模型维中继不受卡缺席影响，凭据空缺）
     appendFaceEvent({ face, etype: 'pull', result: 'ok', detail: 'pull served, card absent' });
     updateFaceLedger(face, { last_pull_at: new Date().toISOString(), last_pull_from: from, last_pull_result: 'ok' });
     return {
       statusCode: 200,
-      body: { object: 'config.card-pull', face, card_present: false, default_model: null, entries: {}, strategy: null, warnings: [] },
+      body: {
+        object: 'config.card-pull', face, card_present: false,
+        default_model: eff.model, default_model_source: eff.source,
+        entries: {}, strategy: null, warnings: [],
+        refresh_interval_s: pullRefreshIntervalS(),
+      },
     };
   }
   // server 域内解密（§三：拉取流永不传输 at-rest 密文文件，只传受控载荷；
@@ -155,10 +171,12 @@ export function handleGetConfigCard(
       object: 'config.card-pull',
       face,
       card_present: true,
-      default_model: doc.default_model ?? null,
+      default_model: eff.model,
+      default_model_source: eff.source,
       entries,
       strategy: active ? { id: activeId, name: active.name, rule_ids: active.rule_ids } : null,
       warnings,
+      refresh_interval_s: pullRefreshIntervalS(),
     },
   };
 }
@@ -181,7 +199,14 @@ export function handlePutConfigCardStatus(authHeader: string | undefined, face: 
     return { statusCode: 404, body: { error: 'Not found', path: `/v1/config/cards/${face}/status` } };
   }
   const authError = requireAdmin(authHeader);
-  if (authError) return authError;
+  if (authError) {
+    // CTO 裁 1(甲)：wrapper 层鉴权拒 emit——401/403=写面安全事件记 denied
+    // （503=admin 未配置常态禁用，不记防刷账）；len-only。
+    if (authError.statusCode === 401 || authError.statusCode === 403) {
+      appendFaceEvent({ face, etype: 'status', result: 'denied', reason: 'admin_auth', detail: 'status write-back rejected (admin auth)' });
+    }
+    return authError;
+  }
   const result = handlePutTrimmcCardStatus(authHeader, rawBody, { cardPath: faceCardPath(face) });
   if (result.statusCode === 200) {
     const body = result.body as { status?: { state?: string } };
@@ -190,6 +215,17 @@ export function handlePutConfigCardStatus(authHeader: string | undefined, face: 
     if (state === 'applied' || state === 'failed') {
       updateFaceLedger(face, { applied_state: state });
     }
+  } else {
+    // CTO 裁 1(甲)（de6d49f8）：非 200 补 emit——鉴权拒（401/403/503）=写面
+    // 安全事件记 denied，其余记 failed（len-only，detail 仅状态码与原因域）。
+    const denied = result.statusCode === 401 || result.statusCode === 403 || result.statusCode === 503;
+    appendFaceEvent({
+      face,
+      etype: 'status',
+      result: denied ? 'denied' : 'failed',
+      reason: denied ? 'admin_auth' : `http_${result.statusCode}`,
+      detail: `status write-back rejected http=${result.statusCode}`,
+    });
   }
   return result;
 }
@@ -201,7 +237,13 @@ export function handlePostConfigCardApply(authHeader: string | undefined, face: 
     return { statusCode: 404, body: { error: 'Not found', path: `/v1/config/cards/${face}/apply` } };
   }
   const authError = requireAdmin(authHeader);
-  if (authError) return authError;
+  if (authError) {
+    // CTO 裁 1(甲)：wrapper 层鉴权拒 emit（同 status：401/403 记 denied，503 不记）
+    if (authError.statusCode === 401 || authError.statusCode === 403) {
+      appendFaceEvent({ face, etype: 'apply', result: 'denied', reason: 'admin_auth', detail: 'apply rejected (admin auth)' });
+    }
+    return authError;
+  }
   const result = handleApplyStrategy(authHeader, { cardPath: faceCardPath(face) });
   if (result.statusCode === 200) {
     const body = result.body as { applied?: { strategy_id?: string; schedules?: number } };
@@ -210,6 +252,16 @@ export function handlePostConfigCardApply(authHeader: string | undefined, face: 
       etype: 'apply',
       result: 'ok',
       detail: `applied strategy=${body.applied?.strategy_id ?? 'unknown'} schedules=${body.applied?.schedules ?? 0}`,
+    });
+  } else {
+    // CTO 裁 1(甲)（de6d49f8）：非 200 补 emit（与 status 同映射：鉴权拒=denied）
+    const denied = result.statusCode === 401 || result.statusCode === 403 || result.statusCode === 503;
+    appendFaceEvent({
+      face,
+      etype: 'apply',
+      result: denied ? 'denied' : 'failed',
+      reason: denied ? 'admin_auth' : `http_${result.statusCode}`,
+      detail: `apply rejected http=${result.statusCode}`,
     });
   }
   return result;

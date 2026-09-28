@@ -18,8 +18,9 @@ import { handlePutTrimmcCard } from '../src/api/trimmc-card.js';
 import { emptyCard } from '../src/trimmc-card.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const POLICY_FILE = join(REPO_ROOT, 'policy.json');
-const POLICY_LOCAL = join(REPO_ROOT, 'policies', 'local.json'); // S11 runtime file
+// 策略面 belt 全撤（2026-09-28 FSD，cj5 第三起实证）：TRIMODEL_POLICIES_DIR
+// 沙箱钉位后仓根策略文件本套零接触——残留 belt 跨文件并发下只剩互踩破坏面。
+// TRANS_LOG（model-transitions.jsonl）belt 保留：跃迁记录仍落仓根且唯本套触碰。
 // LG-058 族1 整改（CTO 裁定 a52ae33d）：E2E spawn 改 TRIMODEL_CARD_FILE 钉
 // 沙箱——canonical 活卡零接触（旧形态：before 删仓根活卡+after 回写=守卫时代
 // 每跑必留 bak）。CARD_FILE 运行时指向钉位路径（before 赋值）。
@@ -31,10 +32,9 @@ const ENV_KEY = 'sk-env-deepseek-base-value';
 const CARD_KEY = 'sk-gate-card-value-4242';
 
 let server: ChildProcess | null = null;
-let snapLocal: string | null = null; // S11 policies/local.json
+let snapLog: string | null = null; // prior model-transitions.jsonl content (null = absent)
 let port = 0;
 let workDir = '';
-const snap = { policy: null as string | null, log: null as string | null, local: null as string | null };
 
 function freePort(): Promise<number> {
   return new Promise((resolveP, reject) => {
@@ -147,11 +147,7 @@ describe('GATE S5 in-process: secure write plane retired (410) + card three-stat
 
 describe('GATE S5 E2E: card-key live chain over real HTTP server (single boot)', () => {
   before(async () => {
-    snap.policy = existsSync(POLICY_FILE) ? readFileSync(POLICY_FILE, 'utf-8') : null;
-    snapLocal = existsSync(POLICY_LOCAL) ? readFileSync(POLICY_LOCAL, 'utf-8') : null;
-    snap.log = existsSync(TRANS_LOG) ? readFileSync(TRANS_LOG, 'utf-8') : null;
-    rmSync(POLICY_FILE, { force: true });
-    rmSync(POLICY_LOCAL, { force: true });
+    snapLog = existsSync(TRANS_LOG) ? readFileSync(TRANS_LOG, 'utf-8') : null;
     rmSync(TRANS_LOG, { force: true });
     // 族1 整改注：workDir 须与仓同盘——boot 链 migrateLegacyDistCard 对
     // dist-adjacent 活卡走 rename 到 canonical 钉位，跨盘 rename=EXDEV。
@@ -165,6 +161,8 @@ describe('GATE S5 E2E: card-key live chain over real HTTP server (single boot)',
       TRIMODEL_ADMIN_TOKEN: ADMIN_TOKEN,
       TRIMODEL_CARD_FILE: CARD_FILE,
       TRIMODEL_DISABLE_BOOT_MIGRATIONS: '1', // 族1 补丁:防 boot 链 migrate 把 dist-adjacent 活卡吸进沙箱
+      TRIMODEL_POLICIES_DIR: join(workDir, 'policies'), // 策略面沙箱(2026-09-28 FSD):跨文件并发防与他套同抢仓根策略文件
+      // (禁迁移已含上行走卡 seam;policy 双迁移同 seam 门在 src/policy.ts)
       TRIMODEL_DEFAULT_MODEL: 'deepseek-v4-pro', // pin baseline for transition asserts
       DEEPSEEK_API_KEY: ENV_KEY,
     };
@@ -177,12 +175,8 @@ describe('GATE S5 E2E: card-key live chain over real HTTP server (single boot)',
   after(async () => {
     await killAndWait(server);
     rmSync(workDir, { recursive: true, force: true }); // 钉位卡随 workDir 一并清
-    if (snap.policy === null) rmSync(POLICY_FILE, { force: true });
-    else writeFileSync(POLICY_FILE, snap.policy, 'utf-8');
-    if (snapLocal === null) rmSync(POLICY_LOCAL, { force: true });
-    else writeFileSync(POLICY_LOCAL, snapLocal, 'utf-8');
-    if (snap.log === null) rmSync(TRANS_LOG, { force: true });
-    else writeFileSync(TRANS_LOG, snap.log, 'utf-8');
+    if (snapLog === null) rmSync(TRANS_LOG, { force: true });
+    else writeFileSync(TRANS_LOG, snapLog, 'utf-8');
   });
 
   it('E2E-410 + no-read-back: retired PUT answers 410 with 人话; GET secure stays 404', async () => {
