@@ -333,15 +333,56 @@ describe('LG-058 card write guard (saveCard engine-level)', () => {
   });
 });
 
-// ── 别名等价（A1 双证②：别名↔泛化 managed 逐字段等价；同卡 cardPath 注入）──
+// ── 别名等价（A1 双证②：别名↔泛化 managed 等价；同卡 cardPath 注入）──
+// P2 随批 additive（CTO 裁 facc0989）后语义收窄为「别名字段集 ⊂ 泛化 body」：
+// 泛化 managed 200 = 别名 body 原样 + face + ledger（契约内字段非新增语义）。
 
 describe('LG-058 alias equivalence', () => {
-  it('同卡态：别名 handler 与 /v1/config/cards/mmc?view=managed 响应逐字段等价', async () => {
+  it('同卡态：别名 handler body 逐字段等于泛化 managed body（泛化=别名+face+ledger 投影）', async () => {
     const cardPath = seedCard('mmc');
     const alias = handleGetTrimmcCard(`Bearer ${ADMIN}`, { cardPath }); // cardPath 注入=同一物理卡（沙箱）
     const gen = await req('GET', '/v1/config/cards/mmc?view=managed', `Bearer ${ADMIN}`);
     assert.equal(gen.statusCode, 200);
-    assert.deepEqual(gen.body, alias.body, '逐字段等价');
+    const genBody = gen.body as Record<string, unknown>;
+    // additive 增量面恰为两字段（禁夹带）
+    assert.deepEqual(Object.keys(genBody).filter((k) => !(k in (alias.body as object))), ['face', 'ledger']);
+    assert.equal(genBody.face, 'mmc');
+    // 别名既有字段逐字段等价（additive 零改写）
+    for (const [k, v] of Object.entries(alias.body)) {
+      assert.deepEqual((genBody as Record<string, unknown>)[k], v, `field ${k}`);
+    }
+    // ledger 投影=readFaceLedger() 原样快照
+    assert.deepEqual(genBody.ledger, readFaceLedger());
+  });
+});
+
+// ── managed face+ledger 投影（P2 随批 additive，CTO 裁 facc0989；§2.2 L67/L167）──
+
+describe('LG-058 P2 managed face+ledger projection', () => {
+  it('managed 200：face 字段=路径 face（mlc≠mmc）+ledger 摘要可读（UI 拉取状态区数据源）', async () => {
+    seedCard('mlc');
+    const gen = await req('GET', '/v1/config/cards/mlc?view=managed', `Bearer ${ADMIN}`);
+    assert.equal(gen.statusCode, 200);
+    const body = gen.body as { face?: string; ledger?: { faces: Record<string, { applied_state: string | null }> } };
+    assert.equal(body.face, 'mlc');
+    assert.ok(body.ledger && typeof body.ledger.faces === 'object', 'ledger 摘要在 body');
+  });
+  it('status 回写后 managed.ledger 反映 applied_state（台账接线闭环；raw face-events 不进 body）', async () => {
+    seedCard('rlc');
+    await req('PUT', '/v1/config/cards/rlc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'applied' }));
+    const gen = await req('GET', '/v1/config/cards/rlc?view=managed', `Bearer ${ADMIN}`);
+    assert.equal(gen.statusCode, 200);
+    const body = gen.body as { face: string; ledger: { faces: Record<string, { applied_state: string | null }> }; events?: unknown };
+    assert.equal(body.face, 'rlc');
+    assert.equal(body.ledger.faces.rlc?.applied_state, 'applied');
+    assert.equal('events' in body, false, 'raw face-events 审计账不进 managed body（红线②）');
+  });
+  it('守卫路径零动：401 响应体不带 face/ledger（additive 只落 200 分支）', async () => {
+    const r = await req('GET', '/v1/config/cards/mmc?view=managed', 'Bearer wrong');
+    assert.equal(r.statusCode, 401);
+    const body = r.body as Record<string, unknown>;
+    assert.equal('face' in body, false);
+    assert.equal('ledger' in body, false);
   });
 });
 

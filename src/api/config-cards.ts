@@ -100,8 +100,15 @@ export function handleGetConfigCard(
   if (view === 'managed') {
     const authError = requireAdmin(authHeader);
     if (authError) return authError;
-    // 委托现役 handler（body 原样返回；face=mmc 时与别名端点逐字段等价）。
-    return handleGetTrimmcCard(authHeader, { cardPath: faceCardPath(face) });
+    // 委托现役 handler。CTO 裁（facc0989，P2 随批 additive）：§2.2 契约 L67/L167
+    // 台账字段接线——200 成功分支 body 扩展 face+ledger 摘要；401/404 守卫路径
+    // 零动（G9 additive 同族）。红线②：raw face-events 审计账不进 body（UI 审计
+    // 行只消费 ledger 摘要面）。
+    const result = handleGetTrimmcCard(authHeader, { cardPath: faceCardPath(face) });
+    if (result.statusCode === 200) {
+      return { statusCode: 200, body: { ...result.body, face, ledger: readFaceLedger() } };
+    }
+    return result;
   }
 
   // view=pull（daemon 受控载荷；§三 时序）
