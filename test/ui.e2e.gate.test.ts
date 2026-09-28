@@ -295,8 +295,9 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
   async function connectPage(page: Page, tag = 'w'): Promise<void> {
     await page.fill('#token', API_TOKEN);
     await page.fill('#adminToken', ADMIN_TOKEN);
-    await page.click('#conn-save');
-    await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), { timeout: 8000 });
+    await page.click('#conn-save', { timeout: 60_000 }); // LG-058 门审裁：click 30→60s（2x 封顶同护栏）
+    // LG-058 门审附带发现授权：三参签名修正——{timeout:8000} 曾落 arg 位，实际 30s 默认限在跑（Timeout 30000ms 报错为证）；断言语义零变更
+    await page.waitForFunction(() => document.querySelector('#conn-dot')?.className.includes('ok'), undefined, { timeout: 8000 });
     await page.fill('#tc-conn', 'ste-machine-' + tag); // S10 必填：连接解禁后填（面板先禁用）
     await page.waitForTimeout(500); // settle initial card fetches (async re-render guard)
   }
@@ -310,13 +311,14 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
   }
 
   async function addEntryViaUi(page: Page, id: string, provider: string, model: string, key: string): Promise<void> {
-    await page.click('#tc-open-add');
+    // LG-058 门审裁：W1 路径 click 30→60s（2x 封顶同护栏）
+    await page.click('#tc-open-add', { timeout: 60_000 });
     await page.selectOption('#tc-e-provider', provider);
     await waitModelOption(page, '#tc-e-model', model);
     await page.fill('#tc-e-id', id);
     await page.fill('#tc-e-baseurl', 'https://f2.example.com/v1');
     await page.fill('#tc-e-key', key);
-    await page.click('#tc-e-save');
+    await page.click('#tc-e-save', { timeout: 60_000 });
     await page.waitForTimeout(250);
   }
 
@@ -334,15 +336,15 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     const page = await freshPage();
     await connectPage(page, 'w1v4');
     await addEntryViaUi(page, 'gate-ui-w1v4', 'glm', 'GLM-5.3', 'sk-gate-w1v4-key');
-    await page.click('#tc-save');
+    await page.click('#tc-save', { timeout: 60_000 }); // LG-058 门审裁：W1 路径 click 30→60s（2x 封顶同护栏）
     await page.waitForTimeout(700);
     // v4：默认模型归 default 规则实体（编辑面退役）——经规则区表单创建
-    await page.click('#tc-r-add');
+    await page.click('#tc-r-add', { timeout: 60_000 });
     await page.selectOption('#tc-r-type', 'default');
     await page.fill('#tc-r-name', '走查默认');
     await waitSelectOptions(page, '#tc-r-entry', 1);
-    await page.click('#tc-r-save');
-    await page.click('#tc-save');
+    await page.click('#tc-r-save', { timeout: 60_000 });
+    await page.click('#tc-save', { timeout: 60_000 });
     await page.waitForTimeout(700);
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 }); // 第四型：跨刷新持久周期；LG-058 裁 2(b)：30s→60s
     await page.waitForTimeout(900);
