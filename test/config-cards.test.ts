@@ -265,6 +265,27 @@ describe('LG-058 card write guard (saveCard engine-level)', () => {
     assert.ok(/\.bak-\d{8}T\d{6}Z-\d+-\d+$/.test(baks[0]), `唯一性后缀形态：${baks[0]}`);
     assert.ok(readEvents().filter((e) => e.etype === 'write' && e.face === 'mlc').length >= 2);
   });
+  it('LG-058 P1 候修①：PUT 无 provider_entries 载荷=400 人话拒不落盘（原 500）', async () => {
+    clearBaks('rlc');
+    const cardPath = faceCardPath('rlc');
+    if (existsSync(cardPath)) rmSync(cardPath);
+    const eventsBefore = readEvents().filter((e) => e.etype === 'write').length;
+    // JSON.stringify 丢 undefined 键 → 载荷物理无 provider_entries 键
+    const absent = await req('PUT', '/v1/config/cards/rlc', `Bearer ${ADMIN}`, JSON.stringify({ object: 'trimmc-card', machine: { name: 'no-entries' } }));
+    assert.equal(absent.statusCode, 400, '缺席=400 非 500');
+    assert.equal((absent.body as { error?: string }).error, '条目数据格式错误，请重新添加条目');
+    // null / 字符串 / 数值同族（字符串原会以字符索引静默污染合并——一并收口）
+    for (const bad of [null, 'oops', 42]) {
+      const res = await req('PUT', '/v1/config/cards/rlc', `Bearer ${ADMIN}`, JSON.stringify({ object: 'trimmc-card', provider_entries: bad }));
+      assert.equal(res.statusCode, 400, `provider_entries=${JSON.stringify(bad)} 应 400`);
+    }
+    assert.ok(!existsSync(cardPath), '零落盘（卡文件未产生）');
+    assert.equal(readEvents().filter((e) => e.etype === 'write').length, eventsBefore, '零 write 审计行');
+    // 正常键（空对象）不受影响——D7 合并语义照常 200（emptyCard 正形）
+    const emptyOk = await req('PUT', '/v1/config/cards/rlc', `Bearer ${ADMIN}`, JSON.stringify(emptyCard('empty-ok')));
+    assert.equal(emptyOk.statusCode, 200);
+    assert.ok(existsSync(cardPath), '合法空条目卡照常落盘');
+  });
   it('T4 同毫秒双写：备份名唯一零覆盖', async () => {
     clearBaks('rmc');
     const cardPath = faceCardPath('rmc');

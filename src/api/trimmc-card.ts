@@ -82,9 +82,12 @@ export function handlePutTrimmcCard(
   // 形态三态：对象+明文 api_key → 服务端加密水合；对象+api_key_encrypted →
   // 原样保留（密文搬运）；字符串/数组等退化形态 → 400 人话拒不落盘。
 
-  // 退化形态前置拒（水合/校验前即断，防任何路径落盘）
+  // 退化形态前置拒（水合/校验前即断，防任何路径落盘）。
+  // LG-058 P1 候修①（范围6①，2026-09-29）：provider_entries 缺席/null/原始值
+  // 原漏过本守卫 → 合并段 Object.entries(undefined) 抛错=500（字符串形态更会
+  // 以字符索引静默污染合并）——统一 400 人话拒（CTO 候修裁：500→400）。
   const providedRaw = (card as { provider_entries?: unknown }).provider_entries;
-  if (Array.isArray(providedRaw)) {
+  if (providedRaw === undefined || providedRaw === null || typeof providedRaw !== 'object' || Array.isArray(providedRaw)) {
     return { statusCode: 400, body: { error: '条目数据格式错误，请重新添加条目' } };
   }
   if (typeof providedRaw === 'object' && providedRaw !== null) {
