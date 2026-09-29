@@ -15,10 +15,40 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { createServer } from 'node:http';
+import { execSync } from 'node:child_process';
 
 const ENABLED = process.env.TRICOMPANY_ENABLE_TRIMODEL_UI_E2E === '1';
 const ADMIN = 'ste-e12-admin';
 process.env.TRIMODEL_ADMIN_TOKEN = ADMIN;
+
+// ── 件A selector 随版修（CTO 裁 2026-09-29 午窗批）：P2 单页架构下策略卡元素全在
+// 隐藏 #panel-strategy 内——locator.click 要求可见即挂。修=操作前经菜单切视图
+// （先例=ui.e2e.gate.test.ts gotoStrategy L153-156，加幂等预查——reload 后 panel
+// 复 hidden，二轮编辑前须再切）。C6 jsdom/C10b API 直打两案不受影响。═══
+async function gotoStrategy(page: import('playwright-core').Page): Promise<void> {
+  const hidden = await page.$eval('#panel-strategy', (el) => (el as HTMLElement).hidden).catch(() => true);
+  if (!hidden) return;
+  await page.click('#page-menu .menu-btn[data-view="strategy"]');
+  await page.waitForFunction(() => !(document.querySelector('#panel-strategy') as HTMLElement | null)?.hidden, undefined, { timeout: 8000 });
+}
+
+// ── 件A teardown 健壮性（CTO 裁 21fe08d6 §六.4）：close 15s 超时兜底+强杀进程树。
+// E0 对照钩（历史态 HTML）窗内 close 挂起同样兜底——零挂全量跑=clean 读数前提。═══
+async function closeBrowserRobust(browser: import('playwright-core').Browser | undefined): Promise<void> {
+  if (!browser) return;
+  let timedOut = false;
+  // playwright-core 此版本类型面无 Browser.process——运行时 launch 体必有，显式形态读取
+  const pid = (browser as unknown as { process?: () => { pid?: number } | null }).process?.()?.pid;
+  try {
+    await Promise.race([
+      browser.close().catch(() => {}),
+      new Promise((r) => setTimeout(() => { timedOut = true; r(null); }, 15000)),
+    ]);
+    if (timedOut && pid) {
+      try { execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退不追 */ }
+    }
+  } catch { /* after-hook 吞错 */ }
+}
 
 const REPO_UI = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
 // E0 对照钩：env 指历史态 HTML（沙箱内供服），默认=仓内现势（修复态）
@@ -124,10 +154,20 @@ async function withHarness(fn: (ctx: Ctx) => Promise<void>): Promise<void> {
     await page.fill('#adminToken', ADMIN);
     await page.click('#conn-save');
     await page.waitForFunction(() => document.querySelectorAll('#tc-str-body tr').length === 3, undefined, { timeout: 8000 });
+    // 件A：切视图前置——#tc-* 编辑元素在隐藏 #panel-strategy 内（waitForFunction
+    // 只查 DOM 存在不查可见性，故上等待能过而 click 挂）
+    await gotoStrategy(page);
     await fn({ page, browser, cardPath, dir, server: server!, lastPutBody: () => putBody });
   } finally {
-    if (browser) await browser.close().catch(() => {});
-    if (server) await new Promise<void>((r) => (server as import('node:http').Server).close(() => r()));
+    await closeBrowserRobust(browser);
+    if (server) {
+      const closing = server as import('node:http').Server;
+      closing.closeAllConnections?.(); // keep-alive 挂连接是 server.close 挂起主因
+      await Promise.race([
+        new Promise<void>((r) => closing.close(() => r())),
+        new Promise((r) => setTimeout(r, 5000)),
+      ]);
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -176,7 +216,8 @@ describe('E12: 波⑤ D1 策略删除通道——删除→保存→真 reload→
       await saveAndWait(page);
       await page.reload();
       await page.waitForFunction(() => document.querySelectorAll('#tc-str-body tr').length === 2, undefined, { timeout: 8000 });
-      // 第二轮编辑：再删丙→保存→reload
+      // 第二轮编辑：再删丙→保存→reload（件A：reload 后 panel 复 hidden，先切视图）
+      await gotoStrategy(page);
       await page.locator('#tc-str-body tr', { hasText: '策略丙' }).locator('[data-del]').click();
       await saveAndWait(page);
       await page.reload();

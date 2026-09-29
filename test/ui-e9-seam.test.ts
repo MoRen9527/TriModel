@@ -11,8 +11,36 @@ import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { join } from 'path';
 import { createServer } from 'node:http';
+import { execSync } from 'node:child_process';
 
 const ENABLED = process.env.TRICOMPANY_ENABLE_TRIMODEL_UI_E2E === '1';
+
+// ── 件A selector 随版修（CTO 裁 2026-09-29 午窗批）：P2 单页架构下策略卡元素全在
+// 隐藏 #panel-strategy 内——fill/click 要求可见即挂。修=操作前经菜单切视图
+// （先例=ui.e2e.gate.test.ts gotoStrategy L153-156，加幂等预查）。═══
+async function gotoStrategy(page: import('playwright-core').Page): Promise<void> {
+  const hidden = await page.$eval('#panel-strategy', (el) => (el as HTMLElement).hidden).catch(() => true);
+  if (!hidden) return;
+  await page.click('#page-menu .menu-btn[data-view="strategy"]');
+  await page.waitForFunction(() => !(document.querySelector('#panel-strategy') as HTMLElement | null)?.hidden, undefined, { timeout: 8000 });
+}
+
+// ── 件A teardown 健壮性（CTO 裁 21fe08d6 §六.4）：close 15s 超时兜底+强杀进程树。═══
+async function closeBrowserRobust(browser: import('playwright-core').Browser | undefined): Promise<void> {
+  if (!browser) return;
+  let timedOut = false;
+  // playwright-core 此版本类型面无 Browser.process——运行时 launch 体必有，显式形态读取
+  const pid = (browser as unknown as { process?: () => { pid?: number } | null }).process?.()?.pid;
+  try {
+    await Promise.race([
+      browser.close().catch(() => {}),
+      new Promise((r) => setTimeout(() => { timedOut = true; r(null); }, 15000)),
+    ]);
+    if (timedOut && pid) {
+      try { execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' }); } catch { /* 已退不追 */ }
+    }
+  } catch { /* after-hook 吞错 */ }
+}
 
 describe('E9: UI form → trimmc-card.json seam (playwright, env-gated)', () => {
   it('two entries submitted via the real UI land as complete encrypted objects', { skip: !ENABLED && 'set TRICOMPANY_ENABLE_TRIMODEL_UI_E2E=1 with local Chrome' }, async () => {
@@ -92,6 +120,8 @@ describe('E9: UI form → trimmc-card.json seam (playwright, env-gated)', () => 
       await page.fill('#token', 'tk-e9');
       await page.fill('#adminToken', 'admin-e9');
       await page.click('#conn-save');
+      // 件A：切视图前置——#tc-conn 在隐藏 #panel-strategy 内，fill 要求可见
+      await gotoStrategy(page);
       // 卡片：名称+两条目
       await page.fill('#tc-conn', 'e9-machine');
       await page.click('#tc-open-add');
@@ -122,9 +152,15 @@ describe('E9: UI form → trimmc-card.json seam (playwright, env-gated)', () => 
       assert.equal((e1 as { model: string }).model, 'deepseek-v4-pro');
       assert.equal((e2 as { model: string }).model, 'GLM-5.3');
     } finally {
-      if (browser) await browser.close().catch(() => {});
+      await closeBrowserRobust(browser);
       const closing = server;
-      if (closing) await new Promise<void>((r) => closing.close(() => r()));
+      if (closing) {
+        closing.closeAllConnections?.(); // keep-alive 挂连接是 server.close 挂起主因
+        await Promise.race([
+          new Promise<void>((r) => closing.close(() => r())),
+          new Promise((r) => setTimeout(r, 5000)),
+        ]);
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
