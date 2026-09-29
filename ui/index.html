@@ -86,9 +86,9 @@
   <summary>连接设置</summary>
   <div id="conn-guide" class="guide" hidden>首次使用：请填入 API 令牌与管理令牌（向管理员获取），填完点「连接」。</div>
   <div class="row-form">
-    <label>API 令牌</label><input id="token" type="password" placeholder="TRIMODEL_API_TOKEN" style="width:220px" autocomplete="off">
+    <label>API 令牌</label><input id="token" type="password" style="width:220px" autocomplete="off">
     <button id="token-eye" class="eye">👁</button>
-    <label>管理令牌</label><input id="adminToken" type="password" placeholder="TRIMODEL_ADMIN_TOKEN" style="width:220px" autocomplete="off">
+    <label>管理令牌</label><input id="adminToken" type="password" style="width:220px" autocomplete="off">
     <button id="admin-eye" class="eye">👁</button>
     <button class="primary" id="conn-save">连接</button>
   </div>
@@ -185,7 +185,7 @@
      走查冻结期纪律：本卡页内布局零改动，菜单仅外层挂锚点零位移。═══ -->
 <div id="panel-strategy" class="card-main page-panel" hidden>
   <h2>☁ TriModel 策略卡（本机过渡位实例） <span id="tc-badge" class="badge none">未配置</span></h2>
-  <div class="sub" style="margin:-6px 0 10px">LG-035 面 · 常态只读（编辑窗候 CEO 终验）；保存后待应用</div>
+  <div class="sub" style="margin:-6px 0 10px">过渡期形态 · 常态只读（编辑窗候 CEO 终验）；保存后待应用</div>
   <div id="error-card" class="error-panel" hidden></div>
 
   <h3>机器信息</h3>
@@ -355,7 +355,7 @@ const FACE_META = {
     cli: 'trimmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">TriMMC（sg）侧的模型写入走「连接配置」页的 sg 栏（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
     bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
-    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面（PUT 卡面），daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本 face 卡文件现役=LG-035 策略卡过渡位（trimmc-card.json），策略内容见「TriModel 策略卡」；TriMMC 专属卡候文件迁移方案。',
+    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=策略卡过渡位，策略内容见「TriModel 策略卡」；TriMMC 专属卡候文件迁移方案。',
   },
   rmc: {
     nav: 'TriRMC · 河源', meta: 'R 面 · 服务域 · 河源 8712',
@@ -401,7 +401,7 @@ const VIEWS = [
   { id: 'card-rlc', label: FACE_META.rlc.nav },
   { id: 'card-mmc', label: FACE_META.mmc.nav },
   { id: 'card-rmc', label: FACE_META.rmc.nav },
-  { id: 'strategy', label: 'TriModel 策略卡', title: 'LG-035 面 · 常态只读（编辑窗候 CEO 终验）' },
+  { id: 'strategy', label: 'TriModel 策略卡', title: '过渡期形态 · 常态只读（编辑窗候 CEO 终验）' },
   { id: 'connect', label: '连接配置' },
 ];
 
