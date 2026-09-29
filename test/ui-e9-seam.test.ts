@@ -45,6 +45,9 @@ async function closeBrowserRobust(browser: import('playwright-core').Browser | u
 describe('E9: UI form → trimmc-card.json seam (playwright, env-gated)', () => {
   it('two entries submitted via the real UI land as complete encrypted objects', { skip: !ENABLED && 'set TRICOMPANY_ENABLE_TRIMODEL_UI_E2E=1 with local Chrome' }, async () => {
     const { chromium } = await import('playwright-core');
+    // 件A 随版对齐③：conn-save 探针 200 才 enable 编辑面（ui conn-save L536-540）——
+    // handler fail-closed 需 TRIMODEL_ADMIN_TOKEN，UI 填同值→探针 200→enable（e12 同构）
+    process.env.TRIMODEL_ADMIN_TOKEN = 'admin-e9';
     const dir = mkdtempSync(join(tmpdir(), 'trimodel-e9-'));
     const cardPath = join(dir, 'trimmc-card.json');
     let browser: import("playwright-core").Browser | undefined;
@@ -88,7 +91,9 @@ describe('E9: UI form → trimmc-card.json seam (playwright, env-gated)', () => 
       const port = (listenServer.address() as { port: number }).port;
 
       // Swap in the real card PUT handler (seam = real code, not a stub)
-      const { handlePutTrimmcCard } = await import('../src/api/trimmc-card.js');
+      // 件A 随版对齐③：conn-save 探针打 GET /v1/config/trimmc-card——缺 GET 分支
+      // 探针 404→编辑面不 enable，故补真 handleGetTrimmcCard（e12 harness 同构）
+      const { handlePutTrimmcCard, handleGetTrimmcCard } = await import('../src/api/trimmc-card.js');
       server.removeAllListeners('request');
       server.on('request', (req, res) => {
         const url = req.url ?? '';
@@ -99,6 +104,12 @@ describe('E9: UI form → trimmc-card.json seam (playwright, env-gated)', () => 
           const auth = req.headers.authorization;
           if (req.method === 'PUT' && url === '/v1/config/trimmc-card') {
             const out = handlePutTrimmcCard(auth, body, { cardPath });
+            res.writeHead(out.statusCode, { 'content-type': 'application/json' });
+            res.end(JSON.stringify(out.body));
+            return;
+          }
+          if (req.method === 'GET' && url === '/v1/config/trimmc-card') {
+            const out = handleGetTrimmcCard(auth, { cardPath });
             res.writeHead(out.statusCode, { 'content-type': 'application/json' });
             res.end(JSON.stringify(out.body));
             return;
@@ -122,17 +133,22 @@ describe('E9: UI form → trimmc-card.json seam (playwright, env-gated)', () => 
       await page.click('#conn-save');
       // 件A：切视图前置——#tc-conn 在隐藏 #panel-strategy 内，fill 要求可见
       await gotoStrategy(page);
-      // 卡片：名称+两条目
+      // 卡片：名称+两条目（件A 随版对齐③：现版表单含 model/baseurl——显式选目标
+      // 模型防 select 默认首项误绑；baseurl 必填字段照填）
       await page.fill('#tc-conn', 'e9-machine');
       await page.click('#tc-open-add');
       await page.fill('#tc-e-id', 'f34-ds');
       await page.selectOption('#tc-e-provider', 'deepseek');
+      await page.selectOption('#tc-e-model', 'deepseek-v4-pro');
       await page.fill('#tc-e-key', 'sk-e9-deepseek-key-0001');
+      await page.fill('#tc-e-baseurl', 'https://api.deepseek.com');
       await page.click('#tc-e-save');
       await page.click('#tc-open-add');
       await page.fill('#tc-e-id', 'f34-glm');
       await page.selectOption('#tc-e-provider', 'glm');
+      await page.selectOption('#tc-e-model', 'GLM-5.3');
       await page.fill('#tc-e-key', 'sk-e9-glm-key-00000002');
+      await page.fill('#tc-e-baseurl', 'https://open.bigmodel.cn/api/paas/v4');
       await page.click('#tc-e-save');
       await page.click('#tc-save');
       await page.waitForTimeout(300);
