@@ -146,7 +146,10 @@ async function withHarness(fn: (ctx: Ctx) => Promise<void>): Promise<void> {
     const port = (server!.address() as { port: number }).port;
     const base = `http://127.0.0.1:${port}`;
 
-    browser = await chromium.launch({ channel: 'chrome' });
+    // sg 面（batch-07 件 2）：TRIMODEL_E2E_CHROMIUM 覆写=ui.e2e.gate.test.ts 先例形；channel 分支 dev 原样
+    browser = await chromium.launch(process.env.TRIMODEL_E2E_CHROMIUM
+      ? { executablePath: process.env.TRIMODEL_E2E_CHROMIUM, headless: true }
+      : { channel: 'chrome' });
     const page = await browser.newPage();
     await page.goto(`${base}/ui`);
     // 连接（双令牌）→探测→loadTrimmc→策略表渲染（3 行种子全到位）
