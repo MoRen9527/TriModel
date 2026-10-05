@@ -397,6 +397,21 @@ describe('LG-058 status/apply audit + ledger sync', () => {
     assert.equal(readFaceLedger().faces.rlc?.applied_state, 'applied');
     assert.equal((await req('PUT', '/v1/config/cards/rlc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'pending' }))).statusCode, 400);
   });
+  it('LG-058 N1：status 回写带 tier → 台账 applied_tier 同步；非法 tier=400；缺省 tier=null（层级未决）', async () => {
+    seedCard('rlc');
+    // 合法 tier=2（降级梯：卡面拉取失败，本地缓存续用）
+    const r = await req('PUT', '/v1/config/cards/rlc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'failed', error: 'pull_denied', tier: 2 }));
+    assert.equal(r.statusCode, 200);
+    const st = (r.body as { status?: { tier?: number } }).status;
+    assert.equal(st?.tier, 2, 'status 响应带 tier');
+    assert.equal(readFaceLedger().faces.rlc?.applied_tier, 2, '台账 applied_tier 同步');
+    // 非法 tier=400（越界值 / 类型错）
+    assert.equal((await req('PUT', '/v1/config/cards/rlc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'applied', tier: 4 }))).statusCode, 400);
+    assert.equal((await req('PUT', '/v1/config/cards/rlc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'applied', tier: '2' }))).statusCode, 400);
+    // tier 缺省 → 台账置 null（回写时层级未决语义）
+    await req('PUT', '/v1/config/cards/rlc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'applied' }));
+    assert.equal(readFaceLedger().faces.rlc?.applied_tier, null, 'tier 缺省=null（未决）');
+  });
   it('apply 成功→apply 审计行（policies 落沙箱 TRIMODEL_POLICIES_DIR）', async () => {
     seedCard('rlc');
     const r = await req('POST', '/v1/config/cards/rlc/apply', `Bearer ${ADMIN}`);

@@ -200,9 +200,9 @@ export function handlePutTrimmcCardStatus(
   const authError = requireAdmin(authHeader);
   if (authError) return authError;
 
-  let doc: { state?: unknown; error?: unknown } = {};
+  let doc: { state?: unknown; error?: unknown; tier?: unknown } = {};
   try {
-    doc = rawBody ? (JSON.parse(rawBody) as { state?: unknown; error?: unknown }) : {};
+    doc = rawBody ? (JSON.parse(rawBody) as { state?: unknown; error?: unknown; tier?: unknown }) : {};
   } catch (err) {
     return { statusCode: 400, body: { error: `invalid JSON: ${err instanceof Error ? err.message : String(err)}` } };
   }
@@ -210,13 +210,20 @@ export function handlePutTrimmcCardStatus(
   if (state !== 'applied' && state !== 'failed') {
     return { statusCode: 400, body: { error: `state must be 'applied' | 'failed' (pending is set by save only); valid: ${CARD_STATES.join(', ')}` } };
   }
+  // LG-058 N1：当前配置层级（应用方降级梯 tier1 卡面拉取 / tier2 本地缓存 / tier3 出厂默认）。
+  // 可选字段——缺省/null=回写时层级未决；提供时必须 ∈ {1,2,3}。
+  const tier = doc.tier;
+  if (tier !== undefined && tier !== null && tier !== 1 && tier !== 2 && tier !== 3) {
+    return { statusCode: 400, body: { error: `tier must be 1 | 2 | 3 (or omit when undecided); got ${JSON.stringify(tier)}` } };
+  }
 
   const card = loadCard(opts?.cardPath);
   if (!card) {
     return { statusCode: 404, body: { error: 'no trimmc-card.json on disk — save the card first' } };
   }
-  const status: { state: CardState; at: string; error?: string } = { state, at: new Date().toISOString() };
+  const status: { state: CardState; at: string; error?: string; tier?: 1 | 2 | 3 } = { state, at: new Date().toISOString() };
   if (typeof doc.error === 'string' && doc.error) status.error = doc.error;
+  if (tier === 1 || tier === 2 || tier === 3) status.tier = tier;
   card.status = status;
   saveCard(card, opts?.cardPath);
   return { statusCode: 200, body: { ok: true, status } };

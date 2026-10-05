@@ -51,7 +51,7 @@ function faceResponder(faces: Record<string, FaceSpec>) {
           object: 'config.trimmc-card', face: m[1], card_file_present: true,
           card: { default_model: 'GLM-5.3', status: { state, at: 'x' } },
           entries_masked: { e1: { provider: 'glm', model: 'GLM-5.3', masked: '****0001', enabled: true, updated_at: 'x' } },
-          ledger: { faces: { [m[1]]: { last_pull_at: '2026-09-29T03:00:00Z', last_pull_from: 'remote', last_pull_result: 'ok', applied_state: state } } },
+          ledger: { faces: { [m[1]]: { last_pull_at: '2026-09-29T03:00:00Z', last_pull_from: 'remote', last_pull_result: 'ok', applied_state: state, applied_tier: 1 } } },
         },
       };
     }
@@ -191,6 +191,11 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     assert.ok(((d.getElementById('cf-mmc-cfg') as HTMLElement).textContent ?? '').includes('不造数'), 'mmc 断链诚实注记（不造数）');
     assert.ok(((d.getElementById('cf-mlc-audit') as HTMLElement).textContent ?? '').includes('applied'), 'mlc 审计行消费 ledger 摘要面');
     assert.ok(((d.getElementById('cf-mlc-pull') as HTMLElement).textContent ?? '').includes('2026-09-29T03:00:00Z'), 'mlc 拉取状态行消费 ledger.last_pull_at');
+    // LG-058 N1：配置层级行——消费 ledger.applied_tier（tier1=卡面拉取），非页面自编
+    const mlcPull = (d.getElementById('cf-mlc-pull') as HTMLElement).textContent ?? '';
+    assert.ok(mlcPull.includes('配置层级'), 'pull 行含配置层级行');
+    assert.ok(mlcPull.includes('第1层·卡面拉取'), 'mlc 配置层级消费 applied_tier=1 → 第1层·卡面拉取');
+    assert.ok(((d.getElementById('cf-mmc-pull') as HTMLElement).textContent ?? '').includes('暂无回写'), 'mmc 无台账 → 层级显「暂无回写」（不造数）');
     // 总览行=一行一卡
     const ovRows = d.querySelectorAll('#ov-body tr');
     assert.equal(ovRows.length, 4, '总览一行一卡');

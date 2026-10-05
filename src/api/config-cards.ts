@@ -216,11 +216,13 @@ export function handlePutConfigCardStatus(authHeader: string | undefined, face: 
   }
   const result = handlePutTrimmcCardStatus(authHeader, rawBody, { cardPath: faceCardPath(face) });
   if (result.statusCode === 200) {
-    const body = result.body as { status?: { state?: string } };
+    const body = result.body as { status?: { state?: string; tier?: number } };
     const state = body.status?.state;
-    appendFaceEvent({ face, etype: 'status', result: 'ok', detail: `status write-back state=${state ?? 'unknown'}` });
+    const tier = body.status?.tier;
+    appendFaceEvent({ face, etype: 'status', result: 'ok', detail: `status write-back state=${state ?? 'unknown'}${tier ? ` tier=${tier}` : ''}` });
     if (state === 'applied' || state === 'failed') {
-      updateFaceLedger(face, { applied_state: state });
+      // LG-058 N1：applied_tier 随回写同步（tier 缺省=null=回写时层级未决）
+      updateFaceLedger(face, { applied_state: state, applied_tier: tier === 1 || tier === 2 || tier === 3 ? tier : null });
     }
   } else {
     // CTO 裁 1(甲)（de6d49f8）：非 200 补 emit——鉴权拒（401/403/503）=写面

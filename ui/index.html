@@ -608,6 +608,16 @@ function facePullSummary(f) {
   return ledger.last_pull_at + '（' + (ledger.last_pull_from ?? '?') + '，' + (ledger.last_pull_result ?? '?') + '）';
 }
 
+// LG-058 N1：当前配置层级（消费端降级梯，语义对表 TriRMC key-cache——
+// tier1=卡面拉取 / tier2=本地缓存（含 stale 宽限）/ tier3=出厂默认）。
+// 数据源=服务端台账 applied_tier（应用方 status 回写携带），非页面自编。
+function faceTierSummary(f) {
+  const t = faceState[f]?.ledger?.faces?.[f]?.applied_tier;
+  if (t !== 1 && t !== 2 && t !== 3) return '暂无回写';
+  const names = { 1: '第1层·卡面拉取', 2: '第2层·本地缓存', 3: '第3层·出厂默认' };
+  return names[t];
+}
+
 function renderFaceCards() {
   for (const f of FACE_UI_IDS) {
     const badge = $('cf-' + f + '-badge');
@@ -618,7 +628,8 @@ function renderFaceCards() {
     badge.className = 'badge ' + cls;
     const pull = $('cf-' + f + '-pull');
     pull.innerHTML = '<b>拉取源</b><span>' + FACE_META[f].pull + '</span>'
-      + '<b>上次拉取</b><span>' + facePullSummary(f) + '</span>';
+      + '<b>上次拉取</b><span>' + facePullSummary(f) + '</span>'
+      + '<b>配置层级</b><span>' + faceTierSummary(f) + '</span>';
     const cfg = $('cf-' + f + '-cfg');
     const tbl = $('cf-' + f + '-entries');
     if (!s || !s.card_file_present) {

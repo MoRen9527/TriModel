@@ -79,6 +79,9 @@ export interface FaceLedgerEntry {
   last_pull_from: 'loopback' | 'remote' | null;
   last_pull_result: 'ok' | 'denied' | 'failed' | null;
   applied_state: 'pending' | 'applied' | 'failed' | null;
+  // LG-058 N1：当前配置层级（应用方 status 回写携带）——语义对表消费端降级梯：
+  // 1=卡面拉取 / 2=本地缓存（含 stale 宽限）/ 3=出厂默认；null=未回写或回写时层级未决。
+  applied_tier: 1 | 2 | 3 | null;
 }
 
 export interface FaceLedger {
@@ -104,7 +107,7 @@ export function readFaceLedger(): FaceLedger {
 /** 读盘零重启：每次更新=读-合并-原子写（tmp+rename 同族）。 */
 export function updateFaceLedger(face: FaceId, patch: Partial<FaceLedgerEntry>): FaceLedgerEntry {
   const ledger = readFaceLedger();
-  const base: FaceLedgerEntry = ledger.faces[face] ?? { last_pull_at: null, last_pull_from: null, last_pull_result: null, applied_state: null };
+  const base: FaceLedgerEntry = ledger.faces[face] ?? { last_pull_at: null, last_pull_from: null, last_pull_result: null, applied_state: null, applied_tier: null };
   const merged: FaceLedgerEntry = { ...base, ...patch };
   ledger.faces[face] = merged;
   const p = faceLedgerPath();
