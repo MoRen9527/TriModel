@@ -196,6 +196,12 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     assert.ok(mlcPull.includes('配置层级'), 'pull 行含配置层级行');
     assert.ok(mlcPull.includes('第1层·卡面拉取'), 'mlc 配置层级消费 applied_tier=1 → 第1层·卡面拉取');
     assert.ok(((d.getElementById('cf-mmc-pull') as HTMLElement).textContent ?? '').includes('暂无回写'), 'mmc 无台账 → 层级显「暂无回写」（不造数）');
+    // LG-058 N3：来源二分列——表头「来源」+tier1 条目=远程拉取配置（本地配置 vs 远程拉取配置二分，零「直连/中转」编造概念）
+    const mlcEntries = d.getElementById('cf-mlc-entries') as HTMLElement;
+    assert.ok((mlcEntries.textContent ?? '').includes('来源'), 'entries 表头含来源列');
+    assert.ok((mlcEntries.textContent ?? '').includes('远程拉取配置'), 'mlc tier1 → 条目来源=远程拉取配置');
+    assert.equal((mlcEntries.textContent ?? '').includes('直连'), false, '零「直连」编造概念残留');
+    assert.equal((mlcEntries.textContent ?? '').includes('中转'), false, '零「中转」编造概念残留');
     // 总览行=一行一卡
     const ovRows = d.querySelectorAll('#ov-body tr');
     assert.equal(ovRows.length, 4, '总览一行一卡');

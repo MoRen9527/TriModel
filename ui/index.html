@@ -125,7 +125,7 @@
 
     <h3>现役配置</h3>
     <div class="kv" id="cf-mlc-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>
-    <table id="cf-mlc-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th></tr></thead><tbody></tbody></table>
+    <table id="cf-mlc-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th><th>来源</th></tr></thead><tbody></tbody></table>
 
     <h3>模板切换</h3>
     <div class="sub" style="margin:-4px 0 6px">本机栏——本机 Claude Code 的 settings 写入面：选目的地模板，只填密钥一项</div>
@@ -378,7 +378,7 @@ function faceCardHtml(f) {
     + `<div class="kv" id="cf-${f}-pull"><b>读数</b><span class="idle">暂无——连接后显示</span></div>`
     + '<h3>现役配置</h3>'
     + `<div class="kv" id="cf-${f}-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>`
-    + `<table id="cf-${f}-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th></tr></thead><tbody></tbody></table>`
+    + `<table id="cf-${f}-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th><th>来源</th></tr></thead><tbody></tbody></table>`
     + '<h3>模板切换</h3>'
     + `<div id="cf-${f}-tpl">${m.tpl}</div>`
     + '<h3>备份与回滚</h3>'
@@ -618,6 +618,17 @@ function faceTierSummary(f) {
   return names[t];
 }
 
+// LG-058 N3：配置来源二分（CEO 打回 #4 后半——「本地配置 vs 远程拉取配置」，
+// 「直连/中转」系编造概念不入 UI）。判据与层级同源=ledger.applied_tier：
+// tier1/tier2 → 条目内容源=远程拉取配置（tier2 为其缓存续用副本）；
+// tier3 → 本地配置（出厂/env）；null → 暂无回写（不造数）。
+function faceEntrySource(f) {
+  const t = faceState[f]?.ledger?.faces?.[f]?.applied_tier;
+  if (t === 1 || t === 2) return '远程拉取配置';
+  if (t === 3) return '本地配置';
+  return '暂无回写';
+}
+
 function renderFaceCards() {
   for (const f of FACE_UI_IDS) {
     const badge = $('cf-' + f + '-badge');
@@ -643,11 +654,12 @@ function renderFaceCards() {
         const masked = s.entries_masked ?? {};
         for (const [id, m] of Object.entries(masked)) {
           const tr = document.createElement('tr');
-          tr.innerHTML = '<td></td><td></td><td></td><td></td>';
+          tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td>';
           tr.children[0].textContent = id;
           tr.children[1].textContent = m.model ?? '-';
           tr.children[2].textContent = m.masked ?? '••••';
           tr.children[3].textContent = m.enabled ? '✓' : '✗';
+          tr.children[4].textContent = faceEntrySource(f);
           tb.appendChild(tr);
         }
         tbl.hidden = Object.keys(masked).length === 0;
