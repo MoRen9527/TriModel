@@ -123,10 +123,10 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
         assert.ok(d.getElementById(`cf-${f}-${slot}`), `${f} 一致面槽位 ${slot} 在位`);
       }
       const html = panel.innerHTML;
-      for (const head of ['拉取状态', '现役配置', '模板切换', '备份与回滚', '审计行', '不可用时', 'CLI 对照', '本卡特有']) {
+      for (const head of ['拉取状态', '现役配置', '模板切换', '备份与回滚', '审计行', '不可用时', 'CLI 对照', '本域特有']) {
         assert.ok(html.includes(head), `${f} 八项区头「${head}」在位`);
       }
-      assert.ok(html.indexOf('CLI 对照') < html.indexOf('本卡特有'), `${f} 特有项追加在模板位之后（模板锁死）`);
+      assert.ok(html.indexOf('CLI 对照') < html.indexOf('本域特有'), `${f} 特有项追加在模板位之后（模板锁死）`);
       assert.ok(html.includes('自动用最近一次拉取的缓存'), `${f} 降级话术（人话）在位`);
     }
     const cliBins: Record<string, string> = { mlc: 'trimlc config', rlc: 'trirlc config', mmc: 'trimmc config', rmc: 'trirmc config' };
