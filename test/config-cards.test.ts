@@ -663,7 +663,7 @@ describe('LG-058 N5 plan3 (local_config 直改面)', () => {
     const vBefore = before.local_config ? before.local_config.version : 0;
     const secretKey = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ ...base, local_config: { items: { api_key: 'sk-should-be-rejected-000' } } }));
     assert.equal(secretKey.statusCode, 400, 'api_key 项名=400 人话拒');
-    assert.ok(String((secretKey.body as { error: string }).error).includes('域卡条目'), '拒因引导到域卡条目通道');
+    assert.ok((secretKey.body as { error: string }).error.includes('域卡条目'), '拒因引导到域卡条目通道');
     const tokenKey = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ ...base, local_config: { items: { admin_token: 'x' } } }));
     assert.equal(tokenKey.statusCode, 400, 'token 项名同拒');
     const badVal = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ ...base, local_config: { items: { local_port: 8710 } } }));
