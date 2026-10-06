@@ -63,11 +63,14 @@
   .switch:checked::after { left: 18px; }
   /* ── P2 四域面 IA（LG-058 P2；CPO cpo-product-plan §4）── */
   .page-panel { min-width: 0; }
+  /* 顶部细条形态已退役（BOD 2026-10-06 更正令③）：下面基础横排样式仅作窄屏
+     降级（720px 内块流+横滑 chip 条）的底色，宽屏恒被 body.menu-full 覆盖。 */
   #page-menu { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); }
   .menu-btn { border: 1px solid var(--border); background: transparent; border-radius: 6px; padding: 4px 12px; font-size: 13px; }
   .menu-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  /* 折叠自适应（§4.2 情形 1，按数判非按期判）：有实数据卡 ≥4 → 左菜单（宽屏增强）；
-     ≤3 → 顶部细条（默认）；窄屏 → 横滑 chip 条（情形 3）。 */
+  /* 左菜单右主体=无条件常驻默认骨架（BOD 2026-10-06 更正令①②：body 静态挂
+     menu-full，冷态/无数据不隐藏菜单栏——缺数据卡菜单项置灰待数据，条件展开门废除）。 */
+  .menu-btn.dim { opacity: .55; }
   body.menu-full #app-layout { display: flex; gap: 14px; align-items: flex-start; }
   body.menu-full #page-menu { flex-direction: column; flex: 0 0 210px; align-items: stretch; margin-top: 0; }
   body.menu-full .menu-btn { text-align: left; }
@@ -78,7 +81,7 @@
   }
 </style>
 </head>
-<body>
+<body class="menu-full">
 <h1>TriModel 模型配置</h1><span id="conn-dot" class="dot idle" title="连接状态"></span><span id="conn-label" class="sub"></span>
 
 <!-- ═══ 页头·连接设置（S1：令牌唯一入口；首启自动展开+引导）═══ -->
@@ -95,7 +98,7 @@
 </details>
 
 <div id="app-layout">
-<!-- ═══ P2 导航层（左菜单/顶部细条自适应；CPO IA §4.1；宿主=#app-layout——menu-full flex 侧栏布局依赖此层级，勿移出）═══ -->
+<!-- ═══ P2 导航层（左菜单=无条件常驻骨架，BOD 2026-10-06 更正令①；CPO IA §4.1；宿主=#app-layout——menu-full flex 侧栏布局依赖此层级，勿移出）═══ -->
 <nav id="page-menu" aria-label="配置页导航"></nav>
 <main id="page-main">
 
@@ -324,7 +327,8 @@ const TZ = 'Asia/Shanghai';
 // 一致面八项=卡模板锁死（①卡头身份行 ②拉取状态区 ③现役配置查看 ④模板切换
 // ⑤备份与回滚 ⑥审计行 ⑦降级话术 ⑧CLI 对照行）；卡特有面=追加区块禁进模板位。
 // TriMLC 卡为静态正形（fb 本机栏并入④⑤槽位）；rlc/mmc/rmc 由本段按同一模板
-// 渲染进容器。菜单折叠自适应=按「有实数据卡数」判（≥4 左菜单，≤3 顶部细条）。
+// 渲染进容器。菜单形态=左菜单右主体无条件常驻骨架（BOD 2026-10-06 更正令①②，
+// 按数折叠已废；缺数据卡菜单项置灰待数据，见 updateMenuState）。
 
 const FACE_UI_IDS = ['mlc', 'rlc', 'mmc', 'rmc'];
 
@@ -1103,7 +1107,7 @@ function renderFaceCards() {
     audit.textContent = '台账摘要：应用回写态=' + (applied ?? '暂无回写') + '；' + facePullSummary(f);
   }
   renderOv();
-  updateMenuMode();
+  updateMenuState();
 }
 
 function renderOv() {
@@ -1123,14 +1127,23 @@ function renderOv() {
   }
 }
 
-/** 折叠自适应（§4.2 情形 1）：按「有实数据卡数」判——≥4 左菜单，≤3 顶部细条。 */
-function updateMenuMode() {
+/** 菜单态刷新（BOD 2026-10-06 更正令①②③）：左菜单右主体=无条件常驻骨架
+ *  （body 静态挂 menu-full，不按数据判形态）；本函数只刷新注记文案+缺数据卡
+ *  菜单项置灰——「四卡全数据后自动展开」条件门已废除，顶部细条形态已退役。 */
+function updateMenuState() {
   const withData = FACE_UI_IDS.filter((f) => faceState[f]?.card_file_present).length;
-  document.body.classList.toggle('menu-full', withData >= 4);
   const note = $('ov-menu-note');
   if (note) {
-    note.textContent = '菜单形态：' + (withData >= 4 ? '左侧菜单' : '顶部细条')
-      + '（有实数据卡 ' + withData + '/4' + (withData >= 4 ? '' : '；四卡全数据后自动展开为左侧菜单') + '）';
+    note.textContent = '菜单形态：左侧菜单（常驻骨架）· 有实数据卡 ' + withData + '/4'
+      + (withData >= 4 ? ' · 四卡全数据' : ' · 缺卡菜单项置灰待数据');
+  }
+  // 缺数据卡菜单项置灰（可点击：点击进卡面看诚实空态，不禁用）
+  for (const f of FACE_UI_IDS) {
+    const b = document.querySelector('#page-menu .menu-btn[data-view="card-' + f + '"]');
+    if (!b) continue;
+    const present = !!faceState[f]?.card_file_present;
+    b.classList.toggle('dim', !present);
+    b.title = present ? '' : FACE_META[f].nav + '（待数据：连接后填充）';
   }
 }
 

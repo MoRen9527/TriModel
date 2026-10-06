@@ -6,7 +6,8 @@
 // ② 一致面八项 id 族 per face+模板序锁死（特有项追加在 CLI 对照行后）
 // ③ 无令牌诚实态（未连接×4+零卡面请求）
 // ④ 有令牌 managed 拉取（view=managed URL 断言）+诚实三态徽标+不造数注记
-// ⑤ 折叠自适应=按「有实数据卡数」判（4→左菜单，3→顶部细条；CPO §4.2 情形1 按数判非按期判）
+// ⑤ 菜单常驻骨架（BOD 2026-10-06 更正令①②③）：左菜单右主体无条件默认形态，
+//    按数折叠/条件展开门已废；缺数据卡菜单项置灰待数据；顶部细条退役
 // ⑤b menu-full 左右布局真回归门（LG-058 P1 回炉门禁附款：结构宿主+几何分左右双断言）
 // ⑥ 卡内指路委托（mmc→连接配置页，通道不重复）
 import { describe, it } from 'node:test';
@@ -330,8 +331,8 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     retireUi(dom);
   });
 
-  it('⑤ 折叠自适应=按有实数据卡数判：4/4→左菜单，3/4→顶部细条（按数判非按期判）', async () => {
-    // case A：四卡全实数据 → body.menu-full（左菜单）
+  it('⑤ 菜单常驻骨架：4/4 与 3/4 均 menu-full 左菜单（无条件默认，BOD 更正令①②）+缺卡项置灰+顶部细条退役', async () => {
+    // case A：四卡全实数据 → 左菜单（骨架不因数据变化）
     const logA: Array<{ url: string; init?: RequestInit }> = [];
     const domA = bootUi(logA, faceResponder({
       mlc: { present: true, state: 'applied' }, rlc: { present: true, state: 'applied' },
@@ -343,8 +344,10 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     assert.equal(dA.body.classList.contains('menu-full'), true, '4/4 实数据→左菜单形态');
     assert.ok(((dA.getElementById('ov-menu-note') as HTMLElement).textContent ?? '').includes('左侧菜单'), '菜单形态注记=左侧菜单');
     assert.ok(((dA.getElementById('ov-menu-note') as HTMLElement).textContent ?? '').includes('4/4'), '计数读数 4/4');
+    // 全数据卡菜单项不置灰（dim 零命中）
+    assert.equal(dA.querySelectorAll('#page-menu .menu-btn.dim').length, 0, '4/4 无置灰菜单项');
     retireUi(domA);
-    // case B：三卡实数据（mmc 缺席）→ 顶部细条
+    // case B：三卡实数据（mmc 缺席）→ 左菜单仍常驻（不折叠回顶部细条——条件展开门废除）
     const logB: Array<{ url: string; init?: RequestInit }> = [];
     const domB = bootUi(logB, faceResponder({
       mlc: { present: true, state: 'applied' }, rlc: { present: true, state: 'applied' },
@@ -353,9 +356,19 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     const dB = domB.window.document;
     connect(domB);
     await waitFor(() => dB.querySelectorAll('#ov-body tr').length === 4);
-    assert.equal(dB.body.classList.contains('menu-full'), false, '3/4 实数据→顶部细条（骨架期形态）');
-    assert.ok(((dB.getElementById('ov-menu-note') as HTMLElement).textContent ?? '').includes('顶部细条'), '菜单形态注记=顶部细条');
-    assert.ok(((dB.getElementById('ov-menu-note') as HTMLElement).textContent ?? '').includes('3/4'), '计数读数 3/4');
+    assert.equal(dB.body.classList.contains('menu-full'), true, '3/4 实数据→左菜单仍常驻（骨架不退）');
+    const noteB = (dB.getElementById('ov-menu-note') as HTMLElement).textContent ?? '';
+    assert.ok(noteB.includes('左侧菜单'), '菜单形态注记=左侧菜单');
+    assert.ok(noteB.includes('3/4'), '计数读数 3/4');
+    assert.equal(noteB.includes('自动展开'), false, '条件展开话术零残留（更正令②）');
+    assert.equal(noteB.includes('顶部细条'), false, '顶部细条话术零残留（更正令③）');
+    // 缺数据卡菜单项置灰（mmc dim 在场，仍可点击不禁用）；满数据卡不置灰
+    const mmcBtn = dB.querySelector('#page-menu .menu-btn[data-view="card-mmc"]') as HTMLElement;
+    assert.ok(mmcBtn.classList.contains('dim'), '缺数据卡菜单项置灰（待数据）');
+    assert.ok((mmcBtn.title ?? '').includes('待数据'), '置灰项 title 待数据提示');
+    const mlcBtn = dB.querySelector('#page-menu .menu-btn[data-view="card-mlc"]') as HTMLElement;
+    assert.equal(mlcBtn.classList.contains('dim'), false, '有数据卡菜单项不置灰');
+    assert.equal(dB.querySelectorAll('#page-menu .menu-btn').length, 7, '菜单项 7 个恒在场（不隐藏菜单栏）');
     retireUi(domB);
   });
 

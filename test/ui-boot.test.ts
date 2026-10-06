@@ -104,6 +104,11 @@ describe('S8.2: jsdom 首启五断言', () => {
     assert.ok(d.getElementById('conn-guide').textContent.includes('首次使用'));
     assert.equal(d.getElementById('tc-open-add').disabled, true, '数据面板必须禁用');
     assert.ok(d.querySelector('.card-main').classList.contains('disabled-panel'));
+    // 菜单常驻骨架（BOD 2026-10-06 更正令①+验收锚⑤）：未连接冷态直开即呈现
+    // 左菜单右主体——body.menu-full 在场+菜单项 7 个恒在场（不隐藏菜单栏）。
+    assert.equal(d.body.classList.contains('menu-full'), true, '冷态直开→左菜单骨架在场（无条件常驻）');
+    assert.equal(d.querySelectorAll('#page-menu .menu-btn').length, 7, '冷态菜单项 7 个恒在场');
+    assert.ok(d.querySelector('#page-menu .menu-btn.dim'), '冷态缺数据卡菜单项置灰待数据');
     // 首启无令牌不应发起数据请求（禁用态不发拉取）；
     // runtime-info/claude-fallback 例外：无鉴权只读面（域标签+兜底现状展示用，
     // 兜底区设计上不参与禁用链——「任务书 20260915-兜底按钮」）
