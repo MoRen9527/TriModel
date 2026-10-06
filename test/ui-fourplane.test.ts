@@ -7,6 +7,7 @@
 // ③ 无令牌诚实态（未连接×4+零卡面请求）
 // ④ 有令牌 managed 拉取（view=managed URL 断言）+诚实三态徽标+不造数注记
 // ⑤ 折叠自适应=按「有实数据卡数」判（4→左菜单，3→顶部细条；CPO §4.2 情形1 按数判非按期判）
+// ⑤b menu-full 左右布局真回归门（LG-058 P1 回炉门禁附款：结构宿主+几何分左右双断言）
 // ⑥ 卡内指路委托（mmc→连接配置页，通道不重复）
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -356,6 +357,57 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     assert.ok(((dB.getElementById('ov-menu-note') as HTMLElement).textContent ?? '').includes('顶部细条'), '菜单形态注记=顶部细条');
     assert.ok(((dB.getElementById('ov-menu-note') as HTMLElement).textContent ?? '').includes('3/4'), '计数读数 3/4');
     retireUi(domB);
+  });
+
+  // 最小 flex 形态模型桩：menu-full 态布局形态自 DOM 层级+CSS 锚值派生
+  // （nav∈#app-layout → flex row：menu 210px 侧栏、main 左缘=其右缘+gap14；
+  //   否则 → 块流：menu 占满行宽、main 起新行左缘 0）。锚值=ui/index.html body.menu-full 三条规则。
+  function menuFullRects(d: Document): { menuRight: number; mainLeft: number } {
+    const layout = d.getElementById('app-layout');
+    const nav = d.getElementById('page-menu');
+    const main = d.getElementById('page-main');
+    if (layout && nav && main && nav.parentElement === layout) {
+      return { menuRight: 210, mainLeft: 210 + 14 };
+    }
+    return { menuRight: 960, mainLeft: 0 };
+  }
+
+  // ── LG-058 P1 回炉门禁附款（BOD 裁 2026-10-06，CTO 定谳案一双断言）──
+  // 事故形态：nav 系 #app-layout 前置兄弟节点→body.menu-full flex 宿主不含 menu→210px 侧栏永不兑现。
+  // 附款①=结构（nav 宿主）；附款②=几何（menu 右缘不越 main 左缘，「分左右」真回归门）。
+  // jsdom 无布局引擎（getBoundingClientRect 恒零矩形，几何断言直接跑恒真无信息）——
+  // 几何经最小 flex 形态模型桩派生：输入=DOM 层级真值+CSS 锚值（桩前提由 CSS 在位断言钉住）；
+  // 层级漂移（回归事故形态）必翻块流→门红，判别力由本 it 内反例注入自证。
+  it('⑤b menu-full 左右布局真回归门：nav 宿主=#app-layout（结构）+分左右几何（P1 附款双断言）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, faceResponder({
+      mlc: { present: true, state: 'applied' }, rlc: { present: true, state: 'applied' },
+      mmc: { present: true, state: 'pending' }, rmc: { present: true, state: 'applied' },
+    }));
+    const d = dom.window.document;
+    connect(dom);
+    await waitFor(() => d.querySelectorAll('#ov-body tr').length === 4);
+    assert.equal(d.body.classList.contains('menu-full'), true, 'menu-full 态前置（4/4 实数据）');
+    // 附款① 结构：nav 宿主=#app-layout（容器外则 flex 宿主不含 menu，侧栏永不兑现）
+    const layout = d.getElementById('app-layout');
+    const nav = d.getElementById('page-menu');
+    assert.ok(layout && nav, '布局容器与导航节点在位');
+    assert.equal(nav.parentElement, layout, '附款① 结构：nav.parentElement===#app-layout');
+    // CSS 锚在位断言（桩模型 210/14 两值的前提锚，防桩与 CSS 漂移）
+    const html = readFileSync(UI_PATH, 'utf-8');
+    assert.ok(/body\.menu-full #app-layout\s*\{[^}]*display:\s*flex/.test(html), 'CSS 锚：menu-full 容器 flex 规则在位');
+    assert.ok(/body\.menu-full #page-menu\s*\{[^}]*flex:\s*0 0 210px/.test(html), 'CSS 锚：menu 侧栏 210px（桩宽值锚）');
+    assert.ok(/body\.menu-full #app-layout\s*\{[^}]*gap:\s*14px/.test(html), 'CSS 锚：容器 gap 14px（桩 gap 值锚）');
+    // 附款② 几何：menu-full 宽视口下 menu 右缘不越 main 左缘
+    const rectsIn = menuFullRects(d);
+    assert.ok(rectsIn.menuRight <= rectsIn.mainLeft,
+      `附款② 几何：分左右（menu.right=${String(rectsIn.menuRight)} <= main.left=${String(rectsIn.mainLeft)}）`);
+    // 门判别力自证：nav 移出容器（回归事故形态注入）→模型判块流→门条件必不成立
+    nav.remove();
+    const rectsOut = menuFullRects(d);
+    assert.ok(rectsOut.menuRight > rectsOut.mainLeft,
+      `判别力自证：nav 出容器→块流形态（menu.right=${String(rectsOut.menuRight)} > main.left=${String(rectsOut.mainLeft)}）→门红`);
+    retireUi(dom);
   });
 
   it('⑥ 卡内指路委托：mmc 卡 data-goto=connect 点击→连接配置页让位显形', async () => {
