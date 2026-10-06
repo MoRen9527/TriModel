@@ -561,7 +561,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
       assert.ok(pane, `${f} pane 在场`);
       const formKeys = Array.from(pane.querySelectorAll('[data-cd-form-row] [data-cd-key]')).map((i) => i.value);
       assert.deepEqual([...formKeys].sort(), [...expectKeys].sort(), `${f} 表单承接 16 键（真源=settings.json，禁再扩）`);
-      assert.equal(formKeys.some((k) => k.includes('AUTH_TOKEN') || k.includes('API_KEY')), false, `${f} 密钥不放（域卡自管边界）`);
+      assert.equal(formKeys.some((k) => k.includes('AUTH_TOKEN') || k.includes('API_KEY')), false, `${f} 无固定键名承接密钥（r5 密钥行走认证字段动态键，②i 承接）`);
       const adv = pane.querySelector('[data-cd-advanced]') as HTMLDetailsElement;
       assert.ok(adv, `${f} 高级选项折叠容器`);
       assert.equal(adv.open, false, `${f} 高级选项默认收起`);
@@ -595,6 +595,118 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     assert.equal(saveBody.local_config?.items['ANTHROPIC_MODEL'], 'glm-5.3-flash', '保存载荷=表单值');
     assert.equal(saveBody.local_config?.items['legacy_key'], 'v1', '保存载荷=存量自由行合并（整表替换语义）');
     assert.equal('ANTHROPIC_BASE_URL' in (saveBody.local_config?.items ?? {}), false, '表单空值键不设（清空即删除，所见即落盘）');
+    assert.equal('ANTHROPIC_AUTH_TOKEN' in (saveBody.local_config?.items ?? {}), false, '密钥框空=键不设（r5 密钥行同表单行语义）');
+    retireUi(dom);
+  });
+
+  it('②i 连接表单 r5 增补（CEO 23:31 打回三缺口+23:41 批·裁 A）：密钥行+认证字段+API 格式不落盘+1M 尾缀联动', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const base = faceResponder({});
+    const responder = (url: string): Resp => {
+      const m = url.match(/\/v1\/config\/cards\/(mlc|rlc|mmc|rmc)/);
+      if (m && !url.includes('view=pull')) {
+        // r5 存量 mock：AUTH_TOKEN 密钥存量（灌密钥框+select 跟随）+清单内/外键照 ②h
+        const b = base(url).body as { card: Record<string, unknown>; ledger: { faces: Record<string, Record<string, unknown>> } };
+        b.card = { ...b.card, local_config: { version: 1, updated_at: '2026-10-06T00:00:00Z', items: { ANTHROPIC_AUTH_TOKEN: 'sk-test-stock-fsd', ANTHROPIC_MODEL: 'glm-x', legacy_key: 'v1' } } };
+        return { status: 200, body: b };
+      }
+      return base(url);
+    };
+    const dom = bootUi(log, responder);
+    const d = dom.window.document;
+    connect(dom);
+    await waitFor(() => d.querySelectorAll('[data-cd-tab]').length === 4, 4000);
+    // 五件渲染×4 卡（textContent 面防折叠假象——password/input 属性+select/checkbox 元素在场断言）
+    for (const f of ['mmc', 'mlc', 'rmc', 'rlc'] as const) {
+      const pane = d.getElementById(`cd-${f}`);
+      assert.ok(pane, `${f} pane 在场`);
+      const keyRow = pane.querySelector('[data-cd-keyref]');
+      assert.ok(keyRow, `${f} 密钥行（keyref）在场`);
+      const keyInput = keyRow?.querySelector('[data-cd-val]');
+      assert.ok(keyInput instanceof dom.window.HTMLInputElement || (keyInput as HTMLInputElement | null)?.type !== undefined, `${f} 密钥框 input 在场`);
+      assert.equal((keyInput as HTMLInputElement).type, 'password', `${f} 密钥框 password 态`);
+      assert.ok(keyRow?.querySelector('[data-cd-eye]'), `${f} 显隐眼睛钮在场`);
+      assert.ok(pane.querySelector('[data-cd-authfield]'), `${f} 认证字段下拉在场`);
+      const fmtSel = pane.querySelector('[data-cd-apifmt]');
+      assert.ok(fmtSel, `${f} API 格式下拉在场`);
+      assert.equal((fmtSel as HTMLSelectElement).options.length, 4, `${f} API 格式四选项（cc-switch 手册照录）`);
+      assert.equal(pane.querySelectorAll('[data-cd-1m]').length, 4, `${f} 1M 行级开关×4`);
+      assert.ok(pane.querySelector('[data-cd-apifmt-warn]'), `${f} 非原生警示位在场`);
+      // 密钥存量分流：AUTH_TOKEN 灌密钥框+select 跟随；两密钥键不再落自由行
+      assert.equal((keyInput as HTMLInputElement).value, 'sk-test-stock-fsd', `${f} 密钥存量灌入密钥框`);
+      assert.equal((pane.querySelector('[data-cd-authfield]') as HTMLSelectElement).value, 'ANTHROPIC_AUTH_TOKEN', `${f} 认证字段默认 AUTH_TOKEN`);
+      const freeRows = Array.from(pane.querySelectorAll('[data-cd-row]:not([data-cd-form-row])'));
+      assert.equal(freeRows.length, 1, `${f} 密钥键入表单后自由行仍恰 legacy_key 一行`);
+      assert.equal(freeRows[0]?.querySelector('[data-cd-key]')?.value, 'legacy_key', `${f} 自由行承接清单外键`);
+    }
+    // 眼睛显隐切换（mmc）
+    const pane = d.getElementById('cd-mmc');
+    assert.ok(pane, 'mmc pane 在场');
+    const keyRow = pane.querySelector('[data-cd-keyref]');
+    assert.ok(keyRow, 'mmc 密钥行在场');
+    const eye = keyRow.querySelector('[data-cd-eye]');
+    assert.ok(eye, '眼睛钮在场');
+    const keyInput = keyRow.querySelector('[data-cd-val]') as HTMLInputElement;
+    (eye as HTMLElement).click();
+    assert.equal(keyInput.type, 'text', '眼睛一次：显形');
+    assert.equal((eye as HTMLElement).textContent, '隐藏', '钮文随态切换');
+    (eye as HTMLElement).click();
+    assert.equal(keyInput.type, 'password', '眼睛二次：复隐');
+    // 认证字段切换→预览键名跟随（Key 值落所选键）
+    const authSel = pane.querySelector('[data-cd-authfield]') as HTMLSelectElement;
+    keyInput.value = 'sk-test-live-fsd';
+    keyInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    const pre1 = pane.querySelector('[data-cd-preview-pre]')?.textContent ?? '';
+    assert.ok(pre1.includes('"ANTHROPIC_AUTH_TOKEN"') && pre1.includes('sk-test-live-fsd'), '预览 Key 落 AUTH_TOKEN 键（默认）');
+    authSel.value = 'ANTHROPIC_API_KEY';
+    authSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    const pre2 = pane.querySelector('[data-cd-preview-pre]')?.textContent ?? '';
+    assert.ok(pre2.includes('"ANTHROPIC_API_KEY"') && pre2.includes('sk-test-live-fsd'), '认证字段切换→预览键名跟随');
+    assert.equal(pre2.includes('"ANTHROPIC_AUTH_TOKEN"'), false, '原键随落点语义从预览消失');
+    // API 格式：非原生→警示现；预览零格式键（裁 A：格式不落盘不进预览）
+    const warn = pane.querySelector('[data-cd-apifmt-warn]');
+    assert.ok(warn, '警示位在场');
+    assert.equal((warn as HTMLElement).hidden, true, '默认原生警示隐');
+    const fmtSel = pane.querySelector('[data-cd-apifmt]') as HTMLSelectElement;
+    fmtSel.value = 'openai-chat';
+    fmtSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal((warn as HTMLElement).hidden, false, '非原生选值警示现');
+    assert.equal((pane.querySelector('[data-cd-preview-pre]')?.textContent ?? '').includes('需本地路由'), false, '警示文案不进预览');
+    // 1M 行级开关：开→尾缀 [1m] 实时联动；关→尾缀移除
+    const sonnetRow = Array.from(pane.querySelectorAll('[data-cd-form-row]')).find((r) => r.querySelector('[data-cd-key]')?.value === 'ANTHROPIC_DEFAULT_SONNET_MODEL');
+    assert.ok(sonnetRow, 'Sonnet 映射行在场');
+    const sonnetVal = sonnetRow.querySelector('[data-cd-val]') as HTMLInputElement;
+    sonnetVal.value = 'glm-5.3-flash';
+    sonnetVal.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    const chk1m = sonnetRow.querySelector('[data-cd-1m]') as HTMLInputElement;
+    chk1m.checked = true;
+    chk1m.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(sonnetVal.value, 'glm-5.3-flash[1m]', '1M 开→模型值尾缀 [1m]');
+    assert.ok((pane.querySelector('[data-cd-preview-pre]')?.textContent ?? '').includes('glm-5.3-flash[1m]'), '预览实时联动尾缀');
+    chk1m.checked = false;
+    chk1m.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(sonnetVal.value, 'glm-5.3-flash', '1M 关→尾缀移除');
+    // 保存载荷：密钥落所选键+1M 态入值+裁 A 格式键零出现
+    (d.querySelector('[data-cd-save="mmc"]') as HTMLElement).click();
+    await waitFor(() => log.some((e) => e.url.includes('/v1/config/cards/mmc') && e.init?.method === 'PUT'), 4000);
+    const saveEntry = log.find((e) => e.url.includes('/v1/config/cards/mmc') && e.init?.method === 'PUT');
+    const saveBody = JSON.parse(String(saveEntry?.init?.body ?? '{}')) as { local_config?: { items: Record<string, string> } };
+    const items = saveBody.local_config?.items ?? {};
+    assert.equal(items['ANTHROPIC_API_KEY'], 'sk-test-live-fsd', '密钥落所选认证字段键');
+    assert.equal('ANTHROPIC_AUTH_TOKEN' in items, false, '原键随落点语义替换（单活动 Key 形）');
+    assert.equal(items['ANTHROPIC_DEFAULT_SONNET_MODEL'], 'glm-5.3-flash', '1M 关后模型值无尾缀');
+    assert.equal(Object.keys(items).some((k) => k.toLowerCase().includes('apifmt') || k.includes('上游格式') || k.includes('格式')), false, '裁 A：API 格式键零落盘');
+    assert.equal(Object.values(items).some((v) => v.includes('需开启路由') || v.includes('需本地路由')), false, '裁 A：格式文案值零出现');
+    // 放弃清场：重建后 password 回归+存量回填+格式回默认
+    (d.querySelector('[data-cd-reload="mmc"]') as HTMLElement).click();
+    const pane2 = d.getElementById('cd-mmc');
+    assert.ok(pane2, '放弃重建后 mmc pane 在场');
+    const keyInput2 = pane2.querySelector('[data-cd-keyref] [data-cd-val]');
+    assert.ok(keyInput2, '重建后密钥框在场');
+    assert.equal((keyInput2 as HTMLInputElement).type, 'password', '放弃后密钥框复隐');
+    assert.equal((keyInput2 as HTMLInputElement).value, 'sk-test-stock-fsd', '放弃后存量回填');
+    assert.equal((pane2.querySelector('[data-cd-apifmt]') as HTMLSelectElement).value, 'anthropic', '放弃后格式回默认原生');
+    assert.equal((pane2.querySelector('[data-cd-apifmt-warn]') as HTMLElement).hidden, true, '放弃后警示复位');
     retireUi(dom);
   });
 });

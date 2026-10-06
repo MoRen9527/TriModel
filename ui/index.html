@@ -466,6 +466,17 @@ document.addEventListener('click', (ev) => {
   if (cdTab) { connDomainActive = cdTab.dataset.cdTab; renderConnectDomains(); return; }
   const cdAddCustom = el.closest('[data-cd-add-custom]');
   if (cdAddCustom) { connAddCustomRow(cdAddCustom.dataset.cdAddCustom); return; }
+  // r5 密钥显隐眼睛：password↔text 切换，钮文「显示/隐藏」随态
+  const cdEye = el.closest('[data-cd-eye]');
+  if (cdEye) {
+    const inp = cdEye.closest('[data-cd-row]')?.querySelector('[data-cd-val]');
+    if (inp) {
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      cdEye.textContent = show ? '隐藏' : '显示';
+    }
+    return;
+  }
   const cdDel = el.closest('[data-cd-del-row]');
   if (cdDel) { cdDel.closest('[data-cd-row]')?.remove(); return; }
   const cdSave = el.closest('[data-cd-save]');
@@ -493,6 +504,29 @@ document.addEventListener('input', (ev) => {
 });
 
 document.addEventListener('change', async (ev) => {
+  // r5 连接表单 change 族：1M 行级开关（值尾缀 [1m] 剥/加+预览联动）/认证字段（预览键名跟随）/
+  // API 格式（警示显隐；无收集语义故预览零变化）。select/checkbox 不走 input 委托的面在此补齐。
+  const t = ev.target instanceof Element ? ev.target : null;
+  if (t?.matches('[data-cd-1m]')) {
+    const row = t.closest('[data-cd-row]');
+    const modelInput = row?.querySelector('[data-cd-val]');
+    if (modelInput) {
+      const stripped = modelInput.value.replace(CONN_1M_RE, '');
+      modelInput.value = t.checked ? stripped + '[1m]' : stripped;
+    }
+    const pane = t.closest('[data-cd-pane]');
+    if (pane?.dataset.cdPane) connRefreshPreview(pane.dataset.cdPane);
+    return;
+  }
+  if (t?.matches('[data-cd-authfield], [data-cd-apifmt]')) {
+    const pane = t.closest('[data-cd-pane]');
+    if (pane?.dataset.cdPane) connRefreshPreview(pane.dataset.cdPane);
+    if (t.matches('[data-cd-apifmt]')) {
+      const warn = pane?.querySelector('[data-cd-apifmt-warn]');
+      if (warn) warn.hidden = t.value === 'anthropic';
+    }
+    return;
+  }
   const chk = ev.target instanceof Element ? ev.target.closest('[data-face-rule]') : null;
   if (!chk) return;
   const f = chk.dataset.faceRule ?? '';
@@ -1456,10 +1490,23 @@ const CONN_DOMAINS = [
 const CONN_FORM_SPEC = {
   main: [
     ['ANTHROPIC_BASE_URL', '请求地址', 'https://…'],
+    ['__APIKEY__', 'API Key', '粘贴接入密钥（落所选认证字段键）'],
     ['ANTHROPIC_MODEL', '主模型', '模型 ID（如 glm-5.3-flash）'],
   ],
+  // r5 认证字段下拉（cc-switch 形）：API Key 值落所选键，默认 AUTH_TOKEN；
+  // 两键入 CONN_FORM_KEYS=存量分流走表单不再落自由行。
+  authfields: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY'],
+  // r5 API 格式四选项（cc-switch 手册 2.1 照录；CEO 裁 A：仅 UI 态不落盘——无 data-cd-key/val
+  // 即不进收集链，预览与保存投影天然无此键；非原生选值仅出警示）。
+  apifmts: [
+    ['anthropic', 'Anthropic Messages（原生）'],
+    ['openai-chat', 'OpenAI Chat Completions（需开启路由）'],
+    ['openai-responses', 'OpenAI Responses API（需开启路由）'],
+    ['gemini', 'Gemini Native generateContent（需开启路由）'],
+  ],
   // 模型映射表：四档 ×（映射模型+展示名）两格 → ANTHROPIC_DEFAULT_{X}_MODEL+_NAME 共 8 键
-  //（Subagent 行不加——键不在 CEO settings.json 真源，禁硬造；_MODEL=真 ID/_NAME=仅展示名）
+  //（Subagent 行不加——键不在 CEO settings.json 真源，禁硬造；_MODEL=真 ID/_NAME=仅展示名；
+  // r5 行级 1M 开关：勾=模型值尾缀 [1m]（Claude Code 客户端 1M 开关语义，发请求前剥除））
   map: [
     ['SONNET', 'Sonnet'],
     ['OPUS', 'Opus'],
@@ -1476,10 +1523,12 @@ const CONN_FORM_SPEC = {
   ],
 };
 const CONN_FORM_KEYS = new Set([
-  ...CONN_FORM_SPEC.main.map(([k]) => k),
+  ...CONN_FORM_SPEC.main.map(([k]) => k).filter((k) => k !== '__APIKEY__'),
+  ...CONN_FORM_SPEC.authfields,
   ...CONN_FORM_SPEC.map.flatMap(([sfx]) => ['ANTHROPIC_DEFAULT_' + sfx + '_MODEL', 'ANTHROPIC_DEFAULT_' + sfx + '_MODEL_NAME']),
   ...CONN_FORM_SPEC.switches.map(([k]) => k),
 ]);
+const CONN_1M_RE = /\[1m\]$/i;
 let connDomainActive = 'mmc';
 
 function connLocalState(f) {
@@ -1521,8 +1570,18 @@ function connDomainRow(key, val) {
 
 // r4 v2 表单行（CEO 22:39 CC Switch 形）：hidden data-cd-key 固定承接键名（收集链零改语义），
 // 中文标签+键名小字注；表单行标记 data-cd-form-row（收集时空值=该键不设，见 connCollectItems）。
+// r5：__APIKEY__ 哨兵=密钥行特殊形（password+显隐眼睛；键名随认证字段下拉——data-cd-keyref
+// 让收集链取 pane 内 data-cd-authfield select 值作键）。
 function connFormRow(key, label, ph, val, wide) {
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  if (key === '__APIKEY__') {
+    return '<div class="row-form" data-cd-row data-cd-form-row data-cd-keyref="authfield">'
+      + '<label>' + esc(label) + '</label>'
+      + '<input data-cd-val type="password" value="' + esc(val ?? '') + '" style="width:' + (wide || 280) + 'px" autocomplete="new-password" placeholder="' + esc(ph) + '">'
+      + '<button type="button" data-cd-eye>显示</button>'
+      + '<span class="sub">落所选认证字段键</span>'
+      + '</div>';
+  }
   return '<div class="row-form" data-cd-row data-cd-form-row>'
     + '<label>' + esc(label) + '</label>'
     + '<input data-cd-key type="hidden" value="' + esc(key) + '">'
@@ -1534,22 +1593,45 @@ function connFormRow(key, label, ph, val, wide) {
 // r4 v2 表单块：主平铺 2 件+「高级选项」折叠（模型映射表+行为开关组+自定义项兜底）+
 // 「配置预览」折叠（所见即落盘，实时联动）。清单内键值从 items 灌入；清单外键由调用方
 // 走自由行（存量分流：键唯一零冲突）。
+// r5 增量：主平铺 API Key 密钥行（落所选认证字段键）；高级选项顶部「接入设置」块（认证字段
+// 下拉+API 格式下拉，两 select 无 data-cd-key/val=零收集=裁 A 不落盘）；映射表行级 1M 开关。
+// 密钥存量分流：AUTH_TOKEN 优先、缺位落 API_KEY、全缺默认 AUTH_TOKEN（CEO 本机两键同值并存
+// 形取 AUTH_TOKEN 面，另一键随保存按所选落点语义替换——预览实时显形可见）。
 function connFormBlocks(f, items) {
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  const main = CONN_FORM_SPEC.main.map(([k, label, ph]) => connFormRow(k, label, ph, items[k])).join('');
+  const selAuth = CONN_FORM_SPEC.authfields.find((k) => (items[k] ?? '') !== '') ?? 'ANTHROPIC_AUTH_TOKEN';
+  const keyVal = items[selAuth] ?? '';
+  const main = CONN_FORM_SPEC.main.map(([k, label, ph]) => connFormRow(k, label, ph, k === '__APIKEY__' ? keyVal : items[k])).join('');
+  const authOpts = CONN_FORM_SPEC.authfields.map((k) =>
+    '<option value="' + k + '"' + (k === selAuth ? ' selected' : '') + '>' + k + '</option>').join('');
+  const fmtOpts = CONN_FORM_SPEC.apifmts.map(([v, t]) =>
+    '<option value="' + v + '"' + (v === 'anthropic' ? ' selected' : '') + '>' + esc(t) + '</option>').join('');
   const mapRows = CONN_FORM_SPEC.map.map(([sfx, label]) => {
     const k1 = 'ANTHROPIC_DEFAULT_' + sfx + '_MODEL';
     const k2 = k1 + '_NAME';
+    const m1 = items[k1] ?? '';
     return '<div class="row-form" data-cd-row data-cd-form-row>'
       + '<label>' + esc(label) + '</label>'
-      + '<input data-cd-key type="hidden" value="' + k1 + '"><input data-cd-val value="' + esc(items[k1] ?? '') + '" style="width:170px" autocomplete="off" placeholder="映射模型 ID">'
-      + '<input data-cd-key type="hidden" value="' + k2 + '"><input data-cd-val value="' + esc(items[k2] ?? '') + '" style="width:150px" autocomplete="off" placeholder="展示名">'
+      + '<input data-cd-key type="hidden" value="' + k1 + '"><input data-cd-val value="' + esc(m1) + '" style="width:150px" autocomplete="off" placeholder="映射模型 ID">'
+      + '<input data-cd-key type="hidden" value="' + k2 + '"><input data-cd-val value="' + esc(items[k2] ?? '') + '" style="width:130px" autocomplete="off" placeholder="展示名">'
+      + '<label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" data-cd-1m' + (CONN_1M_RE.test(m1) ? ' checked' : '') + '>1M</label>'
       + '</div>';
   }).join('');
   const switches = CONN_FORM_SPEC.switches.map(([k, label, ph]) => connFormRow(k, label, ph, items[k])).join('');
   return main
     + '<details class="sub" data-cd-advanced style="margin-top:8px"><summary>高级选项</summary>'
-    + '<div class="sub" style="margin:6px 0 2px">模型映射表（_MODEL=真 ID／_NAME=仅展示名；Subagent 行不加——键不在真源）</div>'
+    + '<div class="sub" style="margin:6px 0 2px">接入设置</div>'
+    + '<div class="row-form">'
+    + '<label>认证字段</label>'
+    + '<select data-cd-authfield>' + authOpts + '</select>'
+    + '<span class="sub">选择接入密钥的环境变量名</span>'
+    + '</div>'
+    + '<div class="row-form">'
+    + '<label>API 格式</label>'
+    + '<select data-cd-apifmt>' + fmtOpts + '</select>'
+    + '<span class="sub" data-cd-apifmt-warn hidden>需本地路由，TriModel 现役仅支持 Anthropic Messages 直连</span>'
+    + '</div>'
+    + '<div class="sub" style="margin:8px 0 2px">模型映射表（_MODEL=真 ID／_NAME=仅展示名；1M 勾=请求模型值尾缀 [1m]，客户端发请求前剥除；Subagent 行不加——键不在真源）</div>'
     + mapRows
     + '<div class="sub" style="margin:8px 0 2px">行为开关</div>'
     + switches
@@ -1620,7 +1702,16 @@ function connCollectItems(f) {
   const box = $('cd-' + f + '-rows');
   const items = {};
   if (!box) return items;
+  const pane = box.closest('[data-cd-pane]');
   for (const row of box.querySelectorAll('[data-cd-row]')) {
+    // r5 密钥行（data-cd-keyref）：键名取 pane 内认证字段下拉现值（空值=未设，表单行语义同）
+    if (row.hasAttribute('data-cd-keyref')) {
+      const sel = pane?.querySelector('[data-cd-authfield]');
+      const v = row.querySelector('[data-cd-val]');
+      const k = sel?.value || row.getAttribute('data-cd-keyref') || '';
+      if (k && v && v.value !== '') items[k] = v.value;
+      continue;
+    }
     // r4 v2：key/val 按位配对收集（模型映射行=一行两 key/val 对；自由行/表单行=一对）
     const keys = row.querySelectorAll('[data-cd-key]');
     const vals = row.querySelectorAll('[data-cd-val]');
