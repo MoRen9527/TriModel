@@ -199,6 +199,75 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     retireUi(dom);
   });
 
+  it('②d LG-058 N5 方案二联席骨架：四卡 entry-actions/entry-form/rules 三件在位（mlc 静态同构）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, faceResponder({}));
+    const d = dom.window.document;
+    await waitFor(() => d.querySelectorAll('#page-menu .menu-btn').length === 7);
+    for (const f of FACES) {
+      assert.ok(d.getElementById(`cf-${f}-entry-actions`), `${f} 联席操作行在位`);
+      assert.ok(d.querySelector(`[data-face-add-entry="${f}"]`), `${f} 新增条目按钮在位`);
+      assert.ok(d.getElementById(`cf-${f}-entry-form`), `${f} 条目表单容器在位`);
+      assert.ok(d.getElementById(`cf-${f}-rules`), `${f} 本域适用规则行在位`);
+    }
+    // 引用模型集带出钮初始隐藏（菜单空态诚实——有模型集后才显形）
+    assert.equal((d.querySelector('[data-face-bring-set="rlc"]') as HTMLElement).hidden, true, '带出钮初始隐藏（菜单空）');
+    retireUi(dom);
+  });
+
+  it('②e LG-058 N5 方案二联席渲染：溯源标注+规则勾选态+模型集下拉（策略卡数据驱动）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const base = faceResponder({ rlc: { present: true } });
+    const responder = (url: string): Resp => {
+      if (url.includes('/v1/config/trimmc-card')) {
+        return {
+          status: 200,
+          body: {
+            object: 'config.trimmc-card', card_file_present: true,
+            card: {
+              default_model: 'GLM-5.3',
+              status: { state: 'applied', at: 'x' },
+              model_sets: { s1: { name: '主力集', entry_ids: ['e1'] } },
+              rules: { r1: { name: '默认规则', type: 'default', entry_id: 'e1' } },
+            },
+            entries_masked: { e1: { provider: 'glm', model: 'GLM-5.3', masked: '****0001', enabled: true, updated_at: 'x' } },
+          },
+        };
+      }
+      if (url.includes('/v1/config/cards/rlc')) {
+        // 域卡现役 rules.r1 —— 勾选态断言的数据面
+        const b = base(url).body as { card: Record<string, unknown> };
+        return {
+          status: 200,
+          body: { ...b, card: { ...b.card, rules: { r1: { name: '默认规则', type: 'default', entry_id: 'e1' } } } },
+        };
+      }
+      return base(url);
+    };
+    const dom = bootUi(log, responder);
+    const d = dom.window.document;
+    connect(dom);
+    await waitFor(() => d.querySelectorAll('#cf-rlc-entries tbody tr').length > 0, 4000);
+    // 验收锚①：菜单条目溯源标注=集合名（点菜从菜单点，来源可辨）
+    const modelCell = d.querySelector('#cf-rlc-entries tbody tr td:nth-child(2)') as HTMLElement;
+    const mcText = modelCell.textContent ?? '';
+    assert.ok(mcText.includes('GLM-5.3'), '模型值在位');
+    assert.ok(mcText.includes('来自策略卡·主力集'), `溯源标注=集合名（got=${mcText.trim()}）`);
+    // 规则适用勾选：菜单规则 r1 在列+勾选态=本域现役 rules（两边互相可见）
+    const ruleChk = d.querySelector('#cf-rlc-rules input[data-face-rule]') as HTMLInputElement;
+    assert.ok(ruleChk, '规则勾选框在位');
+    assert.equal(ruleChk.dataset.ruleId, 'r1', '勾选框绑定菜单规则 id');
+    assert.equal(ruleChk.checked, true, '本域现役 rules.r1 → 勾选态同步');
+    // 模型集下拉显形（有集合才显——引用带出入口）
+    const setSel = d.getElementById('cf-rlc-set-sel') as HTMLSelectElement;
+    assert.equal(setSel.hidden, false, '有模型集 → 下拉显形');
+    assert.ok((setSel.textContent ?? '').includes('主力集'), '下拉含集合名');
+    assert.equal((d.querySelector('[data-face-bring-set="rlc"]') as HTMLElement).hidden, false, '带出钮显形');
+    // 未连接卡（mmc）：规则行=暂无诚实态
+    assert.ok(((d.getElementById('cf-mmc-rules') as HTMLElement).textContent ?? '').includes('暂无'), '未连接卡规则行诚实态');
+    retireUi(dom);
+  });
+
   it('③ 无令牌诚实态：未连接×4+零卡面请求+首启引导', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const dom = bootUi(log, faceResponder({}));

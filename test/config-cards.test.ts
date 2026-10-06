@@ -562,3 +562,60 @@ describe('LG-058 N2 card maintenance (backups/rollback/templates/apply-template)
     assert.equal((await req('POST', '/v1/config/cards/rmc/templates', `Bearer ${ADMIN}`, '{}')).statusCode, 404, 'POST templates=404');
   });
 });
+
+// ── LG-058 N5 方案二联席：UI 所发载荷形经真通道钉住（server 零改——D7 合并现役够用）──
+
+describe('LG-058 N5 join (face PUT payload shapes from UI)', () => {
+  it('域卡点菜：face PUT provider_entries 脏条目 upsert——明文 api_key 水合为密文落盘+managed 掩码读回', async () => {
+    clearBaks('rlc');
+    const cardPath = faceCardPath('rlc');
+    if (existsSync(cardPath)) rmSync(cardPath);
+    await req('PUT', '/v1/config/cards/rlc', `Bearer ${ADMIN}`, JSON.stringify(emptyCard('join-seed')));
+    // UI submitFaceEntries 载荷形：{ provider_entries: { id: {provider,model,enabled,api_key,base_url?} } }
+    const r = await req('PUT', '/v1/config/cards/rlc', `Bearer ${ADMIN}`, JSON.stringify({
+      ...emptyCard('join'),
+      provider_entries: { m1: { provider: 'glm', model: 'GLM-5.3', enabled: true, api_key: 'sk-join-face-key-000000' } },
+    }));
+    assert.equal(r.statusCode, 200);
+    const doc = JSON.parse(readFileSync(cardPath, 'utf-8')) as { provider_entries: Record<string, { model?: string; api_key_encrypted?: string; api_key?: string }> };
+    assert.equal(doc.provider_entries.m1?.model, 'GLM-5.3', '条目 upsert 落盘');
+    assert.ok(doc.provider_entries.m1?.api_key_encrypted, '明文已水合为密文');
+    assert.equal(doc.provider_entries.m1?.api_key, undefined, 'at-rest 零明文字段');
+    assert.ok(!readFileSync(cardPath, 'utf-8').includes('sk-join-face-key'), '卡文件零明文（密文唯一形）');
+    const g = await req('GET', '/v1/config/cards/rlc?view=managed', `Bearer ${ADMIN}`);
+    assert.equal(g.statusCode, 200);
+    const masked = (g.body as { entries_masked: Record<string, { model: string; masked: string }> }).entries_masked;
+    assert.equal(masked.m1?.model, 'GLM-5.3', 'managed 掩码视图可读回');
+    assert.ok(masked.m1?.masked, '掩码串在位');
+  });
+  it('规则适用勾选：face PUT rules upsert（策略卡规则对象复制进本域）+deleted_rule_ids 移除；悬挂=400 守卫硬门', async () => {
+    clearBaks('rmc');
+    const cardPath = faceCardPath('rmc');
+    if (existsSync(cardPath)) rmSync(cardPath);
+    await req('PUT', '/v1/config/cards/rmc', `Bearer ${ADMIN}`, JSON.stringify(emptyCard('rule-seed')));
+    // 真实联席语义：规则按条目 id 解析——先点菜（条目 m1 落本域卡）再勾规则
+    const entryUp = await req('PUT', '/v1/config/cards/rmc', `Bearer ${ADMIN}`, JSON.stringify({
+      ...emptyCard('rule-join'),
+      provider_entries: { m1: { provider: 'glm', model: 'GLM-5.3', enabled: true, api_key: 'sk-rule-face-key-00000' } },
+    }));
+    assert.equal(entryUp.statusCode, 200, '前置：条目 m1 已点进本域卡');
+    const ruleObj = { name: '默认规则', type: 'default', entry_id: 'm1', enabled: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    // UI 联席载荷形：规则通道搭载空 provider_entries（守卫要求条目键在场——
+    // 空对象=本次不改条目，合并基底保留既有条目与密文；rules-only 形被 P1 候修①守卫 400）
+    const rulesOnly = await req('PUT', '/v1/config/cards/rmc', `Bearer ${ADMIN}`, JSON.stringify({ rules: { r9: ruleObj } }));
+    assert.equal(rulesOnly.statusCode, 400, 'rules-only（无条目键在场）=守卫 400（UI 侧以空搭载规避）');
+    const up = await req('PUT', '/v1/config/cards/rmc', `Bearer ${ADMIN}`, JSON.stringify({ provider_entries: {}, rules: { r9: ruleObj }, machine: { name: 'rule-join' }, connection: { name: 'rule-join' } }));
+    assert.equal(up.statusCode, 200, 'rules upsert（空条目搭载）通道 200');
+    let doc = JSON.parse(readFileSync(cardPath, 'utf-8')) as { rules: Record<string, unknown>; provider_entries: Record<string, { api_key_encrypted?: string }> };
+    assert.ok(doc.rules.r9, '规则复制进本域卡');
+    assert.ok(doc.provider_entries.m1?.api_key_encrypted, '空搭载不伤既有条目密文');
+    // 悬挂守卫硬门 backstop（UI 前置引导之外的 server 侧如实拒）
+    const dangling = await req('PUT', '/v1/config/cards/rmc', `Bearer ${ADMIN}`, JSON.stringify({ provider_entries: {}, rules: { r10: { ...ruleObj, entry_id: 'ghost' } }, machine: { name: 'rule-join' }, connection: { name: 'rule-join' } }));
+    assert.equal(dangling.statusCode, 400, '悬挂引用=400 拒');
+    assert.equal((JSON.parse(readFileSync(cardPath, 'utf-8')) as { rules: Record<string, unknown> }).rules.r10, undefined, '悬挂规则零落盘');
+    const del = await req('PUT', '/v1/config/cards/rmc', `Bearer ${ADMIN}`, JSON.stringify({ provider_entries: {}, deleted_rule_ids: ['r9'], machine: { name: 'rule-join' }, connection: { name: 'rule-join' } }));
+    assert.equal(del.statusCode, 200, 'deleted_rule_ids 通道 200');
+    doc = JSON.parse(readFileSync(cardPath, 'utf-8')) as { rules: Record<string, unknown>; provider_entries: Record<string, { api_key_encrypted?: string }> };
+    assert.equal(doc.rules.r9, undefined, '规则已从本域卡移除');
+  });
+});

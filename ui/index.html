@@ -126,6 +126,10 @@
     <h3>现役配置</h3>
     <div class="kv" id="cf-mlc-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>
     <table id="cf-mlc-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th><th>来源</th></tr></thead><tbody></tbody></table>
+    <!-- LG-058 N5 方案二联席（同构 JS 卡）：点菜必须从菜单点；规则适用勾选 -->
+    <div class="row-form" id="cf-mlc-entry-actions"><button data-face-add-entry="mlc">新增条目</button><select id="cf-mlc-set-sel" hidden></select><button data-face-bring-set="mlc" hidden>引用模型集带出</button><span class="sub" id="cf-mlc-entry-msg" hidden></span></div>
+    <form class="card-form" id="cf-mlc-entry-form" hidden></form>
+    <div class="kv" id="cf-mlc-rules"><b>本域适用规则</b><span class="idle">暂无——连接后显示</span></div>
 
     <h3>模板切换</h3>
     <div class="sub" style="margin:-4px 0 6px">本机栏——本机 Claude Code 的 settings 写入面：选目的地模板，只填密钥一项</div>
@@ -379,6 +383,11 @@ function faceCardHtml(f) {
     + '<h3>现役配置</h3>'
     + `<div class="kv" id="cf-${f}-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>`
     + `<table id="cf-${f}-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th><th>来源</th></tr></thead><tbody></tbody></table>`
+    // LG-058 N5 方案二联席（菜单点菜心智）：点菜必须从菜单点——模型下拉出自策略卡清单，
+    // 手填降为高级；规则适用勾选=从策略卡规则清单点进本域（选择引用层）。
+    + `<div class="row-form" id="cf-${f}-entry-actions"><button data-face-add-entry="${f}">新增条目</button><select id="cf-${f}-set-sel" hidden></select><button data-face-bring-set="${f}" hidden>引用模型集带出</button><span class="sub" id="cf-${f}-entry-msg" hidden></span></div>`
+    + `<form class="card-form" id="cf-${f}-entry-form" hidden></form>`
+    + `<div class="kv" id="cf-${f}-rules"><b>本域适用规则</b><span class="idle">暂无——连接后显示</span></div>`
     + '<h3>模板切换</h3>'
     + `<div id="cf-${f}-tpl">${m.tpl}</div>`
     + '<h3>备份与回滚</h3>'
@@ -444,7 +453,71 @@ document.addEventListener('click', (ev) => {
   const tplApply = el.closest('button[id$="-tpl-apply"]');
   if (tplApply) { applyCardTemplate(tplApply.id.replace(/-tpl-apply$/, '')); return; }
   const rb = el.closest('[data-card-rollback]');
-  if (rb) { cardRollbackClick(rb); }
+  if (rb) { cardRollbackClick(rb); return; }
+  // 方案二联席（域卡条目编辑面）：新增/带出/保存/取消
+  const addEntry = el.closest('[data-face-add-entry]');
+  if (addEntry) { openFaceEntryForm(addEntry.dataset.faceAddEntry, null); return; }
+  const bringSet = el.closest('[data-face-bring-set]');
+  if (bringSet) { bringModelSet(bringSet.dataset.faceBringSet); return; }
+  const saveEntry = el.closest('[data-face-entry-save]');
+  if (saveEntry) { submitFaceEntries(saveEntry.dataset.faceEntrySave); return; }
+  const cancelEntry = el.closest('[data-face-entry-cancel]');
+  if (cancelEntry) {
+    const fm = $('cf-' + cancelEntry.dataset.faceEntryCancel + '-entry-form');
+    if (fm) { fm.hidden = true; fm.innerHTML = ''; }
+    faceEntryMsg(cancelEntry.dataset.faceEntryCancel, '', '');
+  }
+});
+
+// 方案二联席：规则适用勾选（change 委托）——勾=策略卡规则对象复制进本域卡
+// （upsert 既有通道）；取消=deleted_rule_ids 通道（被本域活动策略引用时守卫 400 如实报）。
+/** 规则实体引用的条目 id 全集（分型解析：time=windows/default=entry_id/quota=watch+fallback）。 */
+function ruleEntryIds(r) {
+  if (!r) return [];
+  if (r.type === 'time') return (r.windows ?? []).map((w) => w.entry_id);
+  if (r.type === 'quota') return [r.watch_entry_id, ...(r.fallback_ids ?? [])];
+  return [r.entry_id];
+}
+
+document.addEventListener('change', async (ev) => {
+  const chk = ev.target instanceof Element ? ev.target.closest('[data-face-rule]') : null;
+  if (!chk) return;
+  const f = chk.dataset.faceRule ?? '';
+  const rid = chk.dataset.ruleId ?? '';
+  let body;
+  if (chk.checked) {
+    const full = tcRules?.[rid];
+    if (!full) {
+      chk.checked = false;
+      faceEntryMsg(f, '策略卡规则数据未加载——先在策略卡页连接后再勾选', 'sub err');
+      return;
+    }
+    // 悬挂前置（人话即时引导；服务端悬挂守卫为硬门）：规则按条目 id 解析，
+    // 引用条目须已在本域卡——先用「新增条目/引用模型集带出」点同名条目
+    const have = new Set(Object.keys(faceState[f]?.entries_masked ?? {}));
+    const missing = ruleEntryIds(full).filter((eid) => !have.has(eid));
+    if (missing.length > 0) {
+      chk.checked = false;
+      faceEntryMsg(f, '该规则引用的条目（' + missing.join('、') + '）不在本域卡——先用「新增条目/引用模型集带出」把同名条目点进来再勾选', 'sub err');
+      return;
+    }
+    // 载荷搭载空 provider_entries：写守卫要求条目键在场（P1 候修①形），空对象=
+    // 本次保存不改条目（合并基底保留全部既有条目与密文）——规则通道零 server 改
+    body = { provider_entries: {}, rules: { [rid]: full } };
+  } else {
+    body = { provider_entries: {}, deleted_rule_ids: [rid] };
+  }
+  chk.disabled = true;
+  const r = await api('/v1/config/cards/' + f, { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(body) }).catch(() => null);
+  chk.disabled = false;
+  if (!r) { chk.checked = !chk.checked; faceEntryMsg(f, '无法连接配置服务', 'sub err'); return; }
+  if (r.status === 200) {
+    faceEntryMsg(f, chk.checked ? '规则已适用到本域（daemon 下次拉取落地）' : '规则已从本域移除', 'sub ok');
+    await loadFaceCards();
+  } else {
+    chk.checked = !chk.checked;
+    faceEntryMsg(f, humanize(r.status, r.body.error), 'sub err');
+  }
 });
 
 // 渲染 rlc/mmc/rmc 三卡（mlc 静态正形已在 HTML 中）
@@ -747,6 +820,229 @@ function faceEntrySource(f) {
   return '暂无回写';
 }
 
+// ═══ 方案二联席（LG-058 N5）：策略卡=菜单，域卡=点菜 ═══
+// 点菜必须从菜单点——模型下拉出自策略卡清单，手填降为高级并显式标注「自填（菜单外）」；
+// key 不进策略面（CPO 方稿 2.4：策略卡不搬钥匙，各域域内自管——新条目密钥必填）；
+// 规则适用=从策略卡规则清单勾选复制进本域卡（选择引用层，upsert/deleted_rule_ids 既有通道）。
+// server 零改：PUT /v1/config/cards/{face} D7 合并语义现役够用。
+
+/** 菜单快照：策略卡（过渡位 trimmc-card）条目/模型集/规则三清单（合并视图 ∪ 脏）。 */
+function menuSnapshot() {
+  const all = { ...tcMirror, ...tcEntries };
+  return {
+    models: Object.entries(all).map(([id, e]) => ({ id, provider: e.provider ?? '', model: e.model ?? '', enabled: !!e.enabled })),
+    sets: Object.entries(tcModelSets ?? {}).map(([id, m]) => ({ id, name: m.name, entry_ids: m.entry_ids ?? [] })),
+    rules: Object.entries(tcRules ?? {}).map(([id, r]) => ({ id, name: r.name })),
+  };
+}
+
+/** 菜单溯源标注（验收锚①：域卡模型选择零手填孤儿——菜单外显式标注）。 */
+function menuOriginLabel(provider, model) {
+  const ms = menuSnapshot();
+  const hit = ms.models.find((m) => m.provider === provider && m.model === model);
+  if (!hit) return '自填（菜单外）';
+  const set = ms.sets.find((st) => st.entry_ids.includes(hit.id));
+  return set ? '来自策略卡·' + set.name : '来自策略卡菜单';
+}
+
+/** 反向引用清单（验收锚②③）：哪些域卡条目在点这道菜（faceState 缓存面，零额外请求）。 */
+function faceRefsOf(provider, model) {
+  return FACE_UI_IDS.filter((f) =>
+    Object.values(faceState[f]?.entries_masked ?? {}).some((m) => m.provider === provider && m.model === model));
+}
+
+function faceEntryMsg(f, text, cls) {
+  const n = $('cf-' + f + '-entry-msg');
+  if (!n) return;
+  n.hidden = !text; n.textContent = text || '';
+  if (cls) n.className = cls;
+}
+
+/** 域卡条目表单行（动态）：模型从菜单选（厂商/服务地址随菜单带出），手填降高级。 */
+function faceEntryRow(pre) {
+  const ms = menuSnapshot();
+  const row = document.createElement('div');
+  row.className = 'row-form';
+  row.dataset.faceEntryRow = '1';
+  const idIn = document.createElement('input');
+  idIn.dataset.ff = 'id'; idIn.placeholder = '条目名'; idIn.style.width = '100px'; idIn.value = pre?.id ?? '';
+  const provIn = document.createElement('input');
+  provIn.dataset.ff = 'provider'; provIn.placeholder = '厂商'; provIn.style.width = '90px';
+  const sel = document.createElement('select');
+  sel.dataset.ff = 'model-sel'; sel.style.width = '170px';
+  sel.appendChild(new Option('—— 从菜单选 ——', ''));
+  for (const m of ms.models) {
+    sel.appendChild(new Option(m.provider + ' / ' + m.model + (m.enabled ? '' : '（停用）'), m.provider + '|' + m.model));
+  }
+  const adv = document.createElement('optgroup');
+  adv.label = '高级：手填（菜单外）';
+  adv.appendChild(new Option('手填模型…', '__manual__'));
+  sel.appendChild(adv);
+  const manualIn = document.createElement('input');
+  manualIn.dataset.ff = 'model-manual'; manualIn.placeholder = '手填模型名'; manualIn.hidden = true; manualIn.style.width = '140px';
+  const urlIn = document.createElement('input');
+  urlIn.dataset.ff = 'baseurl'; urlIn.placeholder = '服务地址（可留空）'; urlIn.style.width = '150px';
+  const keyIn = document.createElement('input');
+  keyIn.dataset.ff = 'key'; keyIn.type = 'password'; keyIn.placeholder = '密钥（各域自管）'; keyIn.style.width = '140px';
+  const enChk = document.createElement('input');
+  enChk.dataset.ff = 'enabled'; enChk.type = 'checkbox'; enChk.checked = true; enChk.title = '启用';
+  const hint = document.createElement('span');
+  hint.className = 'sub'; hint.dataset.ff = 'hint';
+  const applyMenu = () => {
+    const v = sel.value;
+    if (v && v !== '__manual__') {
+      const [p, m] = v.split('|');
+      provIn.value = p; manualIn.hidden = true;
+      urlIn.value = PROVIDER_DEFAULT_BASEURL[p] ?? '';
+      hint.textContent = menuOriginLabel(p, m);
+      // 条目引用化（点菜=引用）：条目名预填菜单条目 id——规则跨卡移植按条目 id 解析，
+      // 同名条目是规则可适用到本域的前提（服务端悬挂守卫为硬门，此处管即时引导）
+      const hit = ms.models.find((x) => x.provider === p && x.model === m);
+      if (hit && !idIn.value.trim()) idIn.value = hit.id;
+    } else if (v === '__manual__') {
+      manualIn.hidden = false; hint.textContent = '菜单外手填——建议先在策略卡登记';
+    } else {
+      hint.textContent = '';
+    }
+  };
+  sel.onchange = applyMenu;
+  manualIn.oninput = () => {
+    const p = provIn.value.trim(), m = manualIn.value.trim();
+    hint.textContent = (m && menuSnapshot().models.some((x) => x.provider === p && x.model === m))
+      ? '菜单已有此模型——建议改从下拉选' : '菜单外手填——建议先在策略卡登记';
+  };
+  if (pre) {
+    const menuHit = ms.models.find((x) => x.provider === pre.provider && x.model === pre.model);
+    if (menuHit) sel.value = menuHit.provider + '|' + menuHit.model;
+    else { sel.value = '__manual__'; manualIn.hidden = false; manualIn.value = pre.model ?? ''; }
+    provIn.value = pre.provider ?? '';
+    urlIn.value = pre.base_url ?? PROVIDER_DEFAULT_BASEURL[pre.provider] ?? '';
+    enChk.checked = pre.enabled ?? true;
+    applyMenu();
+  }
+  row.append(idIn, provIn, sel, manualIn, urlIn, keyIn, enChk, hint);
+  return row;
+}
+
+function openFaceEntryForm(f, prefillList) {
+  const form = $('cf-' + f + '-entry-form');
+  if (!form) return;
+  const ms = menuSnapshot();
+  faceEntryMsg(f, '', '');
+  form.innerHTML = '';
+  const title = document.createElement('h4');
+  title.textContent = prefillList
+    ? '引用模型集带出（' + prefillList.length + ' 条）——逐条补密钥后保存'
+    : '新增条目——模型从菜单选（手填降为高级）';
+  form.appendChild(title);
+  if (ms.models.length === 0) {
+    const warn = document.createElement('div');
+    warn.className = 'sub';
+    warn.textContent = '策略卡菜单为空（未连接策略卡或暂无条目）——仍可手填，但会标注为菜单外';
+    form.appendChild(warn);
+  }
+  for (const pre of (prefillList ?? [null])) form.appendChild(faceEntryRow(pre));
+  const actions = document.createElement('div');
+  actions.className = 'row-form';
+  const save = document.createElement('button');
+  save.type = 'button'; save.className = 'primary'; save.dataset.faceEntrySave = f; save.textContent = '保存到本卡（待拉取落地）';
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.dataset.faceEntryCancel = f; cancel.textContent = '取消';
+  actions.append(save, cancel);
+  form.appendChild(actions);
+  form.hidden = false;
+}
+
+/** 引用模型集带出：按所选集合的 entry_ids 逐条预填（模型/厂商随菜单带出，密钥逐条补）。 */
+function bringModelSet(f) {
+  const sel = $('cf-' + f + '-set-sel');
+  if (!sel || !sel.value) return;
+  const ms = menuSnapshot();
+  const set = ms.sets.find((st) => st.id === sel.value);
+  if (!set) return;
+  const prefill = set.entry_ids
+    .map((eid) => ms.models.find((m) => m.id === eid))
+    .filter(Boolean)
+    .map((m) => ({ provider: m.provider, model: m.model, enabled: m.enabled }));
+  openFaceEntryForm(f, prefill);
+}
+
+async function submitFaceEntries(f) {
+  const form = $('cf-' + f + '-entry-form');
+  if (!form) return;
+  const rows = Array.from(form.querySelectorAll('[data-face-entry-row]'));
+  const payload = {};
+  for (const row of rows) {
+    const id = row.querySelector('[data-ff=id]').value.trim();
+    const selV = row.querySelector('[data-ff=model-sel]').value;
+    const manual = row.querySelector('[data-ff=model-manual]').value.trim();
+    const provider = row.querySelector('[data-ff=provider]').value.trim();
+    const model = selV === '__manual__' ? manual : (selV ? selV.split('|')[1] : '');
+    const effProvider = (selV === '__manual__' || !selV) ? provider : selV.split('|')[0];
+    const key = row.querySelector('[data-ff=key]').value;
+    const baseUrl = row.querySelector('[data-ff=baseurl]').value.trim();
+    const enabled = row.querySelector('[data-ff=enabled]').checked;
+    if (!id && !model && !key) continue; // 整行空白跳过
+    if (!id) return faceEntryMsg(f, '有行缺条目名', 'sub err');
+    if (!model) return faceEntryMsg(f, id + '：模型必填（从菜单选或手填）', 'sub err');
+    if (!effProvider) return faceEntryMsg(f, id + '：厂商必填', 'sub err');
+    if (!key) return faceEntryMsg(f, id + '：新条目需填密钥（各域密钥域内自管，策略卡不搬钥匙）', 'sub err');
+    if (key.includes('*')) return faceEntryMsg(f, id + '：检测到占位符，请输入真实密钥', 'sub err');
+    payload[id] = { provider: effProvider, model, enabled, api_key: key, ...(baseUrl ? { base_url: baseUrl } : {}) };
+  }
+  if (Object.keys(payload).length === 0) return faceEntryMsg(f, '没有可保存的行', 'sub err');
+  const r = await api('/v1/config/cards/' + f, { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ provider_entries: payload }) }).catch(() => null);
+  if (!r) return faceEntryMsg(f, '无法连接配置服务', 'sub err');
+  if (r.status === 200) {
+    form.hidden = true; form.innerHTML = '';
+    faceEntryMsg(f, '已保存到卡（daemon 下次拉取落地）', 'sub ok');
+    await loadFaceCards();
+  } else {
+    faceEntryMsg(f, humanize(r.status, r.body.error), 'sub err');
+  }
+}
+
+/** 本域适用规则勾选行：菜单=策略卡规则清单，勾选态=本域卡现役 rules（两边互相可见）。 */
+function renderFaceRules(f) {
+  const line = $('cf-' + f + '-rules');
+  if (!line) return;
+  const s = faceState[f];
+  if (!s || !s.card_file_present) {
+    line.innerHTML = '<b>本域适用规则</b><span class="idle">暂无——连接后显示</span>';
+    return;
+  }
+  const ms = menuSnapshot();
+  const cardRules = s.card?.rules ?? {};
+  const localIds = Object.keys(cardRules);
+  line.innerHTML = '<b>本域适用规则</b>';
+  const cell = document.createElement('span');
+  if (ms.rules.length === 0 && localIds.length === 0) {
+    const idle = document.createElement('span');
+    idle.className = 'idle';
+    idle.textContent = '策略卡暂无规则清单';
+    cell.appendChild(idle);
+  }
+  for (const r of ms.rules) {
+    const lb = document.createElement('label');
+    lb.style.cssText = 'display:inline-flex;gap:4px;align-items:center;margin-right:10px';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.dataset.faceRule = f; chk.dataset.ruleId = r.id;
+    chk.checked = !!cardRules[r.id];
+    lb.appendChild(chk);
+    lb.appendChild(document.createTextNode(r.name));
+    cell.appendChild(lb);
+  }
+  for (const rid of localIds) {
+    if (!ms.rules.some((r) => r.id === rid)) {
+      const tag = document.createElement('span');
+      tag.className = 'sub';
+      tag.textContent = rid + '（策略卡已删，本域仍有副本）';
+      cell.appendChild(tag);
+    }
+  }
+  line.appendChild(cell);
+}
+
 function renderFaceCards() {
   for (const f of FACE_UI_IDS) {
     const badge = $('cf-' + f + '-badge');
@@ -775,6 +1071,11 @@ function renderFaceCards() {
           tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td>';
           tr.children[0].textContent = id;
           tr.children[1].textContent = m.model ?? '-';
+          // 方案二联席（验收锚①）：模型格溯源标注——菜单来源可辨，自填显式标注
+          const origin = document.createElement('span');
+          origin.className = 'sub';
+          origin.textContent = ' ' + menuOriginLabel(m.provider ?? '', m.model ?? '');
+          tr.children[1].appendChild(origin);
           tr.children[2].textContent = m.masked ?? '••••';
           tr.children[3].textContent = m.enabled ? '✓' : '✗';
           tr.children[4].textContent = faceEntrySource(f);
@@ -783,6 +1084,21 @@ function renderFaceCards() {
         tbl.hidden = Object.keys(masked).length === 0;
       }
     }
+    // 方案二联席：模型集下拉（引用带出）+本域适用规则勾选行
+    const setSel = $('cf-' + f + '-set-sel');
+    const bringBtn = document.querySelector('[data-face-bring-set="' + f + '"]');
+    if (setSel && bringBtn) {
+      setSel.innerHTML = '';
+      const sets = (s && s.card_file_present) ? menuSnapshot().sets : [];
+      if (sets.length > 0) {
+        setSel.hidden = false; bringBtn.hidden = false;
+        setSel.appendChild(new Option('—— 选模型集 ——', ''));
+        for (const st of sets) setSel.appendChild(new Option(st.name + '（' + st.entry_ids.length + ' 条）', st.id));
+      } else {
+        setSel.hidden = true; bringBtn.hidden = true;
+      }
+    }
+    renderFaceRules(f);
     const audit = $('cf-' + f + '-audit');
     const applied = s?.ledger?.faces?.[f]?.applied_state;
     audit.textContent = '台账摘要：应用回写态=' + (applied ?? '暂无回写') + '；' + facePullSummary(f);
@@ -1185,6 +1501,14 @@ function tcRender() {
     tr.children[0].textContent = id;
     tr.children[1].textContent = (dirty ?? mirror).provider ?? '-';
     tr.children[2].textContent = (dirty ?? mirror).model ?? '-';
+    // 方案二联席（验收锚③ 反向可见）：被域卡点用的菜单条目标注引用方
+    const faceRefs = faceRefsOf((dirty ?? mirror).provider ?? '', (dirty ?? mirror).model ?? '');
+    if (faceRefs.length > 0) {
+      const tag = document.createElement('span');
+      tag.className = 'sub';
+      tag.textContent = '（' + faceRefs.map((rf) => FACE_META[rf]?.nav ?? rf).join('、') + ' 已点用）';
+      tr.children[2].appendChild(tag);
+    }
     tr.children[3].textContent = dirty ? (dirty.api_key_encrypted ? '••••（已加密保存）' : '••••（待保存）') : (mirror?.masked ?? '••••');
     const sw = tr.querySelector('[data-enable]');
     sw.checked = !!(dirty ?? mirror)?.enabled;
@@ -1200,6 +1524,12 @@ function tcRender() {
     };
     tr.querySelector('[data-edit]').onclick = () => tcOpenForm(id);
     tr.querySelector('[data-del]').onclick = () => {
+      // 方案二联席（验收锚②）：条目已被域卡点用时禁删——先解除域卡引用
+      // （域卡条目移除面候办；过渡可用域卡「模板切换/回滚」整卡替换解除）
+      if (faceRefs.length > 0) {
+        tcMsg('该条目已被 ' + faceRefs.map((rf) => FACE_META[rf]?.nav ?? rf).join('、') + ' 点用，暂不能删——先在对应域卡解除引用（过渡可用该卡「模板切换/回滚」整卡替换）', 'err');
+        return;
+      }
       // v4 引用检查（2026-09-14 23:1x）：条目被模型集或规则引用均禁删（窗级 entry_id 全族口径）
       const referenced = Object.values(tcModelSets ?? {}).some((m) => (m.entry_ids ?? []).includes(id))
         || Object.values(tcRules ?? {}).some((r) => (r.type === 'time' ? (r.windows ?? []).some((w) => w.entry_id === id) : r.entry_id === id) || r.watch_entry_id === id || (r.fallback_ids ?? []).includes(id));
@@ -1835,6 +2165,9 @@ async function loadTrimmc() {
   tcRenderStrategySel();
   tcRenderStrategyTable();
   tcRenderStrategyDetail();
+  // 方案二联席：菜单数据（策略卡条目/模型集/规则）落定后幂等重渲域卡——
+  // 溯源标注/规则勾选态/模型集下拉以菜单为准（loadFaceCards 先完成时的竞态闭合）
+  renderFaceCards();
 }
 $('refreshNow').onclick = () => refreshAll();
 
