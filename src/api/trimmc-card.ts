@@ -132,12 +132,53 @@ export function handlePutTrimmcCard(
     rules: { ...base.rules, ...(isRecord(card.rules) ? card.rules : {}) },
     strategies: { ...base.strategies, ...(isRecord(card.strategies) ? card.strategies : {}) },
     active_strategy_id: 'active_strategy_id' in card ? card.active_strategy_id ?? null : base.active_strategy_id ?? null,
+    // N5 方案三：本地配置直改面——占位基座值，PUT 携带时经下方校验段整表替换
+    // （须能 400 早退，故校验后置于 merged 构造，与 deleted_* 通道同形）。
+    local_config: base.local_config ?? null,
     // 派生缓存：apply 时自活动策略 default 规则同步（无编辑面；PUT 不接受直改——
     // 传入值与基座一致时透传，否则以基座为准防第二真源）。
     default_model: base.default_model ?? null,
     status: { state: 'pending', at: new Date().toISOString() },
     reserved: { quota_switch: null, instances_group: null, env_tag: null },
   };
+  // N5 方案三：本地配置直改面（改→存链的「存」；整表替换+服务端版本单调）。
+  // PUT 未携带=维持基座；显式 null=清空；携带对象=items 全量替换、version+1。
+  // 密钥禁入（hint「各域密钥走域卡条目域内自管」——方稿 2.4 同族）；值面禁超长。
+  if ('local_config' in card) {
+    if (card.local_config === null) {
+      merged.local_config = null;
+    } else if (isRecord(card.local_config) && isRecord((card.local_config as { items?: unknown }).items)) {
+      const rawItems = (card.local_config as { items: Record<string, unknown> }).items;
+      const keys = Object.keys(rawItems);
+      if (keys.length > 50) {
+        return { statusCode: 400, body: { error: '本地配置项过多（上限 50 项），请精简后再保存' } };
+      }
+      const items: Record<string, string> = {};
+      for (const k of keys) {
+        if (!k || k.length > 64) {
+          return { statusCode: 400, body: { error: `本地配置项名不合法（${k || '（空）'}）：1-64 字符`, } };
+        }
+        if (/(^|_)(api[_-]?keys?|tokens?|secrets?|passwo?rds?|passwd|private[_-]?keys?|credentials?)($|_)/i.test(k)) {
+          return { statusCode: 400, body: { error: `本地配置项「${k}」疑似密钥——密钥禁入本地配置表，各域密钥走域卡条目域内自管` } };
+        }
+        const v = rawItems[k];
+        if (typeof v !== 'string') {
+          return { statusCode: 400, body: { error: `本地配置项「${k}」的值须为字符串` } };
+        }
+        if (v.length > 2000) {
+          return { statusCode: 400, body: { error: `本地配置项「${k}」的值过长（上限 2000 字符）` } };
+        }
+        items[k] = v;
+      }
+      merged.local_config = {
+        version: (base.local_config?.version ?? 0) + 1,
+        updated_at: new Date().toISOString(),
+        items,
+      };
+    } else {
+      return { statusCode: 400, body: { error: '本地配置格式错误：local_config 须为 null 或含 items 字符串键值表的对象' } };
+    }
+  }
   // v4 删除通道：三通道显式移除（守卫前置——被引用禁删人话拒）。
   if (Array.isArray(card.deleted_model_set_ids)) {
     for (const id of card.deleted_model_set_ids) {
@@ -200,9 +241,9 @@ export function handlePutTrimmcCardStatus(
   const authError = requireAdmin(authHeader);
   if (authError) return authError;
 
-  let doc: { state?: unknown; error?: unknown; tier?: unknown } = {};
+  let doc: { state?: unknown; error?: unknown; tier?: unknown; local_config?: unknown } = {};
   try {
-    doc = rawBody ? (JSON.parse(rawBody) as { state?: unknown; error?: unknown; tier?: unknown }) : {};
+    doc = rawBody ? (JSON.parse(rawBody) as { state?: unknown; error?: unknown; tier?: unknown; local_config?: unknown }) : {};
   } catch (err) {
     return { statusCode: 400, body: { error: `invalid JSON: ${err instanceof Error ? err.message : String(err)}` } };
   }
@@ -216,14 +257,32 @@ export function handlePutTrimmcCardStatus(
   if (tier !== undefined && tier !== null && tier !== 1 && tier !== 2 && tier !== 3) {
     return { statusCode: 400, body: { error: `tier must be 1 | 2 | 3 (or omit when undecided); got ${JSON.stringify(tier)}` } };
   }
+  // N5 方案三：daemon 本地配置落地回写（拉→落→效链的「落」读数；可选——
+  // 缺省=该 daemon 未实现落地链或本域无变更，台账保持现值）。
+  let lcReport: { version_applied: number; applied_at: string; write_result: 'ok' | 'failed'; write_error?: string; file?: string } | undefined;
+  if (doc.local_config !== undefined && doc.local_config !== null) {
+    const lc = doc.local_config as Record<string, unknown>;
+    const va = lc.version_applied;
+    const wr = lc.write_result;
+    if (typeof va !== 'number' || !Number.isInteger(va) || va < 1) {
+      return { statusCode: 400, body: { error: `local_config.version_applied must be a positive integer; got ${JSON.stringify(va)}` } };
+    }
+    if (wr !== 'ok' && wr !== 'failed') {
+      return { statusCode: 400, body: { error: `local_config.write_result must be 'ok' | 'failed'; got ${JSON.stringify(wr)}` } };
+    }
+    lcReport = { version_applied: va, applied_at: new Date().toISOString(), write_result: wr };
+    if (typeof lc.write_error === 'string' && lc.write_error) lcReport.write_error = lc.write_error.slice(0, 500);
+    if (typeof lc.file === 'string' && lc.file) lcReport.file = lc.file.slice(0, 512);
+  }
 
   const card = loadCard(opts?.cardPath);
   if (!card) {
     return { statusCode: 404, body: { error: 'no trimmc-card.json on disk — save the card first' } };
   }
-  const status: { state: CardState; at: string; error?: string; tier?: 1 | 2 | 3 } = { state, at: new Date().toISOString() };
+  const status: { state: CardState; at: string; error?: string; tier?: 1 | 2 | 3; local_config?: typeof lcReport } = { state, at: new Date().toISOString() };
   if (typeof doc.error === 'string' && doc.error) status.error = doc.error;
   if (tier === 1 || tier === 2 || tier === 3) status.tier = tier;
+  if (lcReport) status.local_config = lcReport;
   card.status = status;
   saveCard(card, opts?.cardPath);
   return { statusCode: 200, body: { ok: true, status } };

@@ -139,6 +139,8 @@ export function handleGetConfigCard(
         object: 'config.card-pull', face, card_present: false,
         default_model: eff.model, default_model_source: eff.source,
         entries: {}, strategy: null, warnings: [],
+        // N5 方案三：无卡=无本地配置直改面（daemon 端 null=维持现值）
+        local_config: null,
         refresh_interval_s: pullRefreshIntervalS(),
       },
     };
@@ -187,6 +189,9 @@ export function handleGetConfigCard(
       entries,
       strategy: active ? { id: activeId, name: active.name, rule_ids: active.rule_ids } : null,
       warnings,
+      // N5 方案三：本域本地配置直改面（改→存→拉链的「拉」载荷；items 键值
+      // 写入时已守卫密钥禁入——拉取面按非敏感载荷对待）
+      local_config: doc.local_config ?? null,
       refresh_interval_s: pullRefreshIntervalS(),
     },
   };
@@ -220,13 +225,17 @@ export function handlePutConfigCardStatus(authHeader: string | undefined, face: 
   }
   const result = handlePutTrimmcCardStatus(authHeader, rawBody, { cardPath: faceCardPath(face) });
   if (result.statusCode === 200) {
-    const body = result.body as { status?: { state?: string; tier?: number } };
+    const body = result.body as { status?: { state?: string; tier?: number; local_config?: { version_applied: number; applied_at: string; write_result: 'ok' | 'failed'; write_error?: string; file?: string } } };
     const state = body.status?.state;
     const tier = body.status?.tier;
-    appendFaceEvent({ face, etype: 'status', result: 'ok', detail: `status write-back state=${state ?? 'unknown'}${tier ? ` tier=${tier}` : ''}` });
+    appendFaceEvent({ face, etype: 'status', result: 'ok', detail: `status write-back state=${state ?? 'unknown'}${tier ? ` tier=${tier}` : ''}${body.status?.local_config ? ` lc_v=${body.status.local_config.version_applied}/${body.status.local_config.write_result}` : ''}` });
     if (state === 'applied' || state === 'failed') {
       // LG-058 N1：applied_tier 随回写同步（tier 缺省=null=回写时层级未决）
       updateFaceLedger(face, { applied_state: state, applied_tier: tier === 1 || tier === 2 || tier === 3 ? tier : null });
+    }
+    // N5 方案三：本地配置落地回写随行入账（缺省不覆盖台账现值）
+    if (body.status?.local_config) {
+      updateFaceLedger(face, { local_config: body.status.local_config });
     }
   } else {
     // CTO 裁 1(甲)（de6d49f8）：非 200 补 emit——鉴权拒（401/403/503）=写面

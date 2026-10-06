@@ -619,3 +619,120 @@ describe('LG-058 N5 join (face PUT payload shapes from UI)', () => {
     assert.equal(doc.rules.r9, undefined, '规则已从本域卡移除');
   });
 });
+
+// ── LG-058 N5 方案三：连接配置四域化——local_config 直改面（改存拉落效五步）──
+
+describe('LG-058 N5 plan3 (local_config 直改面)', () => {
+  const lcCardPath = () => faceCardPath('mmc');
+
+  it('改→存：PUT local_config 整表替换+服务端版本单调递增；未携带=维持基座；null=清空', async () => {
+    if (existsSync(lcCardPath())) rmSync(lcCardPath());
+    await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify(emptyCard('lc-seed')));
+    const p1 = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({
+      provider_entries: {}, machine: { name: 'lc' }, connection: { name: 'lc' },
+      local_config: { items: { local_port: '8710', data_dir: '/srv/fleet' } },
+    }));
+    assert.equal(p1.statusCode, 200, '首存 200');
+    let doc = JSON.parse(readFileSync(lcCardPath(), 'utf-8')) as { local_config?: { version?: number; items?: Record<string, string> } | null };
+    assert.equal(doc.local_config?.version, 1, '首存 version=1（服务端单调）');
+    assert.equal(doc.local_config?.items?.local_port, '8710', '项值落卡');
+    // 整表替换语义：第二次 PUT 只带一项 → 旧项不残留（表单全量提交）
+    const p2 = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({
+      provider_entries: {}, machine: { name: 'lc' }, connection: { name: 'lc' },
+      local_config: { items: { local_port: '8711' } },
+    }));
+    assert.equal(p2.statusCode, 200);
+    doc = JSON.parse(readFileSync(lcCardPath(), 'utf-8')) as { local_config?: { version?: number; items?: Record<string, string> } | null };
+    assert.equal(doc.local_config?.version, 2, '二存 version=2（单调递增）');
+    assert.equal(doc.local_config?.items?.data_dir, undefined, '整表替换：未再提交的项不残留');
+    // 未携带=维持基座
+    const p3 = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ provider_entries: {}, machine: { name: 'lc' }, connection: { name: 'lc' } }));
+    assert.equal(p3.statusCode, 200);
+    doc = JSON.parse(readFileSync(lcCardPath(), 'utf-8')) as { local_config?: { version?: number; items?: Record<string, string> } | null };
+    assert.equal(doc.local_config?.version, 2, '未携带 local_config=版本不变');
+    // 显式 null=清空
+    const p4 = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ provider_entries: {}, machine: { name: 'lc' }, connection: { name: 'lc' }, local_config: null }));
+    assert.equal(p4.statusCode, 200);
+    doc = JSON.parse(readFileSync(lcCardPath(), 'utf-8')) as { local_config?: { version?: number; items?: Record<string, string> } | null };
+    assert.equal(doc.local_config, null, '显式 null=清空');
+  });
+
+  it('守卫：密钥禁入（人话拒零落盘）+非字符串值 400+畸形 local_config 400', async () => {
+    const base = { provider_entries: {}, machine: { name: 'lc' }, connection: { name: 'lc' } };
+    const before = JSON.parse(readFileSync(lcCardPath(), 'utf-8')) as { local_config: { version: number } | null };
+    const vBefore = before.local_config ? before.local_config.version : 0;
+    const secretKey = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ ...base, local_config: { items: { api_key: 'sk-should-be-rejected-000' } } }));
+    assert.equal(secretKey.statusCode, 400, 'api_key 项名=400 人话拒');
+    assert.ok(String((secretKey.body as { error: string }).error).includes('域卡条目'), '拒因引导到域卡条目通道');
+    const tokenKey = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ ...base, local_config: { items: { admin_token: 'x' } } }));
+    assert.equal(tokenKey.statusCode, 400, 'token 项名同拒');
+    const badVal = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ ...base, local_config: { items: { local_port: 8710 } } }));
+    assert.equal(badVal.statusCode, 400, '非字符串值=400');
+    const badShape = await req('PUT', '/v1/config/cards/mmc', `Bearer ${ADMIN}`, JSON.stringify({ ...base, local_config: { nope: true } }));
+    assert.equal(badShape.statusCode, 400, '缺 items=400');
+    const after = JSON.parse(readFileSync(lcCardPath(), 'utf-8')) as { local_config: { version: number } | null };
+    const vAfter = after.local_config ? after.local_config.version : 0;
+    assert.equal(vAfter, vBefore, '守卫拒路径零落盘（版本不变）');
+    assert.ok(!readFileSync(lcCardPath(), 'utf-8').includes('sk-should-be-rejected'), '密钥值零落盘');
+  });
+
+  it('拉：view=pull 载荷携带 local_config（version+items）；无卡=local_config null', async () => {
+    // 沙箱串测残留防御：清 mlc 卡再 seed（D7 字典合并会让前案 rules 存续，
+    // 未重带其引用条目=悬挂 400——非本测对象）
+    const mlcPath = faceCardPath('mlc');
+    if (existsSync(mlcPath)) rmSync(mlcPath);
+    await req('PUT', '/v1/config/cards/mlc', `Bearer ${ADMIN}`, JSON.stringify(emptyCard('lc-pull')));
+    await req('PUT', '/v1/config/cards/mlc', `Bearer ${ADMIN}`, JSON.stringify({
+      provider_entries: {}, machine: { name: 'lc-pull' }, connection: { name: 'lc-pull' },
+      local_config: { items: { cron_enabled: 'true' } },
+    }));
+    const pull = await req('GET', '/v1/config/cards/mlc?view=pull', `Bearer ${API_TOKEN}`);
+    assert.equal(pull.statusCode, 200);
+    const lc = (pull.body as { local_config: { version: number; items: Record<string, string> } | null }).local_config;
+    assert.ok(lc, 'pull 载荷带 local_config');
+    assert.equal(lc?.version, 1);
+    assert.equal(lc?.items.cron_enabled, 'true');
+    // 无卡 face：local_config=null（daemon 维持现值语义）
+    const absentPath = faceCardPath('rlc');
+    if (existsSync(absentPath)) rmSync(absentPath);
+    const pullAbsent = await req('GET', '/v1/config/cards/rlc?view=pull', `Bearer ${API_TOKEN}`);
+    assert.equal(pullAbsent.statusCode, 200);
+    assert.equal((pullAbsent.body as { card_present: boolean }).card_present, false);
+    assert.equal((pullAbsent.body as { local_config: unknown }).local_config, null, '无卡=local_config null');
+  });
+
+  it('落：status 回写 local_config 落地读数→台账+managed ledger 读回；畸形回写 400', async () => {
+    const rmcPath = faceCardPath('rmc');
+    if (existsSync(rmcPath)) rmSync(rmcPath);
+    await req('PUT', '/v1/config/cards/rmc', `Bearer ${ADMIN}`, JSON.stringify(emptyCard('lc-status')));
+    const ok = await req('PUT', '/v1/config/cards/rmc/status', `Bearer ${ADMIN}`, JSON.stringify({
+      state: 'applied', tier: 1,
+      local_config: { version_applied: 1, write_result: 'ok', file: '/srv/fleet/TriRMC/data/settings.json' },
+    }));
+    assert.equal(ok.statusCode, 200, '落地回写 200');
+    const st = (ok.body as { status: { local_config?: { version_applied: number; write_result: string } } }).status;
+    assert.equal(st.local_config?.version_applied, 1, 'status 面读回落地版本');
+    // 台账面（UI managed 消费位）
+    const g = await req('GET', '/v1/config/cards/rmc?view=managed', `Bearer ${ADMIN}`);
+    const ledgerFaces = (g.body as { ledger: { faces: Record<string, { local_config?: { version_applied: number; write_result: string; file?: string } | null }> } }).ledger.faces;
+    assert.equal(ledgerFaces.rmc?.local_config?.version_applied, 1, '台账 local_config 落账');
+    assert.equal(ledgerFaces.rmc?.local_config?.write_result, 'ok');
+    assert.ok(ledgerFaces.rmc?.local_config?.file?.includes('settings.json'), '落地文件名随行（值面对表锚）');
+    // 失败落地如实入账（诚实语义：落盘失败不许显示成功）
+    const fail = await req('PUT', '/v1/config/cards/rmc/status', `Bearer ${ADMIN}`, JSON.stringify({
+      state: 'applied', tier: 1,
+      local_config: { version_applied: 2, write_result: 'failed', write_error: 'EACCES: permission denied' },
+    }));
+    assert.equal(fail.statusCode, 200);
+    const g2 = await req('GET', '/v1/config/cards/rmc?view=managed', `Bearer ${ADMIN}`);
+    const lc2 = (g2.body as { ledger: { faces: Record<string, { local_config?: { version_applied: number; write_result: string; write_error?: string } | null }> } }).ledger.faces.rmc?.local_config;
+    assert.equal(lc2?.version_applied, 2);
+    assert.equal(lc2?.write_result, 'failed', '失败落地如实入账');
+    assert.ok(lc2?.write_error?.includes('EACCES'), '失败因随行');
+    // 畸形回写
+    const bad = await req('PUT', '/v1/config/cards/rmc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'applied', local_config: { version_applied: 0, write_result: 'ok' } }));
+    assert.equal(bad.statusCode, 400, 'version_applied 须正整数');
+    const bad2 = await req('PUT', '/v1/config/cards/rmc/status', `Bearer ${ADMIN}`, JSON.stringify({ state: 'applied', local_config: { version_applied: 1, write_result: 'maybe' } }));
+    assert.equal(bad2.statusCode, 400, 'write_result 枚举外=400');
+  });
+});

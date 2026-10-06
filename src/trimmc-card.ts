@@ -139,6 +139,13 @@ export interface TrimmcCardDocument {
   deleted_strategy_ids?: string[];
   /** 派生缓存：apply 时自活动策略 default 规则同步；真源=规则实体，无编辑面。 */
   default_model?: string | null;
+  /** LG-058 N5 方案三：本域本地配置直改面（改→存→拉→落→效五步的「存」账）。
+   * items=扁平字符串 KV（整表替换语义——表单全量提交；密钥禁入，写入守卫拒）；
+   * version 由服务端单调递增（PUT 携带 local_config 时 +1），daemon 拉取落地后
+   * 经 status 回写 version_applied（台账与 status 各记一份）。
+   * settings.json 系 CEO 原话词汇=「该域本地落地配置」语义——实际落地文件名
+   * 以各域控制器实态为准（BOD 转嘱，不硬造文件）。 */
+  local_config?: { version: number; updated_at: string; items: Record<string, string> } | null;
 }
 
 // ── D9 路径规范化（预走查 f2 谜题根修）──

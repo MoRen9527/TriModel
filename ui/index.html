@@ -294,31 +294,22 @@
   <div id="tc-msg" class="msg"></div>
 </div>
 
-<!-- ═══ 连接配置（导航层第 4 组；fb-zone 过渡期保留——本机栏已并入 TriMLC 卡，
-     此入口收敛为 sg 栏+帮助，终态随 M2 消化；CPO IA §4.1）═══ -->
+<!-- ═══ 连接配置（导航层第 4 组；LG-058 N5 方案三四域化——四域各一份本地配置
+     直改面，改→存→拉→落→效五步；CEO 定性「直接修改本地配置…直接影响
+     setting.json」。旧口径「本机 Claude Code 指路便签」作废（fb-sg 栏退役，
+     应急恢复命令保留）；fb-zone 本机栏已并入 TriMLC 卡）═══ -->
 <div id="panel-connect" class="page-panel" hidden>
 <section id="fb-zone">
-  <h2>连接配置 <span class="sub">本机 Claude Code 连到哪个后端——日常便利层，不担兜底</span></h2>
+  <h2>连接配置 <span class="sub">四域本地配置直改面——改完经拉取下发落到该域落地配置（诚实三态：已存未拉 / 已拉未落 / 已落生效）</span></h2>
   <div class="warn" style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:10px">
     ⚠ TriModel 服务不可用时请用命令恢复（本页不承担应急兜底）：
     <code id="fb-recover-cmd" style="word-break:break-all">powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Code\ai\TriCompany\scripts\ops\local\restore-claude-direct.ps1"</code>
     <button id="fb-cmd-copy" style="margin-left:6px">复制命令</button>
   </div>
 
-  <h3 style="margin-top:4px">TriMMC（sg）</h3>
-  <div class="kv" id="fb-sg-current"></div>
-  <div class="row-form">
-    <label>服务地址</label><input id="fb-sg-baseurl" placeholder="https://..." style="width:240px" autocomplete="off">
-    <label>API 密钥</label><input id="fb-sg-key" type="password" placeholder="sk-..." autocomplete="off" style="width:200px">
-    <button id="fb-sg-eye" class="eye">👁</button>
-    <label>模型</label><input id="fb-sg-model" placeholder="例如 glm-5.3[1M]" style="width:200px" autocomplete="off">
-    <label>sg 管理令牌</label><input id="fb-sg-token" type="password" placeholder="sg 管理令牌" autocomplete="off" style="width:200px">
-    <button id="fb-sg-token-eye" class="eye">👁</button>
-    <button class="primary" id="fb-sg-restore">还原兜底</button>
-  </div>
-  <div class="sub" style="margin-top:6px">写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚</div>
-  <div class="sub" style="margin-top:4px">sg 凭据仅本次会话使用，不保存；写入后 sg 侧会话重启后生效</div>
-  <div id="fb-sg-msg" class="msg"></div>
+  <div class="row-form" id="conn-domain-tabs" style="margin-bottom:10px"></div>
+  <div id="conn-domain-panes"></div>
+  <div class="sub" style="margin-top:10px">落地文件名以各域控制器实态为准（settings.json 系「该域本地落地配置」语义，非硬造文件名）；密钥禁入本表——各域密钥走域卡条目域内自管；域内 env 钉定项以 env 为准，表单值补缺省位。</div>
 </section>
 </div>
 
@@ -357,7 +348,7 @@ const FACE_META = {
     nav: 'TriMMC', meta: 'M 面 · 服务域 · sg 8710',
     pull: 'TriModel（sg 出面走本机 8460 代理）',
     cli: 'trimmc config pull｜show｜verify｜cache',
-    tpl: '<div class="sub">TriMMC 侧的模型写入走「连接配置」页 sg 栏（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
+    tpl: '<div class="sub">TriMMC 域的本地配置直改走「连接配置」页 M 服务域签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
     bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
     special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=策略卡过渡位，策略内容见「TriModel 策略卡」；TriMMC 专属卡候文件迁移方案。',
   },
@@ -467,6 +458,17 @@ document.addEventListener('click', (ev) => {
     if (fm) { fm.hidden = true; fm.innerHTML = ''; }
     faceEntryMsg(cancelEntry.dataset.faceEntryCancel, '', '');
   }
+  // 方案三四域直改面：切签/添行/删行/保存/放弃
+  const cdTab = el.closest('[data-cd-tab]');
+  if (cdTab) { connDomainActive = cdTab.dataset.cdTab; renderConnectDomains(); return; }
+  const cdAdd = el.closest('[data-cd-add-row]');
+  if (cdAdd) { connAddRow(cdAdd.dataset.cdAddRow); return; }
+  const cdDel = el.closest('[data-cd-del-row]');
+  if (cdDel) { cdDel.closest('[data-cd-row]')?.remove(); return; }
+  const cdSave = el.closest('[data-cd-save]');
+  if (cdSave) { void connSaveDomain(cdSave.dataset.cdSave); return; }
+  const cdReload = el.closest('[data-cd-reload]');
+  if (cdReload) { renderConnectDomains(); return; }
 });
 
 // 方案二联席：规则适用勾选（change 委托）——勾=策略卡规则对象复制进本域卡
@@ -566,24 +568,22 @@ async function boot() {
   wireEyeToggle('adminToken', 'admin-eye');
   wireEyeToggle('tc-e-key', 'tc-e-eye');
   wireEyeToggle('fb-key', 'fb-eye');
-  wireEyeToggle('fb-sg-key', 'fb-sg-eye');
-  wireEyeToggle('fb-sg-token', 'fb-sg-token-eye');
   buildMenu();
   const hashView = window.location.hash ? window.location.hash.slice(1) : '';
   switchView(VIEWS.some((v) => v.id === hashView) ? hashView : 'overview');
   renderConnState();
   await loadRuntimeInfo();
-  // 兜底区独立取数（无鉴权读；不参与卡片禁用链）——**非阻塞**：sg 栏经远程
+  // 兜底区独立取数（无鉴权读；不参与卡片禁用链）——**非阻塞**：兜底区经远程
   // 通道往返慢（秒级），禁占 boot 关键路径（连接态/禁用链判定先行；区块自行异步填充）。
   loadFallbackInfo();
   loadFbTemplates();
-  loadFallbackSg();
   if (!apiToken() && !adminToken()) {
     // ①⑤根治：全数据面板禁用态+自动展开连接设置+引导
     $('conn-settings').open = true;
     $('conn-guide').hidden = false;
     setDataPanelsDisabled(true);
     renderFaceCards(); // 四卡诚实态：未连接（不发请求）
+    renderConnectDomains(); // 四域直改面诚实态：未连接
     return;
   }
   setDataPanelsDisabled(false);
@@ -640,7 +640,6 @@ async function refreshAll() {
   renderConnState();
   await Promise.all([refreshEffective(), loadTrimmc(), loadFaceCards()]);
   loadFallbackInfo(); // 非阻塞（同上：兜底区自填充）
-  loadFallbackSg();
   await fillModelSelect();
   tcFillStrategySelects();
 }
@@ -672,6 +671,7 @@ async function loadFaceCards() {
     faceState[f] = r.status === 200 ? r.body : null;
   }));
   renderFaceCards();
+  renderConnectDomains(); // 四域直改面同源刷新（local_config+ledger 已在缓存）
 }
 
 // ═══ 卡面维护面（LG-058 N2：模板切换+备份回滚；R 面双卡真按钮）═══
@@ -1415,63 +1415,131 @@ $('fb-cmd-copy').onclick = async () => {
 };
 
 // ── LG-036 TriMMC（sg）栏：status 读（无鉴权，X-SG-Admin-Token 转发）+restore 写（本地令牌+sg 令牌）──
-function fbSgMsg(text, cls) { const n = $('fb-sg-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); }
+// ═══ 连接配置四域直改面（LG-058 N5 方案三；CPO 方稿 §3.3-3.6）═══
+// 四域签=M 服务域/M 本地域/R 服务域/R 本地域（CPO §3.3 序，与四域面卡同构）。
+// 取数零额外请求：faceState[f]（managed 缓存）.card.local_config + .ledger.faces[f]。
+// 诚实三态派生（3.6：下发没落盘不许显示成功；拉取链异常如实并注）。
+// 保存载荷空 provider_entries 搭载（P1 候修①守卫形：键须在场，空=本次不改条目）。
 
-async function loadFallbackSg() {
-  const el = $('fb-sg-current');
-  const sgToken = $('fb-sg-token').value.trim();
-  const headers = sgToken ? { 'x-sg-admin-token': sgToken } : {};
-  const r = await api('/v1/config/claude-fallback/sg/status', { headers }).catch(() => ({ status: 0, body: {} }));
-  if (r.status !== 200) { el.innerHTML = '<b>sg 通道</b><span class="err">读取失败，稍后点「刷新」重试</span>'; return; }
-  const b = r.body;
-  const ch = b.channel || {};
-  const okCls = ch.state === 'ok' ? 'ok' : 'warn';
-  let html = '<b>sg 通道</b><span class="' + okCls + '">' + (ch.label ?? '（未知）') + '</span>';
-  if (ch.state === 'ok') {
-    html += '<b>当前服务地址</b><span>' + (b.base_url ?? '（未设置）') + '</span>'
-      + '<b>当前模型</b><span>' + (b.model ?? '（未设置）') + '</span>'
-      + (b.api_key_masked ? '<b>当前密钥</b><span>' + b.api_key_masked + '</span>' : '');
+const CONN_DOMAINS = [
+  ['mmc', 'M 服务域', 'TriMMC · sg 8710'],
+  ['mlc', 'M 本地域', 'TriMLC · 本机 8713'],
+  ['rmc', 'R 服务域', 'TriRMC · 河源'],
+  ['rlc', 'R 本地域', 'TriRLC · 本机 8711'],
+];
+let connDomainActive = 'mmc';
+
+function connLocalState(f) {
+  const st = faceState[f];
+  const lc = st?.card?.local_config ?? null;
+  const lf = st?.ledger?.faces?.[f] ?? null;
+  let phaseLabel = '未配置', phaseCls = 'none';
+  if (lc && lc.version > 0) {
+    const appl = lf?.local_config ?? null;
+    if (appl && appl.version_applied === lc.version && appl.write_result === 'ok') {
+      phaseLabel = '已落生效'; phaseCls = 'applied';
+    } else if (appl && appl.write_result === 'failed') {
+      phaseLabel = '落盘失败'; phaseCls = 'failed';
+    } else if (lf?.last_pull_at && lc.updated_at && lf.last_pull_at >= lc.updated_at) {
+      phaseLabel = '已拉未落'; phaseCls = 'pending';
+    } else {
+      phaseLabel = '已存未拉'; phaseCls = 'pending';
+    }
+    if (lf && (lf.last_pull_result === 'denied' || lf.last_pull_result === 'failed')) {
+      phaseLabel += ' ·拉取链异常';
+    }
   }
-  el.innerHTML = html;
+  return { lc, lf, phaseLabel, phaseCls };
 }
 
-$('fb-sg-restore').onclick = async () => {
-  const baseUrl = $('fb-sg-baseurl').value.trim();
-  const apiKey = $('fb-sg-key').value.trim();
-  const model = $('fb-sg-model').value.trim();
-  const sgToken = $('fb-sg-token').value.trim();
-  if (!baseUrl) return fbSgMsg('请填写服务地址', 'err');
-  if (!/^https?:\/\/.+/i.test(baseUrl)) return fbSgMsg('服务地址需以 http:// 或 https:// 开头', 'err');
-  if (!apiKey) return fbSgMsg('请填写 API 密钥', 'err');
-  if (apiKey.length < 16) return fbSgMsg('API 密钥长度不足（至少 16 位），请核对后重填', 'err');
-  if (!model) return fbSgMsg('请填写模型名称', 'err');
-  if (!sgToken) return fbSgMsg('请填写 sg 管理令牌（用于 sg 侧鉴权）', 'err');
-  const btn = $('fb-sg-restore');
-  btn.disabled = true; const prev = btn.textContent; btn.textContent = '写入中…';
-  try {
-    const r = await api('/v1/config/claude-fallback/sg/restore', {
-      method: 'POST', headers: adminHeaders(),
-      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model, sg_admin_token: sgToken }),
-    });
-    if (r.status === 200) {
-      fbSgMsg(r.body.message ?? '兜底直连已写入 sg 侧。sg 侧会话重启后生效。', 'ok');
-      $('fb-sg-key').value = ''; // 凭据不回显：写后清空（sg 令牌保留供连续操作，刷新即失）
-      await loadFallbackSg();
-    } else if (r.status === 401 && r.body.channel && r.body.channel.state === 'token_rejected') {
-      fbSgMsg('sg 令牌不正确（请核对 sg 管理令牌）', 'err');
-    } else if (r.status === 401) {
-      fbSgMsg('管理令牌不正确或未填写：请先在页头「连接设置」填入管理令牌', 'err');
-    } else if (r.status === 503) {
-      fbSgMsg(r.body.error ?? '兜底写入未启用', 'err');
-    } else if (r.status === 502) {
-      fbSgMsg(r.body.error ?? 'sg 通道不可达（请检查网络或联系运维）', 'err');
-    } else {
-      fbSgMsg(humanize(r.status, r.body.error), 'err');
-    }
-  } finally {
-    btn.disabled = false; btn.textContent = prev;
+function connMsg(f, text, cls) {
+  const n = $('cd-' + f + '-msg');
+  if (n) { n.textContent = text || ''; n.className = 'msg ' + (cls || ''); n.hidden = !text; }
+}
+
+function connDomainRow(key, val) {
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return '<div class="row-form" data-cd-row>'
+    + '<label>项名</label><input data-cd-key value="' + esc(key) + '" style="width:200px" autocomplete="off" placeholder="如 local_port">'
+    + '<label>值</label><input data-cd-val value="' + esc(val) + '" style="width:280px" autocomplete="off">'
+    + '<button data-cd-del-row>移除</button>'
+    + '</div>';
+}
+
+function renderConnectDomains() {
+  const tabs = $('conn-domain-tabs');
+  const panes = $('conn-domain-panes');
+  if (!tabs || !panes) return;
+  tabs.innerHTML = CONN_DOMAINS.map(([f, label]) => {
+    const on = f === connDomainActive;
+    return '<button data-cd-tab="' + f + '"' + (on ? ' class="primary"' : '') + '>' + label + '</button>';
+  }).join('');
+  panes.innerHTML = CONN_DOMAINS.map(([f, label, meta]) => {
+    const { lc, lf, phaseLabel, phaseCls } = connLocalState(f);
+    const ver = lc && lc.version > 0 ? 'v' + lc.version + '（' + (lc.updated_at ?? '') + '）' : '未配置';
+    const pull = lf?.last_pull_at ? lf.last_pull_at + '（' + (lf.last_pull_result ?? '—') + '）' : '暂无拉取';
+    const appl = lf?.local_config ?? null;
+    const landed = appl
+      ? 'v' + appl.version_applied + ' ' + appl.write_result + (appl.write_error ? '：' + appl.write_error : '') + (appl.file ? ' → ' + appl.file : '')
+      : '暂无回写';
+    const rows = lc && lc.items && Object.keys(lc.items).length
+      ? Object.entries(lc.items).map(([k, v]) => connDomainRow(k, v)).join('')
+      : '<div class="sub">暂无配置项——点「添加项」新建，保存后经拉取下发。</div>';
+    return '<div id="cd-' + f + '"' + (f === connDomainActive ? '' : ' hidden') + '>'
+      + '<h3 style="margin-top:4px">' + label + ' <span class="sub">' + meta + '</span> <span class="badge ' + phaseCls + '" id="cd-' + f + '-phase">' + phaseLabel + '</span></h3>'
+      + '<div class="kv" id="cd-' + f + '-state">'
+      + '<b>配置版本</b><span>' + ver + '</span>'
+      + '<b>上次下发</b><span>' + pull + '</span>'
+      + '<b>落盘结果</b><span>' + landed + '</span>'
+      + '</div>'
+      + '<div id="cd-' + f + '-rows">' + rows + '</div>'
+      + '<div class="row-form">'
+      + '<button data-cd-add-row="' + f + '">添加项</button>'
+      + '<button class="primary" data-cd-save="' + f + '">保存本域配置</button>'
+      + '<button data-cd-reload="' + f + '">放弃改动</button>'
+      + '</div>'
+      + '<div class="msg" id="cd-' + f + '-msg" hidden></div>'
+      + '</div>';
+  }).join('');
+}
+
+function connAddRow(f) {
+  const box = $('cd-' + f + '-rows');
+  if (!box) return;
+  const sub = box.querySelector('.sub');
+  if (sub) sub.remove();
+  box.insertAdjacentHTML('beforeend', connDomainRow('', ''));
+}
+
+function connCollectItems(f) {
+  const box = $('cd-' + f + '-rows');
+  const items = {};
+  if (!box) return items;
+  for (const row of box.querySelectorAll('[data-cd-row]')) {
+    const k = (row.querySelector('[data-cd-key]')?.value ?? '').trim();
+    if (!k) continue; // 空项名行跳过（半行不拦截）
+    items[k] = row.querySelector('[data-cd-val]')?.value ?? '';
   }
-};
+  return items;
+}
+
+async function connSaveDomain(f) {
+  const items = connCollectItems(f);
+  connMsg(f, '保存中…');
+  const r = await api('/v1/config/cards/' + f, {
+    method: 'PUT', headers: adminHeaders(),
+    // 空 provider_entries 搭载（P1 候修①守卫形：键须在场；空=本次保存不改条目，
+    // 合并基底保留全部既有条目与密文）——本域直改面只动 local_config。
+    body: JSON.stringify({ provider_entries: {}, local_config: { items } }),
+  }).catch(() => ({ status: 0, body: {} }));
+  if (r.status === 200) {
+    connMsg(f, '已保存（服务端留版本）。等该域控制器下次拉取落地——落盘前不算生效。', 'ok');
+    await loadFaceCards();
+    renderConnectDomains();
+  } else {
+    connMsg(f, humanize(r.status, r.body.error), 'err');
+  }
+}
 
 function tcBadge() {
   const b = $('tc-badge');

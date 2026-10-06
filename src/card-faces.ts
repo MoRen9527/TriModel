@@ -91,6 +91,10 @@ export interface FaceLedgerEntry {
   // LG-058 N1：当前配置层级（应用方 status 回写携带）——语义对表消费端降级梯：
   // 1=卡面拉取 / 2=本地缓存（含 stale 宽限）/ 3=出厂默认；null=未回写或回写时层级未决。
   applied_tier: 1 | 2 | 3 | null;
+  // LG-058 N5 方案三：daemon 本地配置落地回写（拉→落→效链的「落」读数）——
+  // version_applied 对表卡面 local_config.version 派生诚实三态（已存未拉/已拉
+  // 未落/已落生效）；null=该 daemon 未回写过（未实现落地链或本域零变更）。
+  local_config?: { version_applied: number; applied_at: string; write_result: 'ok' | 'failed'; write_error?: string; file?: string } | null;
 }
 
 export interface FaceLedger {
@@ -116,7 +120,7 @@ export function readFaceLedger(): FaceLedger {
 /** 读盘零重启：每次更新=读-合并-原子写（tmp+rename 同族）。 */
 export function updateFaceLedger(face: FaceId, patch: Partial<FaceLedgerEntry>): FaceLedgerEntry {
   const ledger = readFaceLedger();
-  const base: FaceLedgerEntry = ledger.faces[face] ?? { last_pull_at: null, last_pull_from: null, last_pull_result: null, applied_state: null, applied_tier: null };
+  const base: FaceLedgerEntry = ledger.faces[face] ?? { last_pull_at: null, last_pull_from: null, last_pull_result: null, applied_state: null, applied_tier: null, local_config: null };
   const merged: FaceLedgerEntry = { ...base, ...patch };
   ledger.faces[face] = merged;
   const p = faceLedgerPath();

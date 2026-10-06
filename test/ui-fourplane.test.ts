@@ -367,7 +367,9 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     (d.querySelector('#panel-card-mmc [data-goto="connect"]') as HTMLElement).click();
     await waitFor(() => (d.getElementById('panel-connect') as HTMLElement).hidden === false);
     assert.equal((d.getElementById('panel-card-mmc') as HTMLElement).hidden, true, 'mmc 卡让位（单页语义）');
-    assert.ok(((d.getElementById('panel-connect') as HTMLElement).textContent ?? '').includes('TriMMC（sg）'), '连接配置页=sg 栏收敛位');
+    const connText = (d.getElementById('panel-connect') as HTMLElement).textContent ?? '';
+    assert.ok(connText.includes('M 服务域'), '连接配置页=四域签（N5 方案三：M 服务域在位）');
+    assert.ok(connText.includes('诚实三态'), '三态语义在页（已存未拉/已拉未落/已落生效）');
     retireUi(dom);
   });
 
@@ -384,6 +386,59 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     (Array.from(d.querySelectorAll('#page-menu .menu-btn')) as HTMLElement[]).find((b) => b.dataset.view === 'strategy').click();
     await waitFor(() => (d.getElementById('panel-strategy') as HTMLElement).hidden === false);
     assert.equal((d.getElementById('panel-strategy') as HTMLElement).hidden, false, '策略卡面板可达');
+    retireUi(dom);
+  });
+
+  it('②f LG-058 N5 方案三四域直改面：四域签齐+诚实三态派生+保存载荷形（空条目搭载）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const base = faceResponder({ mmc: { present: true }, rlc: { present: true }, rmc: { present: true } });
+    const responder = (url: string): Resp => {
+      const m = url.match(/\/v1\/config\/cards\/(mlc|rlc|mmc|rmc)/);
+      if (m && !url.includes('view=pull')) {
+        // 三域三态数据面：mmc=已存未拉（拉取时点早于存盘时点）/rlc=已落生效/rmc=已拉未落
+        const lc = {
+          mmc: { version: 2, updated_at: '2026-09-29T05:00:00Z', items: { local_port: '8710' } },
+          rlc: { version: 1, updated_at: '2026-09-29T03:00:00Z', items: {} },
+          rmc: { version: 3, updated_at: '2026-09-29T03:00:00Z', items: { cron_enabled: 'true' } },
+        }[m[1] as 'mmc' | 'rlc' | 'rmc'];
+        const ledgerLc = m[1] === 'rlc'
+          ? { version_applied: 1, applied_at: '2026-09-29T04:00:00Z', write_result: 'ok', file: 'settings.json' }
+          : undefined;
+        const b = base(url).body as { card: Record<string, unknown>; ledger: { faces: Record<string, Record<string, unknown>> } };
+        b.card = { ...b.card, local_config: lc };
+        if (ledgerLc) b.ledger.faces[m[1]] = { ...b.ledger.faces[m[1]], local_config: ledgerLc };
+        return { status: 200, body: b };
+      }
+      return base(url);
+    };
+    const dom = bootUi(log, responder);
+    const d = dom.window.document;
+    connect(dom);
+    await waitFor(() => d.querySelectorAll('[data-cd-tab]').length === 4, 4000);
+    // 验收锚①：四域签齐（CPO §3.3 序，零缺席域）
+    const tabLabels = Array.from(d.querySelectorAll('[data-cd-tab]')).map((b) => b.textContent ?? '').join('|');
+    assert.ok(tabLabels.includes('M 服务域') && tabLabels.includes('M 本地域') && tabLabels.includes('R 服务域') && tabLabels.includes('R 本地域'), `四域签齐（got=${tabLabels}）`);
+    // 三行状态在位（配置版本/上次下发/落盘结果）
+    for (const f of ['mmc', 'mlc', 'rmc', 'rlc']) {
+      const stateKv = d.getElementById(`cd-${f}-state`)?.textContent ?? '';
+      assert.ok(stateKv.includes('配置版本') && stateKv.includes('上次下发') && stateKv.includes('落盘结果'), `${f} 三行状态齐`);
+    }
+    // 诚实三态派生（3.6：最后一格不绿不算完）
+    assert.equal(d.getElementById('cd-mmc-phase')?.textContent, '已存未拉', 'mmc：拉取时点早于存盘=已存未拉');
+    assert.equal(d.getElementById('cd-rlc-phase')?.textContent, '已落生效', 'rlc：落地版本=现役版本+ok=已落生效');
+    assert.equal(d.getElementById('cd-rmc-phase')?.textContent, '已拉未落', 'rmc：拉取晚于存盘但零落地回写=已拉未落');
+    // 切签：mlc 签显形、mmc 签让位
+    (d.querySelector('[data-cd-tab="mlc"]') as HTMLElement).click();
+    assert.equal(d.getElementById('cd-mlc')?.hidden, false, 'mlc 签显形');
+    assert.equal(d.getElementById('cd-mmc')?.hidden, true, 'mmc 签让位（单签语义）');
+    // 保存载荷形：UI connSaveDomain 发 {provider_entries:{}, local_config:{items}}（P1 候修①空搭载）
+    (d.querySelector('[data-cd-tab="rmc"]') as HTMLElement).click();
+    (d.querySelector('[data-cd-save="rmc"]') as HTMLElement).click();
+    await waitFor(() => log.some((e) => e.url.includes('/v1/config/cards/rmc') && e.init?.method === 'PUT'), 4000);
+    const saveEntry = log.find((e) => e.url.includes('/v1/config/cards/rmc') && e.init?.method === 'PUT');
+    const saveBody = JSON.parse(String(saveEntry?.init?.body ?? '{}')) as { provider_entries: Record<string, unknown>; local_config?: { items: Record<string, string> } };
+    assert.deepEqual(saveBody.provider_entries, {}, '空 provider_entries 搭载（守卫形，本次不改条目）');
+    assert.deepEqual(saveBody.local_config?.items, { cron_enabled: 'true' }, '本域 items 全量提交（整表替换语义）');
     retireUi(dom);
   });
 });

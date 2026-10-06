@@ -252,7 +252,7 @@ describe('连接配置页 v2（波① TASK-TRIMODEL-RECOVERY-LADDER-01；CTO 裁
     retireUi(dom2);
   });
 
-  it('CPO 警示句两栏在卷（P2 结构：本机句随本机栏并入 TriMLC 卡④槽，sg 句留连接配置页；verbatim 各×1）', async () => {
+  it('CPO 警示句换代（方案三：sg 写入句随 fb-sg 表单退役零残留——CPO 方稿 9f86ff34 §3.2 旧口径作废；本机句留 TriMLC 卡④槽；应急块保留）', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const dom = bootUi(log, fbState());
     await new Promise((r) => setTimeout(r, 120));
@@ -260,11 +260,11 @@ describe('连接配置页 v2（波① TASK-TRIMODEL-RECOVERY-LADDER-01；CTO 裁
     const zone = ((d.getElementById('fb-zone') as HTMLElement).textContent ?? '');
     const LOCAL_WARN = '写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置（保留近 5 份），写后自动校验失败即回滚';
     const SG_WARN = '写入会把全部模型档位（含 HAIKU 小模型档）统一为所填模型；写入前自动备份原设置，可回滚';
-    // P2 四卡面（LG-058）：本机栏（模板切换+备份回滚+本机警示句）整体并入
-    // TriMLC 卡槽位④/⑤（消双门）；fb-zone 收敛为 sg 栏+应急帮助（CPO IA §4.1）。
-    assert.equal(zone.split(SG_WARN).length - 1, 1, 'sg 栏沿旧句 verbatim×1（连接配置页）');
-    assert.equal(zone.includes(LOCAL_WARN), false, '本机句不再在连接配置页（防双栏重复）');
-    assert.ok(zone.includes('不承担应急兜底'), '页头应急命令警示在卷');
+    // 方案三四域签换代（LG-058 N5）：fb-sg 表单退役 → sg 旧写入句零残留
+    // （直改面以「诚实三态」提示语替代写入警示句——CPO IA §3.2）。
+    assert.equal(zone.includes(SG_WARN), false, 'sg 旧写入句随表单退役（零残留）');
+    assert.ok(d.getElementById('conn-domain-tabs'), '四域签容器接位（替代 sg 栏）');
+    assert.ok(zone.includes('不承担应急兜底'), '页头应急命令警示保留');
     const mlc = ((d.getElementById('panel-card-mlc') as HTMLElement).textContent ?? '');
     assert.equal(mlc.split(LOCAL_WARN).length - 1, 1, '本机栏 v2 句 verbatim×1（TriMLC 卡槽位④）');
     assert.ok(d.querySelector('#panel-card-mlc #fb-current'), '本机栏现值区在 TriMLC 卡内（并入到位）');
