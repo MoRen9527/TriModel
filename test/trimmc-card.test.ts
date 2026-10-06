@@ -273,8 +273,8 @@ describe('E12: folded local-policy zone removal regression', () => {
     }
     // LG-058 P2 代际勘锚（意图不变，锚随代际）：「TriMMC card section must remain」原锚=旧栏目名字面
     // 「TriMMC 信息」（P0 代区块标题）——P2 四卡面正名归位后该字面退役（ui-boot 断言⑤禁再现口径同源）。
-    // 代际新锚=卡面静态容器 #panel-card-mmc + 连接配置页 sg 栏「TriMMC（sg）」双锚，回归意图原样保留。
+    // 代际新锚=卡面静态容器 #panel-card-mmc + 连接配置页 M-SG 栏「TriMMC（M-SG）」双锚，回归意图原样保留（机器位三段式正名 2026-10-06 随代际勘锚）。
     assert.equal(html.includes('id="panel-card-mmc"'), true, 'TriMMC card section must remain（P2 代际锚：卡面 panel 在位）');
-    assert.equal(html.includes('TriMMC（sg）'), true, 'TriMMC sg 栏收敛位仍在（连接配置页）');
+    assert.equal(html.includes('TriMMC（M-SG）'), true, 'TriMMC M-SG 栏收敛位仍在（连接配置页）');
   });
 });

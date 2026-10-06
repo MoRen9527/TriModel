@@ -433,7 +433,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     await waitFor(() => (d.getElementById('panel-connect') as HTMLElement).hidden === false);
     assert.equal((d.getElementById('panel-card-mmc') as HTMLElement).hidden, true, 'mmc 卡让位（单页语义）');
     const connText = (d.getElementById('panel-connect') as HTMLElement).textContent ?? '';
-    assert.ok(connText.includes('M 服务域'), '连接配置页=四域签（N5 方案三：M 服务域在位）');
+    assert.ok(connText.includes('M 面 · 服务域'), '连接配置页=四域签（N5 方案三：M 面 · 服务域三段式在位）');
     assert.ok(connText.includes('诚实三态'), '三态语义在页（已存未拉/已拉未落/已落生效）');
     retireUi(dom);
   });
@@ -482,7 +482,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     await waitFor(() => d.querySelectorAll('[data-cd-tab]').length === 4, 4000);
     // 验收锚①：四域签齐（CPO §3.3 序，零缺席域）
     const tabLabels = Array.from(d.querySelectorAll('[data-cd-tab]')).map((b) => b.textContent ?? '').join('|');
-    assert.ok(tabLabels.includes('M 服务域') && tabLabels.includes('M 本地域') && tabLabels.includes('R 服务域') && tabLabels.includes('R 本地域'), `四域签齐（got=${tabLabels}）`);
+    assert.ok(tabLabels.includes('M 面 · 服务域') && tabLabels.includes('M 面 · 本地域') && tabLabels.includes('R 面 · 服务域') && tabLabels.includes('R 面 · 本地域'), `四域签齐·三段式全格式（got=${tabLabels}）`);
     // 三行状态在位（配置版本/上次下发/落盘结果）
     for (const f of ['mmc', 'mlc', 'rmc', 'rlc']) {
       const stateKv = d.getElementById(`cd-${f}-state`)?.textContent ?? '';
@@ -504,6 +504,23 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     const saveBody = JSON.parse(String(saveEntry?.init?.body ?? '{}')) as { provider_entries: Record<string, unknown>; local_config?: { items: Record<string, string> } };
     assert.deepEqual(saveBody.provider_entries, {}, '空 provider_entries 搭载（守卫形，本次不改条目）');
     assert.deepEqual(saveBody.local_config?.items, { cron_enabled: 'true' }, '本域 items 全量提交（整表替换语义）');
+    retireUi(dom);
+  });
+
+  it('②g 机器位三段式正名（CEO 2026-10-06 21:22 令）：压缩形四签/「河源」/裸 sg 渲染面清零+全格式在位', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, faceResponder({}));
+    const d = dom.window.document;
+    connect(dom);
+    await waitFor(() => d.querySelectorAll('[data-cd-tab]').length === 4, 4000);
+    const pageText = d.body.textContent ?? '';
+    for (const cmp of ['M 服务域', 'M 本地域', 'R 服务域', 'R 本地域']) {
+      assert.equal(pageText.includes(cmp), false, `压缩形「${cmp}」渲染面零残留`);
+    }
+    assert.equal(pageText.includes('河源'), false, '机器位「河源」渲染面零残留（正名=R-HY）');
+    assert.equal(/\bsg\b/.test(pageText), false, '裸 sg（词边界）渲染面零残留（正名=M-SG；代码标识符不进 textContent）');
+    const tabLabels = Array.from(d.querySelectorAll('[data-cd-tab]')).map((b) => b.textContent ?? '').join('|');
+    assert.ok(tabLabels.includes('M 面 · 服务域') && tabLabels.includes('M 面 · 本地域') && tabLabels.includes('R 面 · 服务域') && tabLabels.includes('R 面 · 本地域'), `三段式全格式四签在位（got=${tabLabels}）`);
     retireUi(dom);
   });
 });

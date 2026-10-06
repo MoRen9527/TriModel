@@ -174,7 +174,7 @@
     <div class="sub" id="cf-mlc-special">
       L2 settings 写入面=上方「模板切换」区（本机栏，原独立区块已并入此卡消双门）；
       L1 watchdog=TriMLC-Watchdog 保活 8713（态候接线）；
-      形态=开发/演练（非 sg 服务域）。
+      形态=开发/演练（非 M-SG 服务域）。
     </div>
   </section>
 </div>
@@ -348,16 +348,16 @@ const FACE_META = {
     special: 'daemon 健康=8711 /healthz（态候接线）；寄居过渡形态——本机进程代管 R 面本地域，终态=独立部署本地 PC（候排）。',
   },
   mmc: {
-    nav: 'TriMMC', meta: 'M 面 · 服务域 · sg 8710',
-    pull: 'TriModel（sg 出面走本机 8460 代理）',
+    nav: 'TriMMC', meta: 'M 面 · 服务域 · M-SG 8712',
+    pull: 'TriModel（M-SG 出面走本机 8460 代理）',
     cli: 'trimmc config pull｜show｜verify｜cache',
-    tpl: '<div class="sub">TriMMC 域的本地配置直改走「连接配置」页 M 服务域签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
+    tpl: '<div class="sub">TriMMC 域的本地配置直改走「连接配置」页「M 面 · 服务域」签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
     bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
     special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=策略卡过渡位，策略内容见「TriModel 策略卡」；TriMMC 专属卡候文件迁移方案。',
   },
   rmc: {
-    nav: 'TriRMC', meta: 'R 面 · 服务域 · 河源 8712',
-    pull: 'TriModel（现役拉取端点=同机过渡位 河源 3333；独立服务器位候迁）',
+    nav: 'TriRMC', meta: 'R 面 · 服务域 · R-HY 8712',
+    pull: 'TriModel（现役拉取端点=同机过渡位 R-HY 3333；独立服务器位候迁）',
     cli: 'trirmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rmc">读取模板</button><select id="cf-rmc-tpl-sel" hidden></select><button id="cf-rmc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rmc-tpl-msg" hidden></div>',
     bak: '<div class="sub">写卡自动留备份（保留近 5 份）；回滚前会再自动备份当前配置。</div><div class="row-form"><button data-card-bak-load="rmc">读取备份清单</button></div><div id="cf-rmc-bak-box" hidden></div>',
@@ -1237,7 +1237,7 @@ let tcEditingId = null;
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
 
 // ── 连接配置页 v2（波① 2026-09-25）：模板切换+预览门控+独立钥注入+备份回滚；写入需管理令牌（服务端 fail-closed）──
-// P2 结构注：本机栏（模板切换+备份回滚）已并入 TriMLC 卡；此处仅 sg 栏+应急帮助。
+// P2 结构注：本机栏（模板切换+备份回滚）已并入 TriMLC 卡；此处仅 M-SG 栏+应急帮助。
 function fbMsg(text, cls) { const n = $('fb-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); }
 
 async function loadFallbackInfo() {
@@ -1413,7 +1413,7 @@ async function fbDoRollback(file, label) {
   }
 }
 // 应急命令复制（127.0.0.1 为安全上下文，clipboard 可用；失败兜底=选中文本）
-// P2 注：复制反馈走本页 sg 栏消息位（fb-msg 已随本机栏并入 TriMLC 卡）。
+// P2 注：复制反馈走本页 M-SG 栏消息位（fb-msg 已随本机栏并入 TriMLC 卡）。
 $('fb-cmd-copy').onclick = async () => {
   const code = $('fb-recover-cmd');
   try {
@@ -1426,18 +1426,18 @@ $('fb-cmd-copy').onclick = async () => {
   }
 };
 
-// ── LG-036 TriMMC（sg）栏：status 读（无鉴权，X-SG-Admin-Token 转发）+restore 写（本地令牌+sg 令牌）──
+// ── LG-036 TriMMC（M-SG）栏：status 读（无鉴权，X-SG-Admin-Token 转发）+restore 写（本地令牌+M-SG 令牌）──
 // ═══ 连接配置四域直改面（LG-058 N5 方案三；CPO 方稿 §3.3-3.6）═══
-// 四域签=M 服务域/M 本地域/R 服务域/R 本地域（CPO §3.3 序，与四域面卡同构）。
+// 四域签=M 面 · 服务域/M 面 · 本地域/R 面 · 服务域/R 面 · 本地域（CPO §3.3 序+CEO 三段式机器位正名令 2026-10-06 21:22：压缩形全站清零，与四域面卡同构）。
 // 取数零额外请求：faceState[f]（managed 缓存）.card.local_config + .ledger.faces[f]。
 // 诚实三态派生（3.6：下发没落盘不许显示成功；拉取链异常如实并注）。
 // 保存载荷空 provider_entries 搭载（P1 候修①守卫形：键须在场，空=本次不改条目）。
 
 const CONN_DOMAINS = [
-  ['mmc', 'M 服务域', 'TriMMC · sg 8710'],
-  ['mlc', 'M 本地域', 'TriMLC · 本机 8713'],
-  ['rmc', 'R 服务域', 'TriRMC · 河源'],
-  ['rlc', 'R 本地域', 'TriRLC · 本机 8711'],
+  ['mmc', 'M 面 · 服务域', 'TriMMC · M-SG 8712'],
+  ['mlc', 'M 面 · 本地域', 'TriMLC · 本机 8713'],
+  ['rmc', 'R 面 · 服务域', 'TriRMC · R-HY'],
+  ['rlc', 'R 面 · 本地域', 'TriRLC · 本机 8711'],
 ];
 let connDomainActive = 'mmc';
 
