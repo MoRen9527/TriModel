@@ -521,6 +521,11 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     assert.equal(/\bsg\b/.test(pageText), false, '裸 sg（词边界）渲染面零残留（正名=M-SG；代码标识符不进 textContent）');
     const tabLabels = Array.from(d.querySelectorAll('[data-cd-tab]')).map((b) => b.textContent ?? '').join('|');
     assert.ok(tabLabels.includes('M 面 · 服务域') && tabLabels.includes('M 面 · 本地域') && tabLabels.includes('R 面 · 服务域') && tabLabels.includes('R 面 · 本地域'), `三段式全格式四签在位（got=${tabLabels}）`);
+    // 四签端口对等（BOD 复验 21:44 打回钉）：四卡头实例行各含自己端口值（8712/8713/8712/8711）逐一在场
+    for (const [f, port] of [['mmc', 'M-SG 8712'], ['mlc', '本机 8713'], ['rmc', 'R-HY 8712'], ['rlc', '本机 8711']] as const) {
+      const paneText = d.getElementById(`cd-${f}`)?.textContent ?? '';
+      assert.ok(paneText.includes(port), `四签端口对等：${f} 卡头实例行含「${port}」`);
+    }
     retireUi(dom);
   });
 });
