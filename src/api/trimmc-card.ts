@@ -18,6 +18,14 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+// r5b 密钥行白名单豁免（BOD 裁 a，2026-10-07）：连接配置面两键精确名入表豁免
+// 密钥黑名单——r5 表单增补（CEO 23:41 批令）产品语义=密钥明文落 settings.json
+// 投影（对齐 cc-switch），经 local_config 落盘。精确名匹配（大小写敏感），
+// 其余 api_key/token/secret 泛拦照旧不松（同族小写/变体键仍拒）。
+// 与 UI 侧 CONN_FORM_SPEC.authfields（ui/index.html）同名同集——改一处须同步
+// 另一处（单点真源候办，候 CTO 排窗）。
+const LOCAL_CONFIG_KEYREF_ALLOWED = new Set<string>(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY']);
+
 function requireAdmin(authHeader: string | undefined): { statusCode: 503 | 401; body: Record<string, unknown> } | null {
   const adminToken = process.env.TRIMODEL_ADMIN_TOKEN ?? '';
   if (!adminToken) {
@@ -158,7 +166,8 @@ export function handlePutTrimmcCard(
         if (!k || k.length > 64) {
           return { statusCode: 400, body: { error: `本地配置项名不合法（${k || '（空）'}）：1-64 字符`, } };
         }
-        if (/(^|_)(api[_-]?keys?|tokens?|secrets?|passwo?rds?|passwd|private[_-]?keys?|credentials?)($|_)/i.test(k)) {
+        // 白名单豁免前置（r5b 裁 a）：两精确名键放行，黑名单照旧——泛拦不松
+        if (!LOCAL_CONFIG_KEYREF_ALLOWED.has(k) && /(^|_)(api[_-]?keys?|tokens?|secrets?|passwo?rds?|passwd|private[_-]?keys?|credentials?)($|_)/i.test(k)) {
           return { statusCode: 400, body: { error: `本地配置项「${k}」疑似密钥——密钥禁入本地配置表，各域密钥走域卡条目域内自管` } };
         }
         const v = rawItems[k];
