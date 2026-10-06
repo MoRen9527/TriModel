@@ -464,8 +464,8 @@ document.addEventListener('click', (ev) => {
   // 方案三四域直改面：切签/添行/删行/保存/放弃
   const cdTab = el.closest('[data-cd-tab]');
   if (cdTab) { connDomainActive = cdTab.dataset.cdTab; renderConnectDomains(); return; }
-  const cdAdd = el.closest('[data-cd-add-row]');
-  if (cdAdd) { connAddRow(cdAdd.dataset.cdAddRow); return; }
+  const cdAddCustom = el.closest('[data-cd-add-custom]');
+  if (cdAddCustom) { connAddCustomRow(cdAddCustom.dataset.cdAddCustom); return; }
   const cdDel = el.closest('[data-cd-del-row]');
   if (cdDel) { cdDel.closest('[data-cd-row]')?.remove(); return; }
   const cdSave = el.closest('[data-cd-save]');
@@ -483,6 +483,14 @@ function ruleEntryIds(r) {
   if (r.type === 'quota') return [r.watch_entry_id, ...(r.fallback_ids ?? [])];
   return [r.entry_id];
 }
+
+// r4 v2 预览实时联动：表单/自由行任一输入即刷本域预览（所见即落盘）
+document.addEventListener('input', (ev) => {
+  const row = ev.target instanceof Element ? ev.target.closest('[data-cd-row]') : null;
+  if (!row) return;
+  const pane = row.closest('[data-cd-pane]');
+  if (pane?.dataset.cdPane) connRefreshPreview(pane.dataset.cdPane);
+});
 
 document.addEventListener('change', async (ev) => {
   const chk = ev.target instanceof Element ? ev.target.closest('[data-face-rule]') : null;
@@ -1439,6 +1447,39 @@ const CONN_DOMAINS = [
   ['rmc', 'R 面 · 服务域', 'TriRMC · R-HY 8712'],
   ['rlc', 'R 面 · 本地域', 'TriRLC · 本机 8711'],
 ];
+
+// r4 v2 表单化组织（CEO 22:36 形态令+22:39 实图+22:41 批「照这个派工」·BOD 22:41 派工）：
+// CC Switch「编辑供应商」界面形态——语义化表单分组，非键值下拉罗列。数据面 16 项=CEO
+// settings.json 真源（22:25 勘正+22:29 定谳+22:32 追加 crossSessionInbound），禁再扩禁硬造；
+// 密钥不放（API Key 不进此表单，域卡自管边界照旧——页面注记在位）。四域统一同组件各域值独立。
+// [键名, 中文标签, 一行说明/placeholder 三元组]；值仍自由文本不强校验（MVP）。
+const CONN_FORM_SPEC = {
+  main: [
+    ['ANTHROPIC_BASE_URL', '请求地址', 'https://…'],
+    ['ANTHROPIC_MODEL', '主模型', '模型 ID（如 glm-5.3-flash）'],
+  ],
+  // 模型映射表：四档 ×（映射模型+展示名）两格 → ANTHROPIC_DEFAULT_{X}_MODEL+_NAME 共 8 键
+  //（Subagent 行不加——键不在 CEO settings.json 真源，禁硬造；_MODEL=真 ID/_NAME=仅展示名）
+  map: [
+    ['SONNET', 'Sonnet'],
+    ['OPUS', 'Opus'],
+    ['FABLE', 'Fable'],
+    ['HAIKU', 'Haiku'],
+  ],
+  switches: [
+    ['CLAUDE_CODE_AUTO_COMPACT_WINDOW', '自动压缩窗口阈值', '如 1000000'],
+    ['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', '禁用后台任务', '如 1'],
+    ['CLAUDE_CODE_EFFORT_LEVEL', '推理努力档位', '如 max'],
+    ['CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', '实验性 agent 团队开关', '如 1'],
+    ['CLAUDE_CODE_USE_POWERSHELL_TOOL', '启用 PowerShell 工具', '如 1'],
+    ['crossSessionInbound', '跨会话消息入站开关（accept=自动收下其他席位会话消息）', '如 accept'],
+  ],
+};
+const CONN_FORM_KEYS = new Set([
+  ...CONN_FORM_SPEC.main.map(([k]) => k),
+  ...CONN_FORM_SPEC.map.flatMap(([sfx]) => ['ANTHROPIC_DEFAULT_' + sfx + '_MODEL', 'ANTHROPIC_DEFAULT_' + sfx + '_MODEL_NAME']),
+  ...CONN_FORM_SPEC.switches.map(([k]) => k),
+]);
 let connDomainActive = 'mmc';
 
 function connLocalState(f) {
@@ -1478,6 +1519,48 @@ function connDomainRow(key, val) {
     + '</div>';
 }
 
+// r4 v2 表单行（CEO 22:39 CC Switch 形）：hidden data-cd-key 固定承接键名（收集链零改语义），
+// 中文标签+键名小字注；表单行标记 data-cd-form-row（收集时空值=该键不设，见 connCollectItems）。
+function connFormRow(key, label, ph, val, wide) {
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return '<div class="row-form" data-cd-row data-cd-form-row>'
+    + '<label>' + esc(label) + '</label>'
+    + '<input data-cd-key type="hidden" value="' + esc(key) + '">'
+    + '<input data-cd-val value="' + esc(val ?? '') + '" style="width:' + (wide || 280) + 'px" autocomplete="off" placeholder="' + esc(ph) + '">'
+    + '<span class="sub">' + esc(key) + '</span>'
+    + '</div>';
+}
+
+// r4 v2 表单块：主平铺 2 件+「高级选项」折叠（模型映射表+行为开关组+自定义项兜底）+
+// 「配置预览」折叠（所见即落盘，实时联动）。清单内键值从 items 灌入；清单外键由调用方
+// 走自由行（存量分流：键唯一零冲突）。
+function connFormBlocks(f, items) {
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const main = CONN_FORM_SPEC.main.map(([k, label, ph]) => connFormRow(k, label, ph, items[k])).join('');
+  const mapRows = CONN_FORM_SPEC.map.map(([sfx, label]) => {
+    const k1 = 'ANTHROPIC_DEFAULT_' + sfx + '_MODEL';
+    const k2 = k1 + '_NAME';
+    return '<div class="row-form" data-cd-row data-cd-form-row>'
+      + '<label>' + esc(label) + '</label>'
+      + '<input data-cd-key type="hidden" value="' + k1 + '"><input data-cd-val value="' + esc(items[k1] ?? '') + '" style="width:170px" autocomplete="off" placeholder="映射模型 ID">'
+      + '<input data-cd-key type="hidden" value="' + k2 + '"><input data-cd-val value="' + esc(items[k2] ?? '') + '" style="width:150px" autocomplete="off" placeholder="展示名">'
+      + '</div>';
+  }).join('');
+  const switches = CONN_FORM_SPEC.switches.map(([k, label, ph]) => connFormRow(k, label, ph, items[k])).join('');
+  return main
+    + '<details class="sub" data-cd-advanced style="margin-top:8px"><summary>高级选项</summary>'
+    + '<div class="sub" style="margin:6px 0 2px">模型映射表（_MODEL=真 ID／_NAME=仅展示名；Subagent 行不加——键不在真源）</div>'
+    + mapRows
+    + '<div class="sub" style="margin:8px 0 2px">行为开关</div>'
+    + switches
+    + '<details class="sub" data-cd-custom style="margin-top:8px"><summary>自定义项（清单外键兜底）</summary>'
+    + '<div class="sub">预置表单外的键走这里，添加后随保存一并下发。</div>'
+    + '<button data-cd-add-custom="' + esc(f) + '">添加自定义项</button></details>'
+    + '</details>'
+    + '<details class="sub" data-cd-preview style="margin-top:8px"><summary>配置预览（所见即落盘）</summary>'
+    + '<pre data-cd-preview-pre style="white-space:pre-wrap;margin:6px 0 0">{}</pre></details>';
+}
+
 function renderConnectDomains() {
   const tabs = $('conn-domain-tabs');
   const panes = $('conn-domain-panes');
@@ -1494,10 +1577,13 @@ function renderConnectDomains() {
     const landed = appl
       ? 'v' + appl.version_applied + ' ' + appl.write_result + (appl.write_error ? '：' + appl.write_error : '') + (appl.file ? ' → ' + appl.file : '')
       : '暂无回写';
-    const rows = lc && lc.items && Object.keys(lc.items).length
-      ? Object.entries(lc.items).map(([k, v]) => connDomainRow(k, v)).join('')
-      : '<div class="sub">暂无配置项——点「添加项」新建，保存后经拉取下发。</div>';
-    return '<div id="cd-' + f + '"' + (f === connDomainActive ? '' : ' hidden') + '>'
+    // r4 v2 存量分流：清单内键灌表单（connFormBlocks），清单外键走自由行（键唯一零冲突）
+    const items = (lc && lc.items) ?? {};
+    const extraKeys = Object.keys(items).filter((k) => !CONN_FORM_KEYS.has(k));
+    const rows = connFormBlocks(f, items)
+      + (extraKeys.length ? '<div class="sub" style="margin-top:8px">存量自定义项（清单外键）：</div>'
+        + extraKeys.map((k) => connDomainRow(k, items[k])).join('') : '');
+    return '<div id="cd-' + f + '" data-cd-pane="' + f + '"' + (f === connDomainActive ? '' : ' hidden') + '>'
       + '<h3 style="margin-top:4px">' + label + ' <span class="sub">' + meta + '</span> <span class="badge ' + phaseCls + '" id="cd-' + f + '-phase">' + phaseLabel + '</span></h3>'
       + '<div class="kv" id="cd-' + f + '-state">'
       + '<b>配置版本</b><span>' + ver + '</span>'
@@ -1506,21 +1592,28 @@ function renderConnectDomains() {
       + '</div>'
       + '<div id="cd-' + f + '-rows">' + rows + '</div>'
       + '<div class="row-form">'
-      + '<button data-cd-add-row="' + f + '">添加项</button>'
       + '<button class="primary" data-cd-save="' + f + '">保存本域配置</button>'
       + '<button data-cd-reload="' + f + '">放弃改动</button>'
       + '</div>'
       + '<div class="msg" id="cd-' + f + '-msg" hidden></div>'
       + '</div>';
   }).join('');
+  for (const [f] of CONN_DOMAINS) connRefreshPreview(f);
 }
 
-function connAddRow(f) {
+// r4 v2：自定义项入口（清单外键兜底，收「高级选项」内次级折叠位——不硬禁）；原自由 key 行形保留。
+function connAddCustomRow(f) {
   const box = $('cd-' + f + '-rows');
   if (!box) return;
-  const sub = box.querySelector('.sub');
-  if (sub) sub.remove();
   box.insertAdjacentHTML('beforeend', connDomainRow('', ''));
+}
+
+// r4 v2 配置预览（所见即落盘）：复用 connCollectItems 直算本域 items 实时显形。
+function connRefreshPreview(f) {
+  const pane = $('cd-' + f);
+  if (!pane) return;
+  const pre = pane.querySelector('[data-cd-preview-pre]');
+  if (pre) pre.textContent = JSON.stringify(connCollectItems(f), null, 2);
 }
 
 function connCollectItems(f) {
@@ -1528,9 +1621,16 @@ function connCollectItems(f) {
   const items = {};
   if (!box) return items;
   for (const row of box.querySelectorAll('[data-cd-row]')) {
-    const k = (row.querySelector('[data-cd-key]')?.value ?? '').trim();
-    if (!k) continue; // 空项名行跳过（半行不拦截）
-    items[k] = row.querySelector('[data-cd-val]')?.value ?? '';
+    // r4 v2：key/val 按位配对收集（模型映射行=一行两 key/val 对；自由行/表单行=一对）
+    const keys = row.querySelectorAll('[data-cd-key]');
+    const vals = row.querySelectorAll('[data-cd-val]');
+    for (let i = 0; i < keys.length && i < vals.length; i++) {
+      const k = (keys[i].value ?? '').trim();
+      if (!k) continue; // 空项名跳过（半行不拦截）
+      // 表单行空值=该键不设（所见即落盘：清空即从 items 删除）；自由行照旧收空串
+      if (row.hasAttribute('data-cd-form-row') && vals[i].value === '') continue;
+      items[k] = vals[i].value;
+    }
   }
   return items;
 }

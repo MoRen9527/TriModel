@@ -528,4 +528,73 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     }
     retireUi(dom);
   });
+
+  it('②h 连接配置表单化组织（CEO 2026-10-06 22:36 形态+22:41 批·BOD r4 v2）：主平铺+高级选项折叠+16 键承接+存量分流+预览联动+密钥不放', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const base = faceResponder({});
+    const responder = (url: string): Resp => {
+      const m = url.match(/\/v1\/config\/cards\/(mlc|rlc|mmc|rmc)/);
+      if (m && !url.includes('view=pull')) {
+        // 存量分流 mock：清单内键 ANTHROPIC_MODEL（灌表单）+清单外 legacy_key（走自由行）
+        const b = base(url).body as { card: Record<string, unknown>; ledger: { faces: Record<string, Record<string, unknown>> } };
+        b.card = { ...b.card, local_config: { version: 1, updated_at: '2026-10-06T00:00:00Z', items: { ANTHROPIC_MODEL: 'glm-x', legacy_key: 'v1' } } };
+        return { status: 200, body: b };
+      }
+      return base(url);
+    };
+    const dom = bootUi(log, responder);
+    const d = dom.window.document;
+    connect(dom);
+    await waitFor(() => d.querySelectorAll('[data-cd-tab]').length === 4, 4000);
+    const expectKeys = [
+      'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME',
+      'ANTHROPIC_DEFAULT_FABLE_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL_NAME',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME',
+      'CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS',
+      'CLAUDE_CODE_EFFORT_LEVEL', 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
+      'CLAUDE_CODE_USE_POWERSHELL_TOOL', 'crossSessionInbound',
+    ];
+    for (const f of ['mmc', 'mlc', 'rmc', 'rlc'] as const) {
+      const pane = d.getElementById(`cd-${f}`);
+      assert.ok(pane, `${f} pane 在场`);
+      const formKeys = Array.from(pane.querySelectorAll('[data-cd-form-row] [data-cd-key]')).map((i) => i.value);
+      assert.deepEqual([...formKeys].sort(), [...expectKeys].sort(), `${f} 表单承接 16 键（真源=settings.json，禁再扩）`);
+      assert.equal(formKeys.some((k) => k.includes('AUTH_TOKEN') || k.includes('API_KEY')), false, `${f} 密钥不放（域卡自管边界）`);
+      const adv = pane.querySelector('[data-cd-advanced]') as HTMLDetailsElement;
+      assert.ok(adv, `${f} 高级选项折叠容器`);
+      assert.equal(adv.open, false, `${f} 高级选项默认收起`);
+      assert.ok(pane.querySelector('[data-cd-custom]'), `${f} 自定义项兜底折叠位`);
+      assert.ok(pane.querySelector('[data-cd-add-custom]'), `${f} 添加自定义项入口`);
+      assert.ok(pane.querySelector('[data-cd-preview]'), `${f} 配置预览折叠位（所见即落盘）`);
+      // 存量分流：清单内键值灌表单、清单外走自由行（键唯一零冲突）
+      const modelVal = Array.from(pane.querySelectorAll('[data-cd-form-row]')).find((r) => r.querySelector('[data-cd-key]')?.value === 'ANTHROPIC_MODEL')?.querySelector('[data-cd-val]');
+      assert.equal(modelVal?.value, 'glm-x', `${f} 清单内存量值灌入主模型表单`);
+      const freeRows = Array.from(pane.querySelectorAll('[data-cd-row]:not([data-cd-form-row])'));
+      assert.equal(freeRows.length, 1, `${f} 清单外存量恰一行自由行`);
+      assert.equal(freeRows[0]?.querySelector('[data-cd-key]')?.value, 'legacy_key', `${f} 自由行承接清单外键`);
+    }
+    // 预览实时联动：mmc 主模型改值→input→预览 pre 即刷
+    const pane = d.getElementById('cd-mmc');
+    assert.ok(pane, 'mmc pane 在场');
+    const modelRow = Array.from(pane.querySelectorAll('[data-cd-form-row]')).find((r) => r.querySelector('[data-cd-key]')?.value === 'ANTHROPIC_MODEL');
+    assert.ok(modelRow, '主模型表单行在场');
+    const modelVal = modelRow.querySelector('[data-cd-val]') as HTMLInputElement;
+    modelVal.value = 'glm-5.3-flash';
+    modelVal.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    const pre = pane.querySelector('[data-cd-preview-pre]')?.textContent ?? '';
+    assert.ok(pre.includes('ANTHROPIC_MODEL') && pre.includes('glm-5.3-flash'), '预览实时联动（键值在预）');
+    assert.ok(pre.includes('legacy_key'), '清单外自由行照进预览');
+    // 保存载荷：表单值+存量自由行合并整表提交；空值键不设（所见即落盘）
+    (d.querySelector('[data-cd-save="mmc"]') as HTMLElement).click();
+    await waitFor(() => log.some((e) => e.url.includes('/v1/config/cards/mmc') && e.init?.method === 'PUT'), 4000);
+    const saveEntry = log.find((e) => e.url.includes('/v1/config/cards/mmc') && e.init?.method === 'PUT');
+    const saveBody = JSON.parse(String(saveEntry?.init?.body ?? '{}')) as { provider_entries: Record<string, unknown>; local_config?: { items: Record<string, string> } };
+    assert.deepEqual(saveBody.provider_entries, {}, '空 provider_entries 搭载（守卫形照旧）');
+    assert.equal(saveBody.local_config?.items['ANTHROPIC_MODEL'], 'glm-5.3-flash', '保存载荷=表单值');
+    assert.equal(saveBody.local_config?.items['legacy_key'], 'v1', '保存载荷=存量自由行合并（整表替换语义）');
+    assert.equal('ANTHROPIC_BASE_URL' in (saveBody.local_config?.items ?? {}), false, '表单空值键不设（清空即删除，所见即落盘）');
+    retireUi(dom);
+  });
 });
