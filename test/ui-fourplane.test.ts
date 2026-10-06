@@ -148,6 +148,30 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     retireUi(dom);
   });
 
+  it('②b LG-058 N2 真按钮在位：rlc/rmc 模板/备份四件套+候建文字态清除（mmc 候建如实维持）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, faceResponder({}));
+    const d = dom.window.document;
+    await waitFor(() => (d.getElementById('panel-overview') as HTMLElement).hidden === false);
+    for (const f of ['rlc', 'rmc']) {
+      const panel = d.getElementById('panel-card-' + f);
+      assert.ok(panel.querySelector(`[data-card-tpl-load="${f}"]`), `${f} 读取模板按钮在位`);
+      assert.ok(panel.querySelector(`[data-card-bak-load="${f}"]`), `${f} 读取备份清单按钮在位`);
+      assert.ok(d.getElementById(`cf-${f}-tpl-sel`), `${f} 模板下拉在位`);
+      assert.ok(d.getElementById(`cf-${f}-tpl-apply`), `${f} 应用模板按钮在位`);
+      assert.ok(d.getElementById(`cf-${f}-bak-box`), `${f} 备份清单容器在位`);
+      const html = (panel as HTMLElement).innerHTML;
+      assert.ok(!html.includes('候建——模板切换入口'), `${f} 模板槽候建文字态已清除`);
+      assert.ok(!html.includes('候建——备份与回滚入口'), `${f} 备份槽候建文字态已清除`);
+      assert.ok(html.includes('整卡替换'), `${f} 模板切换语义标注（整卡替换）在位`);
+    }
+    // M 面两卡暂缓（BOD 白窗令）：mmc bak 槽候建文字态如实维持；mlc 静态正形不动
+    const mmcBak = (d.getElementById('cf-mmc-bak') as HTMLElement).innerHTML;
+    assert.ok(mmcBak.includes('候建——备份与回滚入口'), 'mmc 备份槽候建如实维持（M 面暂缓）');
+    assert.ok(d.querySelector('#panel-card-mlc #fb-bak-list'), 'mlc 静态 fb 栏备份钮原位（零动）');
+    retireUi(dom);
+  });
+
   it('③ 无令牌诚实态：未连接×4+零卡面请求+首启引导', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const dom = bootUi(log, faceResponder({}));

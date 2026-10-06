@@ -62,6 +62,13 @@ export function faceCardPath(face: FaceId): string {
   return resolve(dir, FACES[face].card_file);
 }
 
+/** face 卡模板目录（LG-058 N2：卡面模板切换的模板实体落点）——
+ * `<cardsDir>/templates/<face>/*.json`，模板=完整卡文档快照（预设组合）。
+ * 目录未建=该 face 暂无模板（清单端点空列表常态，非错误）。 */
+export function cardTemplatesDir(face: FaceId): string {
+  return resolve(process.env[CARDS_DIR_ENV]?.trim() || process.cwd(), 'templates', face);
+}
+
 /** 卡文件路径 → face 反推（face-events 审计行 face 字段来源；
  * 沙箱自定义文件名→basename 兜底，len-only 安全）。 */
 export function faceFromPath(cardPath: string): string {

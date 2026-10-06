@@ -19,8 +19,12 @@ import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, ha
 import { loadCard } from '../trimmc-card.js';
 import { decrypt } from '../security/key-encryptor.js';
 import { effectiveModel } from '../policy.js';
-import { FACES, isRegisteredFace, faceCardPath, readFaceLedger, updateFaceLedger, appendFaceEvent } from '../card-faces.js';
+import { FACES, isRegisteredFace, faceCardPath, cardTemplatesDir, readFaceLedger, updateFaceLedger, appendFaceEvent } from '../card-faces.js';
 import type { FaceId } from '../card-faces.js';
+import { preSaveCardGuard } from '../card-write-guard.js';
+import type { PreSaveGuardResult } from '../card-write-guard.js';
+import { readdirSync, statSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
+import { dirname, basename, resolve } from 'node:path';
 
 type HandlerResult = { statusCode: number; body: Record<string, unknown> };
 
@@ -274,6 +278,194 @@ export function handlePostConfigCardApply(authHeader: string | undefined, face: 
     });
   }
   return result;
+}
+
+// ── 卡面维护面（LG-058 N2：备份清单/回滚/模板清单/应用模板）──
+// 语义=整卡替换（CEO #5「一键把这张卡的配置换成预设组合」——切换语义，
+// 非 PUT 合并链）。写路径全走 preSaveCardGuard 守卫（备份先行+keep=5 轮换+
+// write 审计，机制真源=card-write-guard.ts）与 saveCard 同形原子写（tmp+rename，
+// 引擎零动复用守卫单源）。文件名白名单校验=「清单含」单断言即含 basename 形
+// （清单本身来自 readdir 前缀过滤，穿越名不可达清单）。审计 etype 沿 'write'
+// （FaceEventType 零扩），detail 区分 rollback/template。
+
+const CARD_BACKUP_KEEP = 5; // 对表 card-write-guard 轮换档（io-kernel rotateBackups keep=5）
+
+/** 卡备份文件名清单（`<card>.bak-` 前缀族；目录未建=空）。 */
+function cardBackupNames(face: FaceId): string[] {
+  const cardPath = faceCardPath(face);
+  const prefix = `${basename(cardPath)}.bak-`;
+  try {
+    return readdirSync(dirname(cardPath)).filter((n) => n.startsWith(prefix)).sort();
+  } catch {
+    return [];
+  }
+}
+
+/** 文件名白名单校验：必须在对应清单内（穿越名/伪造名一律拒）。 */
+function whitelistedName(name: unknown, allowed: string[]): name is string {
+  return typeof name === 'string' && name.length > 0 && allowed.includes(name);
+}
+
+/** 卡文档最低合法性（写坏卡前置拒）：JSON 对象+provider_entries 对象形态
+ * （与 PUT 退化形态前置拒同判据族）。 */
+function isPlausibleCardDoc(doc: unknown): boolean {
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return false;
+  const pe = (doc as { provider_entries?: unknown }).provider_entries;
+  return pe !== undefined && pe !== null && typeof pe === 'object' && !Array.isArray(pe);
+}
+
+/** 守卫+原子写（saveCard 同形：preSaveCardGuard→幂等短路→tmp+rename）。 */
+function guardedAtomicWrite(doc: unknown, cardPath: string): PreSaveGuardResult {
+  const guard = preSaveCardGuard(doc, cardPath);
+  if (guard.skipped) return guard;
+  mkdirSync(dirname(cardPath), { recursive: true });
+  const tmp = `${cardPath}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, 'utf-8');
+  renameSync(tmp, cardPath);
+  return guard;
+}
+
+/** GET /v1/config/cards/{face}/backups — 备份清单（名/字节/mtime；内容零出）。 */
+export function handleGetConfigCardBackups(authHeader: string | undefined, face: string): HandlerResult {
+  if (!isRegisteredFace(face)) {
+    return { statusCode: 404, body: { error: 'Not found', path: `/v1/config/cards/${face}/backups` } };
+  }
+  const authError = requireAdmin(authHeader);
+  if (authError) return authError;
+  const dir = dirname(faceCardPath(face));
+  const backups = cardBackupNames(face)
+    .map((file) => {
+      const st = statSync(resolve(dir, file));
+      return { file, size_bytes: st.size, modified_at: st.mtime.toISOString() };
+    })
+    .sort((a, b) => b.modified_at.localeCompare(a.modified_at));
+  return { statusCode: 200, body: { object: 'config.card-backups', face, keep: CARD_BACKUP_KEEP, backups } };
+}
+
+/** POST /v1/config/cards/{face}/rollback — 整卡回滚（恢复前守卫自动备份当前=
+ * 对称安全网，回滚本身也可再回滚）。 */
+export function handlePostConfigCardRollback(authHeader: string | undefined, face: string, rawBody: string | undefined): HandlerResult {
+  if (!isRegisteredFace(face)) {
+    return { statusCode: 404, body: { error: 'Not found', path: `/v1/config/cards/${face}/rollback` } };
+  }
+  const authError = requireAdmin(authHeader);
+  if (authError) return authError;
+  let body: { backup?: unknown };
+  try {
+    body = JSON.parse(rawBody ?? '') as { backup?: unknown };
+  } catch {
+    return { statusCode: 400, body: { error: 'invalid JSON body' } };
+  }
+  const allowed = cardBackupNames(face);
+  if (!whitelistedName(body.backup, allowed)) {
+    return { statusCode: 400, body: { error: 'backup 文件名无效或不在备份清单内（白名单校验，防路径穿越）' } };
+  }
+  const name: string = body.backup;
+  const dir = dirname(faceCardPath(face));
+  let doc: unknown;
+  try {
+    doc = JSON.parse(readFileSync(resolve(dir, name), 'utf-8'));
+  } catch {
+    return { statusCode: 400, body: { error: '备份内容不可解析（非合法 JSON），拒绝恢复' } };
+  }
+  if (!isPlausibleCardDoc(doc)) {
+    return { statusCode: 400, body: { error: '备份内容不是合法卡文档（provider_entries 缺失或形态非法），拒绝恢复' } };
+  }
+  let guard: PreSaveGuardResult;
+  try {
+    guard = guardedAtomicWrite(doc, faceCardPath(face));
+  } catch (err) {
+    return { statusCode: 500, body: { error: `回滚失败（写前守卫拒）：${err instanceof Error ? err.message : String(err)}` } };
+  }
+  appendFaceEvent({
+    face,
+    etype: 'write',
+    result: 'ok',
+    detail: `card rollback from=${name} (prior_backup=${guard.backup_file ? basename(guard.backup_file) : 'none'}${guard.skipped ? ', idempotent-skip' : ''})`,
+  });
+  return {
+    statusCode: 200,
+    body: {
+      object: 'config.card-rollback', face, restored_from: name,
+      prior_backup: guard.backup_file ? basename(guard.backup_file) : null,
+      message: '已回滚。daemon 下次拉取落地。',
+    },
+  };
+}
+
+/** GET /v1/config/cards/{face}/templates — 模板清单（目录未建=空列表常态 200）。 */
+export function handleGetConfigCardTemplates(authHeader: string | undefined, face: string): HandlerResult {
+  if (!isRegisteredFace(face)) {
+    return { statusCode: 404, body: { error: 'Not found', path: `/v1/config/cards/${face}/templates` } };
+  }
+  const authError = requireAdmin(authHeader);
+  if (authError) return authError;
+  const tplDir = cardTemplatesDir(face);
+  let names: string[] = [];
+  try {
+    names = readdirSync(tplDir).filter((n) => n.endsWith('.json'));
+  } catch { /* 目录未建=暂无模板 */ }
+  const templates = names
+    .map((file) => {
+      const st = statSync(resolve(tplDir, file));
+      return { file, size_bytes: st.size, modified_at: st.mtime.toISOString() };
+    })
+    .sort((a, b) => b.modified_at.localeCompare(a.modified_at));
+  return { statusCode: 200, body: { object: 'config.card-templates', face, templates } };
+}
+
+/** POST /v1/config/cards/{face}/apply-template — 应用模板（整卡替换；
+ * 守卫自动备份当前；daemon 下次拉取落地）。 */
+export function handlePostConfigCardApplyTemplate(authHeader: string | undefined, face: string, rawBody: string | undefined): HandlerResult {
+  if (!isRegisteredFace(face)) {
+    return { statusCode: 404, body: { error: 'Not found', path: `/v1/config/cards/${face}/apply-template` } };
+  }
+  const authError = requireAdmin(authHeader);
+  if (authError) return authError;
+  let body: { template?: unknown };
+  try {
+    body = JSON.parse(rawBody ?? '') as { template?: unknown };
+  } catch {
+    return { statusCode: 400, body: { error: 'invalid JSON body' } };
+  }
+  const tplDir = cardTemplatesDir(face);
+  let allowed: string[] = [];
+  try {
+    allowed = readdirSync(tplDir).filter((n) => n.endsWith('.json'));
+  } catch { /* 目录未建=暂无模板 */ }
+  if (!whitelistedName(body.template, allowed)) {
+    return { statusCode: 400, body: { error: 'template 文件名无效或不在模板清单内（白名单校验，防路径穿越）' } };
+  }
+  const name: string = body.template;
+  let doc: unknown;
+  try {
+    doc = JSON.parse(readFileSync(resolve(tplDir, name), 'utf-8'));
+  } catch {
+    return { statusCode: 400, body: { error: '模板内容不可解析（非合法 JSON），拒绝应用' } };
+  }
+  if (!isPlausibleCardDoc(doc)) {
+    return { statusCode: 400, body: { error: '模板内容不是合法卡文档（provider_entries 缺失或形态非法），拒绝应用' } };
+  }
+  let guard: PreSaveGuardResult;
+  try {
+    guard = guardedAtomicWrite(doc, faceCardPath(face));
+  } catch (err) {
+    return { statusCode: 500, body: { error: `应用模板失败（写前守卫拒）：${err instanceof Error ? err.message : String(err)}` } };
+  }
+  appendFaceEvent({
+    face,
+    etype: 'write',
+    result: 'ok',
+    detail: `template applied=${name} (prior_backup=${guard.backup_file ? basename(guard.backup_file) : 'none'}${guard.skipped ? ', idempotent-skip' : ''})`,
+  });
+  return {
+    statusCode: 200,
+    body: {
+      object: 'config.card-template-applied', face, template: name,
+      prior_backup: guard.backup_file ? basename(guard.backup_file) : null,
+      message: '模板已应用（整卡替换）。daemon 下次拉取落地。',
+    },
+  };
 }
 
 // ── 台账读面（UI 徽章数据源；复用现役 GET ledger 无独立端点——P2 UI 接线时

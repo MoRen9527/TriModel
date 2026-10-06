@@ -345,8 +345,8 @@ const FACE_META = {
     nav: 'TriRLC · 本机', meta: 'R 面 · 本地域 · 本机 8711（寄居过渡）',
     pull: 'TriModel 本机实例（keys 分发面 → 卡面 pull）',
     cli: 'trirlc config pull｜show｜verify｜cache',
-    tpl: '<div class="sub">候建——模板切换入口随后续批次开通；现役通道=命令行（见下方对照行）</div>',
-    bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
+    tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rlc">读取模板</button><select id="cf-rlc-tpl-sel" hidden></select><button id="cf-rlc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rlc-tpl-msg" hidden></div>',
+    bak: '<div class="sub">写卡自动留备份（保留近 5 份）；回滚前会再自动备份当前配置。</div><div class="row-form"><button data-card-bak-load="rlc">读取备份清单</button></div><div id="cf-rlc-bak-box" hidden></div>',
     special: 'daemon 健康=8711 /healthz（态候接线）；寄居过渡形态——本机进程代管 R 面本地域，终态=独立部署本地 PC（候排）。',
   },
   mmc: {
@@ -361,8 +361,8 @@ const FACE_META = {
     nav: 'TriRMC · 河源', meta: 'R 面 · 服务域 · 河源 8712',
     pull: 'TriModel（现役拉取端点=同机过渡位 河源 3333；独立服务器位候迁）',
     cli: 'trirmc config pull｜show｜verify｜cache',
-    tpl: '<div class="sub">候建——模板切换入口随后续批次开通；现役通道=命令行（见下方对照行）</div>',
-    bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
+    tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rmc">读取模板</button><select id="cf-rmc-tpl-sel" hidden></select><button id="cf-rmc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rmc-tpl-msg" hidden></div>',
+    bak: '<div class="sub">写卡自动留备份（保留近 5 份）；回滚前会再自动备份当前配置。</div><div class="row-form"><button data-card-bak-load="rmc">读取备份清单</button></div><div id="cf-rmc-bak-box" hidden></div>',
     special: '周平面迁移 cron 关联行：每周日 23:00 平面迁移由本机 cron 驱动，迁移窗内拉取态可能短暂波动（态候接线）；域锚约束：卡密文域=创建机+用户，禁跨机复制卡文件，消费机在自身域内重加密。',
   },
 };
@@ -433,7 +433,18 @@ function switchView(id) {
 // 指路按钮（不嵌套二级页：卡内指路，不复制通道）——事件委托覆盖脚本渲染的按钮
 document.addEventListener('click', (ev) => {
   const t = ev.target instanceof Element ? ev.target.closest('[data-goto]') : null;
-  if (t) switchView(t.dataset.goto);
+  if (t) { switchView(t.dataset.goto); return; }
+  // 卡面维护面委托（LG-058 N2：模板/备份真按钮；FACE_META 渲染的动态元素同覆盖）
+  const el = ev.target instanceof Element ? ev.target : null;
+  if (!el) return;
+  const tplLoad = el.closest('[data-card-tpl-load]');
+  if (tplLoad) { loadCardTemplates(tplLoad.dataset.cardTplLoad); return; }
+  const bakLoad = el.closest('[data-card-bak-load]');
+  if (bakLoad) { loadCardBackupsList(bakLoad.dataset.cardBakLoad); return; }
+  const tplApply = el.closest('button[id$="-tpl-apply"]');
+  if (tplApply) { applyCardTemplate(tplApply.id.replace(/-tpl-apply$/, '')); return; }
+  const rb = el.closest('[data-card-rollback]');
+  if (rb) { cardRollbackClick(rb); }
 });
 
 // 渲染 rlc/mmc/rmc 三卡（mlc 静态正形已在 HTML 中）
@@ -588,6 +599,113 @@ async function loadFaceCards() {
     faceState[f] = r.status === 200 ? r.body : null;
   }));
   renderFaceCards();
+}
+
+// ═══ 卡面维护面（LG-058 N2：模板切换+备份回滚；R 面双卡真按钮）═══
+// 交互形对表 fb 本机栏（两击确认防误触）；语义=整卡替换，daemon 下次拉取落地。
+
+async function loadCardTemplates(f) {
+  const sel = $('cf-' + f + '-tpl-sel');
+  const applyBtn = $('cf-' + f + '-tpl-apply');
+  const m = $('cf-' + f + '-tpl-msg');
+  const r = await api('/v1/config/cards/' + f + '/templates', { headers: adminHeaders() }).catch(() => null);
+  if (!r || r.status !== 200) { m.hidden = false; m.className = 'sub err'; m.textContent = '模板清单读取失败（需管理令牌）'; return; }
+  const tpls = r.body.templates ?? [];
+  if (tpls.length === 0) {
+    m.hidden = false; m.className = 'sub'; m.textContent = '暂无模板（模板目录下暂无预设组合；模板文件=完整卡文档快照）';
+    sel.hidden = true; applyBtn.hidden = true; sel.innerHTML = '';
+    return;
+  }
+  m.hidden = true; sel.hidden = false; applyBtn.hidden = false;
+  applyBtn.dataset.armed = '';
+  sel.innerHTML = '';
+  for (const t of tpls) {
+    const o = document.createElement('option');
+    o.value = t.file;
+    o.textContent = t.file.replace(/\.json$/, '') + '（' + new Date(t.modified_at).toLocaleString() + '）';
+    sel.appendChild(o);
+  }
+}
+
+async function applyCardTemplate(f) {
+  const sel = $('cf-' + f + '-tpl-sel');
+  const applyBtn = $('cf-' + f + '-tpl-apply');
+  const m = $('cf-' + f + '-tpl-msg');
+  if (!sel.value) return;
+  // 两击确认（整卡替换语义，防误触）
+  if (applyBtn.dataset.armed !== '1') {
+    applyBtn.dataset.armed = '1'; applyBtn.textContent = '确认应用（整卡替换）'; applyBtn.className = 'danger';
+    setTimeout(() => { applyBtn.dataset.armed = ''; applyBtn.textContent = '应用模板'; applyBtn.className = ''; }, 5000);
+    return;
+  }
+  applyBtn.dataset.armed = '';
+  applyBtn.disabled = true; applyBtn.textContent = '应用中…';
+  const r = await api('/v1/config/cards/' + f + '/apply-template', { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ template: sel.value }) }).catch(() => null);
+  applyBtn.disabled = false; applyBtn.textContent = '应用模板';
+  m.hidden = false;
+  if (!r) { m.className = 'sub err'; m.textContent = '无法连接配置服务'; return; }
+  if (r.status === 200) {
+    m.className = 'sub ok'; m.textContent = r.body.message ?? '模板已应用';
+    await loadFaceCards();
+  } else {
+    m.className = 'sub err'; m.textContent = humanize(r.status, r.body.error);
+  }
+}
+
+async function loadCardBackupsList(f) {
+  const box = $('cf-' + f + '-bak-box');
+  const r = await api('/v1/config/cards/' + f + '/backups', { headers: adminHeaders() }).catch(() => null);
+  if (!r || r.status !== 200) { box.hidden = false; box.textContent = '备份清单读取失败（需管理令牌）'; return; }
+  const baks = r.body.backups ?? [];
+  box.hidden = false; box.innerHTML = '';
+  if (baks.length === 0) { box.textContent = '暂无备份（首次写入后会自动生成）'; return; }
+  const info = document.createElement('div');
+  info.className = 'sub';
+  info.textContent = '共 ' + baks.length + ' 份（保留近 ' + r.body.keep + ' 份）。回滚前会自动备份当前配置。';
+  box.appendChild(info);
+  for (const bk of baks) {
+    const row = document.createElement('div');
+    row.className = 'row-form';
+    const label = document.createElement('span');
+    label.className = 'sub';
+    label.style.flex = '1';
+    label.textContent = bk.file.replace(/^[^*]*\.bak-/, '') + '（' + new Date(bk.modified_at).toLocaleString() + '）';
+    const btn = document.createElement('button');
+    btn.textContent = '回滚到此';
+    btn.dataset.cardRollback = f;
+    btn.dataset.file = bk.file;
+    row.appendChild(label); row.appendChild(btn);
+    box.appendChild(row);
+  }
+}
+
+function cardRollbackClick(btn) {
+  // 两击确认（照 fb 栏形）
+  if (btn.dataset.armed !== '1') {
+    btn.dataset.armed = '1'; btn.textContent = '确认回滚'; btn.className = 'danger';
+    setTimeout(() => { btn.dataset.armed = ''; btn.textContent = '回滚到此'; btn.className = ''; }, 5000);
+    return;
+  }
+  cardDoRollback(btn.dataset.cardRollback, btn.dataset.file, btn);
+}
+
+async function cardDoRollback(f, file, btn) {
+  btn.disabled = true; btn.textContent = '回滚中…';
+  const r = await api('/v1/config/cards/' + f + '/rollback', { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ backup: file }) }).catch(() => null);
+  btn.disabled = false;
+  if (!r) { btn.textContent = '无法连接配置服务'; return; }
+  if (r.status === 200) {
+    btn.textContent = '已回滚';
+    await loadFaceCards();
+  } else {
+    btn.textContent = '回滚未完成';
+    const box = $('cf-' + f + '-bak-box');
+    box.hidden = false;
+    const e = document.createElement('div');
+    e.className = 'sub err';
+    e.textContent = humanize(r.status, r.body.error);
+    box.appendChild(e);
+  }
 }
 
 /** 诚实三态徽标：已生效（在役）/待应用·失败（降级）/未配置·读取失败（断链候选，如实）。 */

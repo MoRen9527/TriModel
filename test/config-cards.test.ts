@@ -13,7 +13,7 @@
 // 不触 canonical 活卡路径）。
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'path';
 import { dispatch } from '../src/api/routes.js';
@@ -437,5 +437,128 @@ describe('LG-058 status/apply audit + ledger sync', () => {
   it('face-events 全账 len-only 值面扫描（A2 前置自证）', () => {
     const hits = scanLenOnly(readEvents());
     assert.equal(hits.length, 0, `len-only 违规：${JSON.stringify(hits)}`);
+  });
+});
+
+// ── LG-058 N2：卡面维护面（备份清单/回滚/模板清单/应用模板）──
+
+describe('LG-058 N2 card maintenance (backups/rollback/templates/apply-template)', () => {
+  it('templates 清单：目录未建=200 空列表常态；鉴权 401 fail-closed', async () => {
+    const noAuth = await req('GET', '/v1/config/cards/rmc/templates');
+    assert.equal(noAuth.statusCode, 401);
+    const r = await req('GET', '/v1/config/cards/rmc/templates', `Bearer ${ADMIN}`);
+    assert.equal(r.statusCode, 200);
+    const body = r.body as { object: string; face: string; templates: unknown[] };
+    assert.equal(body.object, 'config.card-templates');
+    assert.equal(body.face, 'rmc');
+    assert.deepEqual(body.templates, []);
+  });
+  it('backups 清单：无备份=200 空；有备份=file/size_bytes/modified_at 三元组+keep=5', async () => {
+    clearBaks('rmc');
+    const cardPath = faceCardPath('rmc');
+    if (existsSync(cardPath)) rmSync(cardPath);
+    const empty = await req('GET', '/v1/config/cards/rmc/backups', `Bearer ${ADMIN}`);
+    assert.equal(empty.statusCode, 200);
+    assert.deepEqual((empty.body as { backups: unknown[] }).backups, []);
+    saveCard({ ...emptyCard('seed'), machine: { name: 'seed' } }, cardPath);
+    saveCard({ ...emptyCard('gen1'), machine: { name: 'v1' } }, cardPath);
+    const r = await req('GET', '/v1/config/cards/rmc/backups', `Bearer ${ADMIN}`);
+    const body = r.body as { object: string; keep: number; backups: Array<{ file: string; size_bytes: number; modified_at: string }> };
+    assert.equal(body.object, 'config.card-backups');
+    assert.equal(body.keep, 5);
+    assert.equal(body.backups.length, 1);
+    assert.ok(/\.bak-\d{8}T\d{6}Z-\d+-\d+$/.test(body.backups[0].file), `后缀形态：${body.backups[0].file}`);
+    assert.ok(body.backups[0].size_bytes > 0);
+    assert.ok(!Number.isNaN(Date.parse(body.backups[0].modified_at)));
+  });
+  it('apply-template 全链：整卡替换（旧条目零保留，非 PUT 合并）+守卫自动备份+template 审计行', async () => {
+    clearBaks('rlc');
+    const cardPath = faceCardPath('rlc');
+    if (existsSync(cardPath)) rmSync(cardPath); // 跨测试残留清除→seed=首存零备份基线
+    seedCard('rlc');
+    const tplDoc = emptyCard('tpl');
+    tplDoc.provider_entries['t1'] = buildEntry('moonshot', 'moonshot-v2', 'sk-tpl-key-000000', true);
+    const tplDir = join(dir, 'templates', 'rlc');
+    mkdirSync(tplDir, { recursive: true });
+    writeFileSync(join(tplDir, 'combo-a.json'), JSON.stringify(tplDoc, null, 2), 'utf-8');
+    const before = JSON.parse(readFileSync(cardPath, 'utf-8')) as { provider_entries: Record<string, unknown> };
+    assert.ok(before.provider_entries['e1'], '前置：现役卡有 e1');
+    const r = await req('POST', '/v1/config/cards/rlc/apply-template', `Bearer ${ADMIN}`, JSON.stringify({ template: 'combo-a.json' }));
+    assert.equal(r.statusCode, 200);
+    const body = r.body as { object: string; template: string; prior_backup: string | null; message: string };
+    assert.equal(body.object, 'config.card-template-applied');
+    assert.equal(body.template, 'combo-a.json');
+    assert.ok(body.prior_backup, '守卫自动备份当前');
+    const after = JSON.parse(readFileSync(cardPath, 'utf-8')) as { provider_entries: Record<string, unknown> };
+    assert.equal(after.provider_entries['e1'], undefined, '整卡替换（旧条目零保留——切换语义非合并）');
+    assert.ok(after.provider_entries['t1'], '模板条目落地');
+    assert.equal(baksOf('rlc').length, 1, '写前备份 1 份');
+    assert.ok(
+      readEvents().some((e) => e.etype === 'write' && e.face === 'rlc' && String(e.detail).includes('template applied=combo-a.json')),
+      'write 审计行 detail=template',
+    );
+  });
+  it('rollback 全链：整卡恢复+恢复前自动备份当前（对称安全网）+rollback 审计行', async () => {
+    clearBaks('rmc');
+    const cardPath = faceCardPath('rmc');
+    if (existsSync(cardPath)) rmSync(cardPath); // 跨测试残留清除→首存零备份基线
+    saveCard({ ...emptyCard('v1'), machine: { name: 'v1' } }, cardPath);
+    saveCard({ ...emptyCard('v2'), machine: { name: 'v2' } }, cardPath);
+    const list = await req('GET', '/v1/config/cards/rmc/backups', `Bearer ${ADMIN}`);
+    const baks = (list.body as { backups: Array<{ file: string }> }).backups;
+    assert.equal(baks.length, 1);
+    const r = await req('POST', '/v1/config/cards/rmc/rollback', `Bearer ${ADMIN}`, JSON.stringify({ backup: baks[0].file }));
+    assert.equal(r.statusCode, 200);
+    const body = r.body as { object: string; restored_from: string; prior_backup: string | null };
+    assert.equal(body.object, 'config.card-rollback');
+    assert.equal(body.restored_from, baks[0].file);
+    assert.ok(body.prior_backup, '回滚前自动备份当前（v2 态可再回滚）');
+    const restored = JSON.parse(readFileSync(cardPath, 'utf-8')) as { machine: { name: string } };
+    assert.equal(restored.machine.name, 'v1', '卡内容恢复=v1');
+    assert.equal(baksOf('rmc').length, 2, '回滚后两份（原备份+回滚前新备份）');
+    assert.ok(
+      readEvents().some((e) => e.etype === 'write' && e.face === 'rmc' && String(e.detail).startsWith('card rollback from=')),
+      'write 审计行 detail=rollback',
+    );
+  });
+  it('白名单拒：穿越名/不在清单名=400 零落盘（卡字节零变）', async () => {
+    clearBaks('rlc');
+    const cardPath = faceCardPath('rlc');
+    seedCard('rlc');
+    const before = readFileSync(cardPath, 'utf-8');
+    for (const bad of ['../combo-a.json', 'combo-a.json', 'nope.bak-1', '.']) {
+      const r = await req('POST', '/v1/config/cards/rlc/rollback', `Bearer ${ADMIN}`, JSON.stringify({ backup: bad }));
+      assert.equal(r.statusCode, 400, `backup=${bad} 应 400`);
+    }
+    const tplR = await req('POST', '/v1/config/cards/rlc/apply-template', `Bearer ${ADMIN}`, JSON.stringify({ template: '../../x.json' }));
+    assert.equal(tplR.statusCode, 400);
+    assert.equal(readFileSync(cardPath, 'utf-8'), before, '卡字节零变');
+  });
+  it('内容校验拒：非法 JSON 备份/缺 provider_entries 模板=400 拒写', async () => {
+    clearBaks('rmc');
+    const cardPath = faceCardPath('rmc');
+    saveCard({ ...emptyCard('seed'), machine: { name: 'seed' } }, cardPath);
+    saveCard({ ...emptyCard('gen'), machine: { name: 'gen' } }, cardPath);
+    const bakName = baksOf('rmc')[0];
+    writeFileSync(join(dir, bakName), '{not-json', 'utf-8');
+    const r = await req('POST', '/v1/config/cards/rmc/rollback', `Bearer ${ADMIN}`, JSON.stringify({ backup: bakName }));
+    assert.equal(r.statusCode, 400);
+    assert.match((r.body as { error: string }).error, /不可解析/);
+    const tplDir = join(dir, 'templates', 'rmc');
+    mkdirSync(tplDir, { recursive: true });
+    writeFileSync(join(tplDir, 'bad.json'), JSON.stringify({ object: 'trimmc-card' }), 'utf-8');
+    const t = await req('POST', '/v1/config/cards/rmc/apply-template', `Bearer ${ADMIN}`, JSON.stringify({ template: 'bad.json' }));
+    assert.equal(t.statusCode, 400);
+    assert.match((t.body as { error: string }).error, /合法卡文档/);
+  });
+  it('不在册 face 维护面端点=404（防枚举同族）；方法不匹配=404', async () => {
+    for (const u of ['/v1/config/cards/nope/backups', '/v1/config/cards/nope/templates']) {
+      assert.equal((await req('GET', u, `Bearer ${ADMIN}`)).statusCode, 404);
+    }
+    for (const u of ['/v1/config/cards/nope/rollback', '/v1/config/cards/nope/apply-template']) {
+      assert.equal((await req('POST', u, `Bearer ${ADMIN}`, '{}')).statusCode, 404);
+    }
+    assert.equal((await req('GET', '/v1/config/cards/rmc/rollback', `Bearer ${ADMIN}`)).statusCode, 404, 'GET rollback=404');
+    assert.equal((await req('POST', '/v1/config/cards/rmc/templates', `Bearer ${ADMIN}`, '{}')).statusCode, 404, 'POST templates=404');
   });
 });

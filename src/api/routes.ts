@@ -5,7 +5,7 @@ import { handleHealth } from './health.js';
 import { handleModels } from './models.js';
 import { handleGetKeys, handleRefreshKeys, handlePutSecureKeys, handleSecureKeysStatus } from './keys.js';
 import { handleGetTrimmcCard, handlePutTrimmcCard, handlePutTrimmcCardStatus, handleApplyStrategy } from './trimmc-card.js';
-import { handleGetConfigCard, handlePutConfigCard, handlePutConfigCardStatus, handlePostConfigCardApply } from './config-cards.js';
+import { handleGetConfigCard, handlePutConfigCard, handlePutConfigCardStatus, handlePostConfigCardApply, handleGetConfigCardBackups, handlePostConfigCardRollback, handleGetConfigCardTemplates, handlePostConfigCardApplyTemplate } from './config-cards.js';
 import type { PullRequestOrigin } from './config-cards.js';
 import { handleRuntimeInfo } from './runtime-info.js';
 import { handleGetClaudeFallback, handlePostClaudeFallbackRestore, handlePostClaudeFallbackPreview, handleGetClaudeFallbackBackups, handlePostClaudeFallbackRollback, handlePostClaudeFallbackInjectKey, listTemplates } from './claude-fallback.js';
@@ -152,12 +152,15 @@ export async function dispatch(
   }
 
   // ── LG-058 P0 泛化卡面端点族：/v1/config/cards/{face}[/status|/apply] ──
+  // LG-058 N2 增：/backups(GET) /rollback(POST) /templates(GET) /apply-template(POST)
+  // （卡面维护面：备份清单/整卡回滚/模板清单/应用模板——整卡替换语义）。
   // {face} 不在册=404（防枚举）；query 面仅泛化族解析（?view=managed|pull）。
   if (url.startsWith('/v1/config/cards/')) {
     const qIdx = url.indexOf('?');
     const pathPart = qIdx >= 0 ? url.slice(0, qIdx) : url;
     const search = qIdx >= 0 ? url.slice(qIdx) : '';
-    const m = pathPart.match(/^\/v1\/config\/cards\/([a-z]+)(?:\/(status|apply))?$/);
+    // 交替序：长前缀（apply-template）在前，防 apply 先吞
+    const m = pathPart.match(/^\/v1\/config\/cards\/([a-z]+)(?:\/(status|apply-template|apply|backups|templates|rollback))?$/);
     if (!m) {
       return { statusCode: 404, headers: jsonHeaders, body: { error: 'Not found', path: url } };
     }
@@ -177,6 +180,22 @@ export async function dispatch(
     }
     if (sub === 'apply' && method === 'POST') {
       const result = handlePostConfigCardApply(headers['authorization'], face);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    if (sub === 'backups' && method === 'GET') {
+      const result = handleGetConfigCardBackups(headers['authorization'], face);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    if (sub === 'rollback' && method === 'POST') {
+      const result = handlePostConfigCardRollback(headers['authorization'], face, rawBody);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    if (sub === 'templates' && method === 'GET') {
+      const result = handleGetConfigCardTemplates(headers['authorization'], face);
+      return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+    }
+    if (sub === 'apply-template' && method === 'POST') {
+      const result = handlePostConfigCardApplyTemplate(headers['authorization'], face, rawBody);
       return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
     }
     return { statusCode: 404, headers: jsonHeaders, body: { error: 'Not found', path: url } };
