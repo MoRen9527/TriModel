@@ -172,6 +172,33 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     retireUi(dom);
   });
 
+  it('②c LG-058 N5 方案一正名：卡名零机器位词（角色+实例二级——卡名答是谁，实例行答在哪）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, faceResponder({}));
+    const d = dom.window.document;
+    await waitFor(() => (d.getElementById('panel-overview') as HTMLElement).hidden === false);
+    const forbidden = ['·本机', '·sg', '·河源'];
+    // 导航 label（卡名=角色）
+    const labels = Array.from(d.querySelectorAll('#page-menu .menu-btn')).map((b) => b.textContent ?? '');
+    for (const suf of forbidden) {
+      assert.ok(labels.every((l) => !l.includes(suf)), `导航 label 零「${suf}」后缀：${JSON.stringify(labels)}`);
+    }
+    // 四卡卡头 h2 首段（badge 前）=纯角色名；实例行（.sub）保留机位=合法面
+    for (const f of FACES) {
+      const h2 = d.querySelector(`#panel-card-${f} h2`);
+      assert.ok(h2, `${f} 卡头在位`);
+      const h2Clone = h2.cloneNode(true) as HTMLElement;
+      h2Clone.querySelector('.sub')?.remove(); // 实例行不在卡名判定域
+      const headText = h2Clone.textContent ?? '';
+      for (const suf of forbidden) {
+        assert.ok(!headText.includes(suf), `${f} 卡名零「${suf}」（headText=${headText.trim()}）`);
+      }
+      const inst = h2.querySelector('.sub');
+      assert.ok(inst && inst.textContent!.includes('·'), `${f} 实例行在位（机位信息归实例行）`);
+    }
+    retireUi(dom);
+  });
+
   it('③ 无令牌诚实态：未连接×4+零卡面请求+首启引导', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const dom = bootUi(log, faceResponder({}));

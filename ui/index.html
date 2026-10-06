@@ -115,10 +115,10 @@
   </section>
 </div>
 
-<!-- ═══ TriMLC · 本机 卡（操作层；一致面八项+卡特有面；本机栏=fallback 模板切换并入此卡，消双门）═══ -->
+<!-- ═══ TriMLC 卡（操作层；一致面八项+卡特有面；本机栏=fallback 模板切换并入此卡，消双门）═══ -->
 <div id="panel-card-mlc" class="page-panel" hidden>
   <section>
-    <h2>TriMLC · 本机 <span id="cf-mlc-badge" class="badge none">未连接</span> <span class="sub">M 面 · 本地域 · 本机 8713</span></h2>
+    <h2>TriMLC <span id="cf-mlc-badge" class="badge none">未连接</span> <span class="sub">M 面 · 本地域 · 本机 8713</span></h2>
 
     <h3>拉取状态</h3>
     <div class="kv" id="cf-mlc-pull"><b>读数</b><span class="idle">暂无——连接后显示</span></div>
@@ -173,11 +173,11 @@
   </section>
 </div>
 
-<!-- ═══ TriRLC · 本机 卡（rlc/mmc/rmc 三卡由脚本按同一模板渲染进此容器）═══ -->
+<!-- ═══ TriRLC 卡（rlc/mmc/rmc 三卡由脚本按同一模板渲染进此容器）═══ -->
 <div id="panel-card-rlc" class="page-panel" hidden></div>
-<!-- ═══ TriMMC · sg 卡 ═══ -->
+<!-- ═══ TriMMC 卡 ═══ -->
 <div id="panel-card-mmc" class="page-panel" hidden></div>
-<!-- ═══ TriRMC · 河源 卡 ═══ -->
+<!-- ═══ TriRMC 卡 ═══ -->
 <div id="panel-card-rmc" class="page-panel" hidden></div>
 
 <!-- ═══ TriModel 策略卡（参照层；LG-035 面——v4 卡本体=模型集/规则/策略/活动策略，
@@ -336,13 +336,13 @@ const FACE_UI_IDS = ['mlc', 'rlc', 'mmc', 'rmc'];
 
 const FACE_META = {
   mlc: {
-    nav: 'TriMLC · 本机', meta: 'M 面 · 本地域 · 本机 8713',
+    nav: 'TriMLC', meta: 'M 面 · 本地域 · 本机 8713',
     pull: 'TriModel 本机实例（keys 分发面 → 卡面 pull）',
     cli: 'trimlc config pull｜show｜verify｜cache',
     static: true, // 卡体为静态 HTML 正形（fb 本机栏并入）
   },
   rlc: {
-    nav: 'TriRLC · 本机', meta: 'R 面 · 本地域 · 本机 8711（寄居过渡）',
+    nav: 'TriRLC', meta: 'R 面 · 本地域 · 本机 8711（寄居过渡）',
     pull: 'TriModel 本机实例（keys 分发面 → 卡面 pull）',
     cli: 'trirlc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rlc">读取模板</button><select id="cf-rlc-tpl-sel" hidden></select><button id="cf-rlc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rlc-tpl-msg" hidden></div>',
@@ -350,15 +350,15 @@ const FACE_META = {
     special: 'daemon 健康=8711 /healthz（态候接线）；寄居过渡形态——本机进程代管 R 面本地域，终态=独立部署本地 PC（候排）。',
   },
   mmc: {
-    nav: 'TriMMC · sg', meta: 'M 面 · 服务域 · sg 8710',
+    nav: 'TriMMC', meta: 'M 面 · 服务域 · sg 8710',
     pull: 'TriModel（sg 出面走本机 8460 代理）',
     cli: 'trimmc config pull｜show｜verify｜cache',
-    tpl: '<div class="sub">TriMMC（sg）侧的模型写入走「连接配置」页的 sg 栏（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
+    tpl: '<div class="sub">TriMMC 侧的模型写入走「连接配置」页 sg 栏（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
     bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
     special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=策略卡过渡位，策略内容见「TriModel 策略卡」；TriMMC 专属卡候文件迁移方案。',
   },
   rmc: {
-    nav: 'TriRMC · 河源', meta: 'R 面 · 服务域 · 河源 8712',
+    nav: 'TriRMC', meta: 'R 面 · 服务域 · 河源 8712',
     pull: 'TriModel（现役拉取端点=同机过渡位 河源 3333；独立服务器位候迁）',
     cli: 'trirmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rmc">读取模板</button><select id="cf-rmc-tpl-sel" hidden></select><button id="cf-rmc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rmc-tpl-msg" hidden></div>',

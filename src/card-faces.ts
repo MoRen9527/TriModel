@@ -27,10 +27,12 @@ export interface CardFaceInfo {
 /** 静态 face registry（MVP 声明式；mmc 卡文件=现役 trimmc-card.json 原位
  * 零迁移——别名保留条款的文件面延伸；其余 face 按模板 <face>-card.json）。 */
 export const FACES: Readonly<Record<'mmc' | 'mlc' | 'rmc' | 'rlc', CardFaceInfo>> = {
-  mmc: { face_id: 'mmc', display: 'TriMMC（M·服务域·sg 8710）', card_file: 'trimmc-card.json', plane: 'service', domain: 'M' },
-  mlc: { face_id: 'mlc', display: 'TriMLC（M·本地域·本机 8713）', card_file: 'trimlc-card.json', plane: 'local', domain: 'M' },
-  rmc: { face_id: 'rmc', display: 'TriRMC（R·服务域·河源）', card_file: 'trirmc-card.json', plane: 'service', domain: 'R' },
-  rlc: { face_id: 'rlc', display: 'TriRLC（R·本地域·本机 8711 寄居过渡）', card_file: 'trirlc-card.json', plane: 'local', domain: 'R' },
+  // LG-058 N5 方案一正名：卡名=角色（零机器位词）；实例信息归 plane/domain/
+  // card_file 结构字段与 UI 实例行（「角色（卡名）+部署实例（卡头实例行）」二级）。
+  mmc: { face_id: 'mmc', display: 'TriMMC', card_file: 'trimmc-card.json', plane: 'service', domain: 'M' },
+  mlc: { face_id: 'mlc', display: 'TriMLC', card_file: 'trimlc-card.json', plane: 'local', domain: 'M' },
+  rmc: { face_id: 'rmc', display: 'TriRMC', card_file: 'trirmc-card.json', plane: 'service', domain: 'R' },
+  rlc: { face_id: 'rlc', display: 'TriRLC', card_file: 'trirlc-card.json', plane: 'local', domain: 'R' },
 } as const;
 
 export type FaceId = keyof typeof FACES;
