@@ -11,6 +11,7 @@ import { handleRuntimeInfo } from './runtime-info.js';
 import { handleGetClaudeFallback, handlePostClaudeFallbackRestore, handlePostClaudeFallbackPreview, handleGetClaudeFallbackBackups, handlePostClaudeFallbackRollback, handlePostClaudeFallbackInjectKey, listTemplates } from './claude-fallback.js';
 import { handleGetClaudeFallbackSg, handlePostClaudeFallbackSgRestore } from './claude-fallback-sg.js';
 import { handleGetPolicy, handlePutPolicy } from './policy.js';
+import { handleGetConfigVerify } from './verify.js';
 
 export type RouteResult = {
   statusCode: number;
@@ -94,6 +95,13 @@ export async function dispatch(
   }
   if (url === '/v1/config/trimmc-card/status' && method === 'PUT') {
     const result = handlePutTrimmcCardStatus(headers['authorization'], rawBody);
+    return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
+  }
+
+  // GET /v1/config/verify — 诚实三态读数（深测②合一窗 S1·A 案：落地配置与
+  // 下发意图比对结果；语义边界=非健康检查，CPO 卷 §4.5）
+  if (url === '/v1/config/verify' && method === 'GET') {
+    const result = handleGetConfigVerify(headers['authorization']);
     return { statusCode: result.statusCode, headers: jsonHeaders, body: result.body };
   }
 
