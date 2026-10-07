@@ -507,13 +507,14 @@ describe('深测②合一 S4: 两页读数同源（verify 通道）', () => {
     const dom = connectedDom(log, verifyBody);
     const d = dom.window.document;
     await connect(d);
-    // 兜底 badge=verify 权威中文标签（直消费，UI 零复算）
-    await waitFor(() => (d.getElementById('cd-mlc-phase') as HTMLElement | null)?.textContent === '已落生效');
+    // 兜底 badge=verify 权威中文标签（直消费，UI 零复算）；S4b B：applied 态注记「已落 · 重启生效」
+    await waitFor(() => (d.getElementById('cd-mlc-phase') as HTMLElement | null)?.textContent === '已落 · 重启生效');
     assert.equal((d.getElementById('cd-rlc-phase') as HTMLElement).textContent, '已存未拉', 'rlc badge=verify state_label');
-    // 页顶「应用于」=同一 verify 源的读数缀（face 集由域标签 display 名匹配）
-    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC 已落生效'));
+    assert.ok(((d.getElementById('cd-mlc-phase') as HTMLElement).textContent ?? '').includes('重启生效'), 'S4b B 锚：boot 型键徽章含「重启生效」语义锚');
+    // 页顶「应用于」=同一 verify 源的读数缀（face 集由域标签 display 名匹配；B 同族注记同步）
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC 已落 · 重启生效'));
     assert.ok(
-      (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 本地域（TriMLC/TriRLC） · TriMLC 已落生效 · TriRLC 已存未拉'),
+      (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 本地域（TriMLC/TriRLC） · TriMLC 已落 · 重启生效 · TriRLC 已存未拉'),
       '页顶应用于读数=verify 同源（两页读数同源断言·完工门锚）',
     );
     assert.equal((d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMMC'), false, '域标签外 face 不进页顶缀（匹配面=本域）');
@@ -546,8 +547,8 @@ describe('深测②合一 S4: 两页读数同源（verify 通道）', () => {
     const d = dom.window.document;
     await connect(d);
     await waitFor(() => (d.getElementById('cd-mlc-phase') as HTMLElement | null)?.textContent.includes('拉取链异常'));
-    assert.equal((d.getElementById('cd-mlc-phase') as HTMLElement).textContent, '已落生效 ·拉取链异常', 'badge degraded 后缀（结构化面）');
-    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC 已落生效 ·拉取链异常'));
+    assert.equal((d.getElementById('cd-mlc-phase') as HTMLElement).textContent, '已落 · 重启生效 ·拉取链异常', 'badge degraded 后缀（结构化面）');
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC 已落 · 重启生效 ·拉取链异常'));
     retireUi(dom);
   });
 
@@ -571,9 +572,9 @@ describe('深测②合一 S4: 两页读数同源（verify 通道）', () => {
     const dom = connectedDom(log, verifyBody);
     const d = dom.window.document;
     await connect(d);
-    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('· 已落生效'));
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('· 已落 · 重启生效'));
     assert.ok(
-      (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 本地域（TriMLC/TriRLC） · 已落生效'),
+      (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 本地域（TriMLC/TriRLC） · 已落 · 重启生效'),
       '全落=单词缀（不逐 face 枚举）',
     );
     retireUi(dom);
@@ -585,7 +586,7 @@ describe('深测②合一 S4: 两页读数同源（verify 通道）', () => {
     await connect(d2);
     await waitFor(() => (d2.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 未知域'));
     const line2 = (d2.getElementById('tc-active-line') as HTMLElement).textContent;
-    assert.equal(line2.includes('已落生效'), false, '未知标签零缀（不猜）');
+    assert.equal(line2.includes('已落'), false, '未知标签零缀（不猜）');
     retireUi(dom2);
   });
 
@@ -597,6 +598,58 @@ describe('深测②合一 S4: 两页读数同源（verify 通道）', () => {
     const empty = (d.getElementById('tc-r-empty') as HTMLElement).textContent;
     assert.ok(empty.includes('支持：按时间段自动切换 / 始终用某个模型 / 用量用完自动换下一个'), '三型描述式 CPO 定稿在位');
     assert.equal(empty.includes('时段/默认/额度三型'), false, '旧「三型」串零残留');
+    retireUi(dom);
+  });
+
+  // ── S4b 观察项（CPO cfcc055b 四锚·CTO 案 a 补载）：C 清空诚实注+D 切签重拉 ──
+  it('S4b C: 清空保存→诚实注记「已清 · 待落地」（禁无提示分叉·注记置后不被重渲冲掉）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, [(url: string, init?: RequestInit): { status: number; body: unknown } => {
+      if (url.includes('/v1/config/runtime-info')) return { status: 200, body: RUNTIME_INFO };
+      if (url === '/v1/config/verify') return { status: 200, body: { object: 'config.verify', generated_at: 'x', faces: {
+        mmc: vr('mmc', 'applied', '已落生效'), mlc: vr('mlc', 'not-configured', '未配置'),
+        rmc: vr('rmc', 'not-configured', '未配置'), rlc: vr('rlc', 'stored-not-pulled', '已存未拉'),
+      } } };
+      const m = url.match(/\/v1\/config\/cards\/(mlc|rlc|mmc|rmc)/);
+      if (m && (init?.method ?? '') === 'PUT') {
+        return { status: 200, body: { object: 'config.card.managed', card: { local_config: { version: 2, updated_at: 'x', items: {} } }, entries_masked: {}, ledger: { faces: { [m[1]]: { local_config: { version_applied: 1, applied_at: 'x', write_result: 'ok' } } } } } };
+      }
+      if (m) {
+        // 清单外键一条（渲染为自由行+「移除」钮）——connSaveDomain prevCount>0 判定源
+        return { status: 200, body: { object: 'config.card.managed', card: { local_config: { version: 1, updated_at: 'x', items: { custom_key: 'legacy-value' } } }, entries_masked: {}, ledger: { faces: { [m[1]]: { local_config: { version_applied: 1, applied_at: 'x', write_result: 'ok' } } } } } };
+      }
+      return okFor(url);
+    }]);
+    const d = dom.window.document;
+    await connect(d);
+    await waitFor(() => !!d.querySelector('#cd-mmc [data-cd-del-row]'));
+    (d.querySelector('#cd-mmc [data-cd-del-row]') as HTMLElement).click();
+    (d.querySelector('[data-cd-save="mmc"]') as HTMLElement).click();
+    // msg 节点在成功路径会被 renderConnectDomains 重建（innerHTML 整体替换）——
+    // 禁持旧节点引用（detached 后 textContent 永不变，S4 cd-*-phase 动态渲染同族坑），
+    // waitFor 内每次现取。
+    await waitFor(() => ((d.getElementById('cd-mmc-msg') as HTMLElement | null)?.textContent ?? '').includes('已清 · 待落地'));
+    const msg = d.getElementById('cd-mmc-msg') as HTMLElement;
+    assert.ok((msg.textContent ?? '').includes('机器侧现持旧值'), '诚实注记全文在位（禁无提示分叉）');
+    assert.equal(msg.hidden, false, '注记可见（最终态非 hidden——置后修锚：不被 loadFaceCards 同源重渲冲掉）');
+    retireUi(dom);
+  });
+
+  it('S4b D: 切域签触发该域卡增量重拉（行为断言：切签一次=该域 cards GET +1·非轮询）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const verifyBody = { object: 'config.verify', generated_at: 'x', faces: {
+      mmc: vr('mmc', 'applied', '已落生效'), mlc: vr('mlc', 'applied', '已落生效'),
+      rmc: vr('rmc', 'not-configured', '未配置'), rlc: vr('rlc', 'applied', '已落生效'),
+    } };
+    const dom = connectedDom(log, verifyBody);
+    const d = dom.window.document;
+    await connect(d);
+    await waitFor(() => log.filter((e) => e.url.includes('/v1/config/cards/rlc')).length >= 1);
+    const before = log.filter((e) => e.url.includes('/v1/config/cards/rlc')).length;
+    (d.querySelector('[data-cd-tab="rlc"]') as HTMLElement).click();
+    // D 行为断言：切签触发 reloadFaceCard（GET 既有单卡端点）——人工触发非轮询非订阅
+    await waitFor(() => log.filter((e) => e.url.includes('/v1/config/cards/rlc')).length >= before + 1);
+    assert.equal((d.getElementById('cd-rlc-msg') as HTMLElement).textContent, '', '成功路径零失败提示（失败不空屏分支未误触）');
     retireUi(dom);
   });
 });

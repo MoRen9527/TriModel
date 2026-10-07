@@ -14,6 +14,7 @@ import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { evaluatePolicy, validatePolicyShape } from '../src/policy.js';
 import { emptyCard, validateCard, loadCard, cardExists } from '../src/trimmc-card.js';
+import { MODEL_CATALOG } from '../src/model-catalog.js';
 import type { TrimmcCardDocument } from '../src/trimmc-card.js';
 
 function shanghaiInstant(hhmm: string): Date {
@@ -100,7 +101,10 @@ describe('T1: card store — ciphertext at rest + structural validation', () => 
       ...emptyCard('c'),
       provider_entries: { e1: { provider: 'deepseek', model: 'tmv-deepseek-v4-pro', api_key_encrypted: 'AAAA', enabled: true, updated_at: 'x' } },
     };
-    assert.ok(validateCard(doc).includes('official catalog'));
+    // S4b 观察项 E：400 文案自解释（人话直述附五名全列——「不在目录内」+可用模型逐名在场）
+    const msg = validateCard(doc);
+    assert.ok(msg.includes('不在目录内'), 'msg must be human-phrased (humanize 黑名单词已避)');
+    for (const name of MODEL_CATALOG) assert.ok(msg.includes(name), `msg must list catalog name ${name}`);
   });
 
   it('connection.name required (名称必填); v4 rule type enum enforced（fixed 退役/quota 合法）', () => {

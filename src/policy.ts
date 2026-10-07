@@ -170,8 +170,9 @@ export function validatePolicyShape(doc: unknown): string {
     if (s.target !== 'daemon-default') return `schedules[${i}].target must be 'daemon-default'`;
     if (typeof s.model !== 'string' || s.model.length === 0) return `schedules[${i}].model must be a non-empty string`;
     // LG-035 增补：model ∈ 恰五名目录（大小写精确）；旧名（tmv-* 等）显式 400 附列表。
+    // S4b 观察项 E 同族：400 自解释附五名全列（人话直述，与 trimmc-card 校验同族同稿）。
     if (!(MODEL_CATALOG as readonly string[]).includes(s.model)) {
-      return `schedules[${i}].model must be one of the official catalog: ${MODEL_CATALOG_LIST}`;
+      return `schedules[${i}] 模型「${s.model}」不在目录内。可用模型：${MODEL_CATALOG_LIST}`;
     }
     if (!Array.isArray(s.windows) || s.windows.length === 0) {
       return `schedules[${i}].windows must be a non-empty array`;

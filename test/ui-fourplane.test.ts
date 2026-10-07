@@ -504,7 +504,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     }
     // 诚实三态派生（3.6：最后一格不绿不算完）
     assert.equal(d.getElementById('cd-mmc-phase')?.textContent, '已存未拉', 'mmc：拉取时点早于存盘=已存未拉');
-    assert.equal(d.getElementById('cd-rlc-phase')?.textContent, '已落生效', 'rlc：落地版本=现役版本+ok=已落生效');
+    assert.equal(d.getElementById('cd-rlc-phase')?.textContent, '已落 · 重启生效', 'rlc：applied 态+S4b B 注记（boot 型键「重启生效」语义锚）');
     assert.equal(d.getElementById('cd-rmc-phase')?.textContent, '已拉未落', 'rmc：拉取晚于存盘但零落地回写=已拉未落');
     // 切签：mlc 签显形、mmc 签让位
     (d.querySelector('[data-cd-tab="mlc"]') as HTMLElement).click();

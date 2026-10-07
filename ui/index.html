@@ -454,7 +454,12 @@ document.addEventListener('click', (ev) => {
   }
   // 方案三四域直改面：切签/添行/删行/保存/放弃
   const cdTab = el.closest('[data-cd-tab]');
-  if (cdTab) { connDomainActive = cdTab.dataset.cdTab; renderConnectDomains(); return; }
+  if (cdTab) {
+    connDomainActive = cdTab.dataset.cdTab;
+    renderConnectDomains();
+    void reloadFaceCard(connDomainActive); // S4b 观察项 D：切签轻量重拉该域卡一次（人工触发非轮询）
+    return;
+  }
   const cdAddCustom = el.closest('[data-cd-add-custom]');
   if (cdAddCustom) { connAddCustomRow(cdAddCustom.dataset.cdAddCustom); return; }
   // r5 密钥显隐眼睛：password↔text 切换，钮文「显示/隐藏」随态
@@ -721,6 +726,20 @@ async function loadFaceCards() {
   renderFaceCards();
   await loadVerifyFaces(); // 深测②合一 S4：三态读数先行就位（badge 首渲即真值，防闪变）
   renderConnectDomains(); // 四域直改面同源刷新（local_config+ledger 已在缓存）
+}
+
+// S4b 观察项 D（CPO cfcc055b+CTO 主案裁）：切域签轻量重拉该域卡一次（GET 既有单卡
+// 端点，零新增端点非轮询非订阅）——三态实时性立身：daemon 回写后切签不再只见旧缓存。
+// 失败不空屏（CTO 技术边界）：保留现显示+轻提示，静默吞错=旧数据冒充新数据，故如实告知。
+async function reloadFaceCard(f) {
+  const r = await api('/v1/config/cards/' + f + '?view=managed', { headers: adminHeaders() }).catch(() => null);
+  if (r && r.status === 200) {
+    faceState[f] = r.body;
+    await loadVerifyFaces();  // 页顶缀随刷（verify 同源）
+    renderConnectDomains();   // 现签重渲（幂等，last-write-wins 防连点乱序无害）
+  } else {
+    connMsg(f, '重拉未成（保留当前显示）——可稍后重试或刷新页面', 'warn');
+  }
 }
 
 // ═══ 卡面维护面（LG-058 N2：模板切换+备份回滚；R 面双卡真按钮）═══
@@ -1546,7 +1565,10 @@ function connLocalState(f) {
   const vr = tcVerifyFaces ? tcVerifyFaces[f] : null;
   let phaseLabel, phaseCls;
   if (vr) {
-    phaseLabel = vr.state_label;
+    // S4b 观察项 B（CPO cfcc055b）：11 键全 boot 型（daemon 仅启动时读配置一次），
+    // applied 态「已落生效」对 boot 型键撒半个谎（假安心）——徽章注记「已落 · 重启生效」，
+    // 语义锚=「重启生效」四字必在；数据源仍 verify.state 驱动（同源直消费不变，表现层注记）。
+    phaseLabel = vr.state === 'applied' ? '已落 · 重启生效' : vr.state_label;
     phaseCls = TC_VERIFY_STATE_CLS[vr.state] ?? 'none';
     if (vr.pull_chain_degraded) phaseLabel += ' ·拉取链异常';
   } else if (st) {
@@ -1731,6 +1753,8 @@ function connCollectItems(f) {
 
 async function connSaveDomain(f) {
   const items = connCollectItems(f);
+  // S4b 观察项 C（CPO cfcc055b）：清空判定取保存前卡面旧值（loadFaceCards 刷新会覆盖 faceState）
+  const prevCount = Object.keys(faceState[f]?.card?.local_config?.items ?? {}).length;
   connMsg(f, '保存中…');
   const r = await api('/v1/config/cards/' + f, {
     method: 'PUT', headers: adminHeaders(),
@@ -1739,9 +1763,14 @@ async function connSaveDomain(f) {
     body: JSON.stringify({ provider_entries: {}, local_config: { items } }),
   }).catch(() => ({ status: 0, body: {} }));
   if (r.status === 200) {
-    connMsg(f, '已保存（服务端留版本）。等该域控制器下次拉取落地——落盘前不算生效。', 'ok');
     await loadFaceCards();
     renderConnectDomains();
+    // S4b 观察项 C：清空操作过渡期诚实注（daemon 真清除候维护波修——修前机器侧守旧值，
+    // 禁无提示分叉；daemon 修毕本注记退役，CPO 卷 L33 预案）。
+    // 注记置后：renderConnectDomains 重建 msg 节点为空 hidden——先设必被同源刷新冲掉（一闪即逝）。
+    connMsg(f, (Object.keys(items).length === 0 && prevCount > 0)
+      ? '已清 · 待落地（机器侧现持旧值）——清除落地链修复前，机器侧将继续持旧值运行'
+      : '已保存（服务端留版本）。等该域控制器下次拉取落地——落盘前不算生效。', 'ok');
   } else {
     connMsg(f, humanize(r.status, r.body.error), 'err');
   }
@@ -2266,11 +2295,13 @@ function tcApplyStateSuffix() {
   const allApplied = faces.every((f) => tcVerifyFaces[f] && tcVerifyFaces[f].state === 'applied');
   if (allApplied) {
     const degraded = faces.some((f) => tcVerifyFaces[f].pull_chain_degraded);
-    return ' · 已落生效' + (degraded ? ' ·拉取链异常' : '');
+    // S4b 观察项 B 同族：页顶缀与 badge 同步（「已落生效」→「已落 · 重启生效」），防两页读数分叉
+    return ' · 已落 · 重启生效' + (degraded ? ' ·拉取链异常' : '');
   }
   return ' · ' + faces.map((f) => {
     const vr = tcVerifyFaces[f];
-    return TC_FACE_DISPLAY[f] + ' ' + (vr ? vr.state_label + (vr.pull_chain_degraded ? ' ·拉取链异常' : '') : '读取失败');
+    const lbl = vr ? (vr.state === 'applied' ? '已落 · 重启生效' : vr.state_label) : '读取失败';
+    return TC_FACE_DISPLAY[f] + ' ' + lbl + (vr && vr.pull_chain_degraded ? ' ·拉取链异常' : '');
   }).join(' · ');
 }
 

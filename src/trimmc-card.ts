@@ -614,7 +614,9 @@ export function validateCard(doc: unknown): string {
     const e = entry as Partial<CardEntry>;
     if (typeof e.provider !== 'string' || !e.provider) return `provider_entries[${id}].provider required`;
     if (typeof e.model !== 'string' || !isCatalogModel(e.model ?? '')) {
-      return `provider_entries[${id}].model must be one of the official catalog: ${MODEL_CATALOG_LIST}`;
+      // S4b 观察项 E（CPO cfcc055b）：400 自解释附五名全列（人话直述，避 UI humanize
+      // 黑名单词 must be/invalid——透传到卡面，免用户盲试合法集合）
+      return `provider_entries[${id}] 模型「${e.model}」不在目录内。可用模型：${MODEL_CATALOG_LIST}`;
     }
     if (typeof e.api_key_encrypted !== 'string' || !e.api_key_encrypted) return `provider_entries[${id}].api_key_encrypted required`;
     if (typeof e.enabled !== 'boolean') return `provider_entries[${id}].enabled must be boolean`;
