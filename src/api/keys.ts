@@ -120,7 +120,7 @@ export function handlePutSecureKeys(
   void _opts;
   return {
     statusCode: 410,
-    body: { error: '此功能已升级：请在「模型信息」条目中录入密钥（旧密钥已在启动时自动迁移，无需重复录入）' },
+    body: { error: '此功能已升级：请在「模型条目信息」条目中录入密钥（旧密钥已在启动时自动迁移，无需重复录入）' },
   };
 }
 
@@ -150,8 +150,8 @@ export function handleSecureKeysStatus(
       message: legacyPresent
         ? '检测到旧密钥文件，将在服务重启时自动迁入模型条目'
         : migratedPresent
-          ? '旧密钥已自动迁入「模型信息」条目'
-          : '无旧密钥文件；密钥请在「模型信息」条目中录入',
+          ? '旧密钥已自动迁入「模型条目信息」条目'
+          : '无旧密钥文件；密钥请在「模型条目信息」条目中录入',
     },
   };
 }

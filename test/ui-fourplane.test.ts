@@ -438,7 +438,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     retireUi(dom);
   });
 
-  it('⑦ 模型策略页正名（批 A 改名+S2 砍后缀）+常态只读标注+面板隐藏不破策略页功能', async () => {
+  it('⑦ 模型策略页正名（批 A 改名+S2 砍后缀）+页副文待应用语义（S3 条 8 清洗）+面板隐藏不破策略页功能', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const dom = bootUi(log, faceResponder({}));
     const d = dom.window.document;
@@ -450,7 +450,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     assert.ok(strategyH2.includes('模型策略'), '模型策略页名（批 A 正名）');
     assert.equal(strategyH2.includes('本机过渡位实例'), false, '过渡位实例后缀已砍（S2 条 2）');
     assert.equal(strategyH2.includes('策略卡'), false, '旧名『策略卡』零残留（批 A 断言面）');
-    assert.ok(((d.getElementById('panel-strategy') as HTMLElement).textContent ?? '').includes('常态只读'), '常态只读标注（编辑窗候 CEO 终验）');
+    assert.ok(((d.getElementById('panel-strategy') as HTMLElement).textContent ?? '').includes('保存后待应用'), '页副文（S3 条 8 清洗后：运维态词退役，仅存待应用语义）');
     // 面板隐藏（display:none!important）不改变元素本位显隐语义：三型字段锚仍可切换
     (Array.from(d.querySelectorAll('#page-menu .menu-btn')) as HTMLElement[]).find((b) => b.dataset.view === 'strategy').click();
     await waitFor(() => (d.getElementById('panel-strategy') as HTMLElement).hidden === false);

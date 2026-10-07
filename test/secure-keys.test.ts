@@ -87,7 +87,7 @@ describe('S5 退役面: PUT secure → 410; status → migration indicator', () 
     const { handlePutSecureKeys } = await import('../src/api/keys.js');
     const gone = handlePutSecureKeys('Bearer admin-tc', JSON.stringify({ provider: 'deepseek', api_key: 'sk-x' }));
     assert.equal(gone.statusCode, 410);
-    assert.ok(JSON.stringify(gone.body).includes('模型信息'), 'retirement message must point at the card entry form');
+    assert.ok(JSON.stringify(gone.body).includes('模型条目信息'), 'retirement message must point at the card entry form');
   });
 
   it('status: 503 fail-closed / 401 wrong / 200 migration indicator (S5 semantics)', async () => {

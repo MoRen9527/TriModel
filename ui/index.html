@@ -23,9 +23,10 @@
   .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.idle { background: var(--idle); }
   .sub { color: var(--fg-dim); font-size: 12.5px; }
   section, details.zone { border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
-  .card-main { border: 1.5px solid var(--border); background: var(--bg-subtle); }
+  .card-main { border: 1.5px solid var(--border); background: var(--bg-subtle); padding: 16px; }
   h2 { font-size: 14.5px; margin: 0 0 10px; }
   h3 { font-size: 13.5px; margin: 14px 0 8px; }
+  .card-main h3 { margin-top: 12px; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; font-size: 13px; }
   th { background: var(--bg-subtle); }
@@ -129,7 +130,7 @@
     <div class="kv" id="cf-mlc-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>
     <table id="cf-mlc-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th><th>来源</th></tr></thead><tbody></tbody></table>
     <!-- LG-058 N5 方案二联席（同构 JS 卡）：点菜必须从菜单点；规则适用勾选 -->
-    <div class="row-form" id="cf-mlc-entry-actions"><button data-face-add-entry="mlc">新增条目</button><select id="cf-mlc-set-sel" hidden></select><button data-face-bring-set="mlc" hidden>引用模型集带出</button><span class="sub" id="cf-mlc-entry-msg" hidden></span></div>
+    <div class="row-form" id="cf-mlc-entry-actions"><button data-face-add-entry="mlc">新增条目</button><select id="cf-mlc-set-sel" hidden></select><button data-face-bring-set="mlc" hidden>从模型集带出</button><span class="sub" id="cf-mlc-entry-msg" hidden></span></div>
     <form class="card-form" id="cf-mlc-entry-form" hidden></form>
     <div class="kv" id="cf-mlc-rules"><b>本域适用规则</b><span class="idle">暂无——连接后显示</span></div>
 
@@ -192,18 +193,18 @@
      独立生效时段展示区砍（融合入展开详情）。联席菜单机制外层挂锚零位移纪律不变。═══ -->
 <div id="panel-strategy" class="card-main page-panel" hidden>
   <h2>☁ 模型策略 <span id="tc-badge" class="badge none">未配置</span></h2>
-  <div class="sub" style="margin:-6px 0 10px">过渡期形态 · 常态只读（编辑窗候 CEO 终验）；保存后待应用</div>
+  <div class="sub" style="margin:-6px 0 10px">保存后待应用</div>
   <div id="error-card" class="error-panel" hidden></div>
 
   <!-- 页顶连接状态行（批 B：机器信息区缩并一行化，先连接后可用门禁照旧；深测②合一 S2） -->
   <div class="row-form" id="tc-conn-line" style="margin-top:8px">
     <label>名称（必填）</label><input id="tc-conn" placeholder="本机名称" style="width:200px">
-    <details><summary>连接档案（预置，只读）</summary><div class="sub" id="tc-profile">machine.json 预置档案（当前版本仅展示）</div></details>
+    <details><summary>连接档案（预置，仅展示）</summary><div class="sub" id="tc-profile">machine.json 预置档案（当前版本仅展示）</div></details>
   </div>
   <!-- 页顶生效读数行（条 5 三路分流·读数腿：活动策略读数升页顶·去操作化——操作全收策略列表行内） -->
   <div class="sub" id="tc-active-line" style="margin:4px 0 10px"></div>
 
-  <h3>模型信息</h3>
+  <h3>模型条目信息</h3>
   <div id="tc-error-entries" class="error-panel" hidden></div>
   <table id="tc-entries"><thead><tr><th>条目名</th><th>厂商</th><th>模型</th><th>密钥</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-entry-body"></tbody></table>
   <div id="tc-empty-entries" class="sub" style="margin-top:8px">暂无条目。点「添加模型条目」录入第一个模型的密钥。</div>
@@ -224,24 +225,24 @@
     </div>
   </form>
 
-  <h3>模型集 <button class="primary" id="tc-ms-add" style="margin-left:8px;font-size:12px;padding:2px 8px">+ 新增模型集</button></h3>
+  <h3>可切换模型集 <button class="primary" id="tc-ms-add" style="margin-left:8px;font-size:12px;padding:2px 8px">+ 新建模型集</button></h3>
   <table id="tc-ms-table"><thead><tr><th>集名</th><th>条目</th><th>条目数</th><th>操作</th></tr></thead><tbody id="tc-ms-body"></tbody></table>
-  <div id="tc-ms-empty" class="sub" style="margin-top:6px">暂无模型集。点「新增模型集」从模型信息条目勾选组成。</div>
+  <div id="tc-ms-empty" class="sub" style="margin-top:6px">暂无模型集。点「新建模型集」从模型条目信息勾选组成。</div>
   <form class="card-form" id="tc-ms-form" hidden>
-    <h3 id="tc-ms-form-title">新增模型集</h3>
+    <h3 id="tc-ms-form-title">新建模型集</h3>
     <div class="field"><label>集名（必填）</label><input id="tc-ms-name" placeholder="例如 主力组合"></div>
-    <div class="field" style="align-items:flex-start"><label>勾选条目（≥1）</label><div id="tc-ms-entries" style="max-height:140px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px"></div><span id="tc-ms-entry-empty" class="sub" hidden>暂无可用条目——请先在「模型信息」区录入</span></div>
+    <div class="field" style="align-items:flex-start"><label>勾选条目（≥1）</label><div id="tc-ms-entries" style="max-height:140px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px"></div><span id="tc-ms-entry-empty" class="sub" hidden>暂无可用条目——请先在「模型条目信息」区录入</span></div>
     <div class="row-form">
       <button type="button" class="primary" id="tc-ms-save">保存模型集</button>
       <button type="button" id="tc-ms-cancel">取消</button>
     </div>
   </form>
 
-  <h3>规则 <button class="primary" id="tc-r-add" style="margin-left:8px;font-size:12px;padding:2px 8px">+ 新增规则</button></h3>
+  <h3>模型切换规则 <button class="primary" id="tc-r-add" style="margin-left:8px;font-size:12px;padding:2px 8px">+ 新建模型切换规则</button></h3>
   <table id="tc-r-table"><thead><tr><th>规则名</th><th>类型</th><th>摘要</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-r-body"></tbody></table>
-  <div id="tc-r-empty" class="sub" style="margin-top:6px">暂无规则。点「新增规则」创建（时段/默认/额度三型）。</div>
+  <div id="tc-r-empty" class="sub" style="margin-top:6px">暂无切换规则。点「新建模型切换规则」创建（时段/默认/额度三型）。</div>
   <form class="card-form" id="tc-r-form" hidden style="max-width:560px">
-    <h3 id="tc-r-form-title">新增规则</h3>
+    <h3 id="tc-r-form-title">新建模型切换规则</h3>
     <div class="field"><label>类型（先选）</label><select id="tc-r-type"><option value="time">时段（窗内用某条目，多窗）</option><option value="default">默认（其余时段用某条目）</option><option value="quota">额度（监控条目用尽依序转）</option></select></div>
     <div class="field"><label>规则名（必填）</label><input id="tc-r-name" placeholder="例如 三窗切换"></div>
     <div id="tc-r-time-zone">
@@ -261,17 +262,17 @@
   <!-- 区 4 策略列表=扩权唯一策略区（条 5 三路分流·操作腿+详情腿：行内操作列
        [设为生效/取消生效/应用到本机]+选中行展开详情[原生 details 最简形]）；
        旧「活动策略」独立区壳退役——读数腿升页顶 tc-active-line，操作全收行内 -->
-  <h3 style="margin-top:14px">策略列表 <button class="primary" id="tc-str-add" style="margin-left:8px;font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">+ 新增策略</button></h3>
+  <h3 style="margin-top:14px">策略列表 <button class="primary" id="tc-str-add" style="margin-left:8px;font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">+ 新建策略</button></h3>
   <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin:4px 0 6px" hidden></div>
   <table id="tc-str-table"><thead><tr><th>名称</th><th>模型集</th><th>规则数</th><th>状态</th><th>操作</th></tr></thead><tbody id="tc-str-body"></tbody></table>
-  <div id="tc-str-list-empty" class="sub" style="margin-top:6px">暂无策略。<button class="primary" style="font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">新增策略</button></div>
+  <div id="tc-str-list-empty" class="sub" style="margin-top:6px">暂无策略。<button class="primary" style="font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">新建策略</button></div>
 
   <form class="card-form" id="tc-str-form" hidden>
-    <h3 id="tc-str-form-title">新增策略</h3>
+    <h3 id="tc-str-form-title">新建策略</h3>
     <div class="field"><label>名称（必填）</label><input id="tc-s-name" placeholder="例如 工作时段"></div>
-    <div class="field"><label>目的（选填）</label><input id="tc-s-purpose" placeholder="例如 闲时用 glm 忙时用 deepseek"></div>
-    <div class="field"><label>模型集（必选）</label><select id="tc-s-modelset" style="width:220px"></select><span id="tc-s-ms-empty" class="sub" hidden>暂无模型集——请先在「模型集」区创建（层2 开放中）</span></div>
-    <div class="field" style="align-items:flex-start"><label>规则（可多选）</label><div id="tc-s-rules" style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px"></div><span id="tc-s-rule-empty" class="sub" hidden>暂无规则——请先在「规则」区创建（层2 开放中）</span></div>
+    <div class="field"><label>用途说明（选填）</label><input id="tc-s-purpose" placeholder="例如 闲时用 glm 忙时用 deepseek"></div>
+    <div class="field"><label>可切换模型集（必选）</label><select id="tc-s-modelset" style="width:220px"></select><span id="tc-s-ms-empty" class="sub" hidden>暂无可切换模型集——请先在「可切换模型集」区创建</span></div>
+    <div class="field" style="align-items:flex-start"><label>模型切换规则（可多选）</label><div id="tc-s-rules" style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px"></div><span id="tc-s-rule-empty" class="sub" hidden>暂无切换规则——请先在「模型切换规则」区创建</span></div>
     <div class="row-form">
       <button type="button" class="primary" id="tc-s-save">保存策略</button>
       <button type="button" id="tc-s-cancel">取消</button>
@@ -325,13 +326,13 @@ const FACE_UI_IDS = ['mlc', 'rlc', 'mmc', 'rmc'];
 const FACE_META = {
   mlc: {
     nav: 'TriMLC', meta: 'M 面 · 本地域 · 本机 8713',
-    pull: 'TriModel 本机实例（keys 分发面 → 卡面 pull）',
+    pull: 'TriModel 本机（keys 分发面 → 卡面 pull）',
     cli: 'trimlc config pull｜show｜verify｜cache',
     static: true, // 卡体为静态 HTML 正形（fb 本机栏并入）
   },
   rlc: {
     nav: 'TriRLC', meta: 'R 面 · 本地域 · 本机 8711（寄居过渡）',
-    pull: 'TriModel 本机实例（keys 分发面 → 卡面 pull）',
+    pull: 'TriModel 本机（keys 分发面 → 卡面 pull）',
     cli: 'trirlc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rlc">读取模板</button><select id="cf-rlc-tpl-sel" hidden></select><button id="cf-rlc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rlc-tpl-msg" hidden></div>',
     bak: '<div class="sub">写卡自动留备份（保留近 5 份）；回滚前会再自动备份当前配置。</div><div class="row-form"><button data-card-bak-load="rlc">读取备份清单</button></div><div id="cf-rlc-bak-box" hidden></div>',
@@ -343,11 +344,11 @@ const FACE_META = {
     cli: 'trimmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">TriMMC 域的兜底直配走「兜底模型」页「M 面 · 服务域」签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往兜底模型</button></div>',
     bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
-    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=模型策略过渡位，策略内容见「模型策略」；TriMMC 专属卡候文件迁移方案。',
+    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=「模型策略」页同一份，策略内容见「模型策略」；TriMMC 专属卡候文件迁移方案。',
   },
   rmc: {
     nav: 'TriRMC', meta: 'R 面 · 服务域 · R-HY 8712',
-    pull: 'TriModel（现役拉取端点=同机过渡位 R-HY 3333；独立服务器位候迁）',
+    pull: 'TriModel（现役拉取端点=同机 R-HY 3333；独立服务器位候迁）',
     cli: 'trirmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rmc">读取模板</button><select id="cf-rmc-tpl-sel" hidden></select><button id="cf-rmc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rmc-tpl-msg" hidden></div>',
     bak: '<div class="sub">写卡自动留备份（保留近 5 份）；回滚前会再自动备份当前配置。</div><div class="row-form"><button data-card-bak-load="rmc">读取备份清单</button></div><div id="cf-rmc-bak-box" hidden></div>',
@@ -369,7 +370,7 @@ function faceCardHtml(f) {
     + `<table id="cf-${f}-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th><th>来源</th></tr></thead><tbody></tbody></table>`
     // LG-058 N5 方案二联席（菜单点菜心智）：点菜必须从菜单点——模型下拉出自模型策略清单，
     // 手填降为高级；规则适用勾选=从模型策略规则清单点进本域（选择引用层）。
-    + `<div class="row-form" id="cf-${f}-entry-actions"><button data-face-add-entry="${f}">新增条目</button><select id="cf-${f}-set-sel" hidden></select><button data-face-bring-set="${f}" hidden>引用模型集带出</button><span class="sub" id="cf-${f}-entry-msg" hidden></span></div>`
+    + `<div class="row-form" id="cf-${f}-entry-actions"><button data-face-add-entry="${f}">新增条目</button><select id="cf-${f}-set-sel" hidden></select><button data-face-bring-set="${f}" hidden>从模型集带出</button><span class="sub" id="cf-${f}-entry-msg" hidden></span></div>`
     + `<form class="card-form" id="cf-${f}-entry-form" hidden></form>`
     + `<div class="kv" id="cf-${f}-rules"><b>本域适用规则</b><span class="idle">暂无——连接后显示</span></div>`
     + '<h3>模板切换</h3>'
@@ -394,7 +395,7 @@ const VIEWS = [
   { id: 'card-rlc', label: FACE_META.rlc.nav },
   { id: 'card-mmc', label: FACE_META.mmc.nav },
   { id: 'card-rmc', label: FACE_META.rmc.nav },
-  { id: 'strategy', label: '模型策略', title: '过渡期形态 · 常态只读（编辑窗候 CEO 终验）' },
+  { id: 'strategy', label: '模型策略', title: '保存后待应用' },
   { id: 'connect', label: '兜底模型' },
 ];
 
@@ -530,12 +531,12 @@ document.addEventListener('change', async (ev) => {
       return;
     }
     // 悬挂前置（人话即时引导；服务端悬挂守卫为硬门）：规则按条目 id 解析，
-    // 引用条目须已在本域卡——先用「新增条目/引用模型集带出」点同名条目
+    // 引用条目须已在本域卡——先用「新增条目/从模型集带出」点同名条目
     const have = new Set(Object.keys(faceState[f]?.entries_masked ?? {}));
     const missing = ruleEntryIds(full).filter((eid) => !have.has(eid));
     if (missing.length > 0) {
       chk.checked = false;
-      faceEntryMsg(f, '该规则引用的条目（' + missing.join('、') + '）不在本域卡——先用「新增条目/引用模型集带出」把同名条目点进来再勾选', 'sub err');
+      faceEntryMsg(f, '该规则用到的条目（' + missing.join('、') + '）不在本域卡——先用「新增条目/从模型集带出」把同名条目点进来再勾选', 'sub err');
       return;
     }
     // 载荷搭载空 provider_entries：写守卫要求条目键在场（P1 候修①形），空对象=
@@ -578,7 +579,7 @@ function humanize(status, serverMsg) {
   console.warn('[trimodel-ui]', status, serverMsg);
   if (status === 503) return '管理写面未启用：请先在服务端配置管理令牌';
   if (status === 401) return '令牌不正确或未填写，请检查连接设置';
-  if (status === 410) return '此功能已升级：请在「模型信息」条目中录入密钥';
+  if (status === 410) return '此功能已升级：请在「模型条目信息」条目中录入密钥';
   if (status === 0 || status >= 500) return '无法连接配置服务，请确认服务已启动后点重试';
   return serverMsg && !/^HTTP|invalid|must be|missing/i.test(serverMsg) ? serverMsg : '操作未成功，请检查填写内容后重试';
 }
@@ -967,7 +968,7 @@ function openFaceEntryForm(f, prefillList) {
   form.innerHTML = '';
   const title = document.createElement('h4');
   title.textContent = prefillList
-    ? '引用模型集带出（' + prefillList.length + ' 条）——逐条补密钥后保存'
+    ? '从模型集带出（' + prefillList.length + ' 条）——逐条补密钥后保存'
     : '新增条目——模型从菜单选（手填降为高级）';
   form.appendChild(title);
   if (ms.models.length === 0) {
@@ -1788,7 +1789,7 @@ function tcRender() {
       // 方案二联席（验收锚②）：条目已被域卡点用时禁删——先解除域卡引用
       // （域卡条目移除面候办；过渡可用域卡「模板切换/回滚」整卡替换解除）
       if (faceRefs.length > 0) {
-        tcMsg('该条目已被 ' + faceRefs.map((rf) => FACE_META[rf]?.nav ?? rf).join('、') + ' 点用，暂不能删——先在对应域卡解除引用（过渡可用该卡「模板切换/回滚」整卡替换）', 'err');
+        tcMsg('该条目已被 ' + faceRefs.map((rf) => FACE_META[rf]?.nav ?? rf).join('、') + ' 点用，暂不能删——先在对应域卡解除点用（过渡可用该卡「模板切换/回滚」整卡替换）', 'err');
         return;
       }
       // v4 引用检查（2026-09-14 23:1x）：条目被模型集或规则引用均禁删（窗级 entry_id 全族口径）
@@ -2020,7 +2021,7 @@ function tcRenderModelSets() {
     tr.querySelector('[data-del]').onclick = () => {
       // 守卫：被策略引用禁删（服务端同款，UI 预检减往返）
       const ref = Object.values(tcStrategies).find((st) => st.model_set_id === id);
-      if (ref) { tcMsg('该模型集正被策略「' + ref.name + '」引用，请先解除引用', 'err'); return; }
+      if (ref) { tcMsg('该模型集正被策略「' + ref.name + '」使用——请先在该策略中移除后再删', 'err'); return; }
       delete tcModelSets[id];
       tcDeletedModelSets.push(id);
       tcRenderModelSets();
@@ -2050,7 +2051,7 @@ function tcOpenModelSetForm(editId) {
     box.appendChild(label);
   }
   tcEditingMsId = editId ?? null;
-  $('tc-ms-form-title').textContent = editId ? '编辑模型集「' + tcModelSets[editId]?.name + '」' : '新增模型集';
+  $('tc-ms-form-title').textContent = editId ? '编辑模型集「' + tcModelSets[editId]?.name + '」' : '新建模型集';
   $('tc-ms-name').value = editing?.name ?? '';
   $('tc-ms-form').hidden = false;
 }
@@ -2098,7 +2099,7 @@ function tcRenderRules() {
     tr.querySelector('[data-edit]').onclick = () => tcOpenRuleForm(id);
     tr.querySelector('[data-del]').onclick = () => {
       const ref = Object.values(tcStrategies).find((st) => st.rule_ids.includes(id));
-      if (ref) { tcMsg('该规则正被策略「' + ref.name + '」引用，请先解除引用', 'err'); return; }
+      if (ref) { tcMsg('该规则正被策略「' + ref.name + '」使用——请先在该策略中移除后再删', 'err'); return; }
       delete tcRules[id];
       tcDeletedRules.push(id);
       tcRenderRules();
@@ -2139,7 +2140,7 @@ let tcEditingRuleId = null;
 function tcOpenRuleForm(editId) {
   const editing = editId ? tcRules[editId] : null;
   tcEditingRuleId = editId ?? null;
-  $('tc-r-form-title').textContent = editId ? ('编辑规则「' + (editing ? editing.name : '') + '」') : '新增规则';
+  $('tc-r-form-title').textContent = editId ? ('编辑规则「' + (editing ? editing.name : '') + '」') : '新建模型切换规则';
   $('tc-r-type').value = editing ? editing.type : 'time';
   $('tc-r-type').disabled = !!editId; // 类型编辑期锁定（分型字段异构，改型=删了重建）
   $('tc-r-name').value = (editing && editing.name) || '';
@@ -2257,7 +2258,7 @@ function tcHitWindow(s) {
 }
 
 // ── 策略列表（深测②合一 S2：扩权唯一策略区——条 5 操作腿+详情腿行内化）──
-// 每行：名称格挂 <details> 展开详情（用途/引用模型集/默认模型/引用规则+规则行表，
+// 每行：名称格挂 <details> 展开详情（用途说明/使用的模型集/默认使用/包含的切换规则+规则行表，
 // 生效规则展示融合于此=条 7「展开即所见」）；状态列=「生效中」徽章行内化；
 // 操作列=编辑/删除/设为生效（生效行=取消生效/应用到本机）。
 function tcRenderStrategyTable() {
@@ -2281,10 +2282,10 @@ function tcRenderStrategyTable() {
     kv.style.marginTop = '4px';
     const defaultRule = s.rule_ids.map((rid) => tcRules[rid]).find((r) => r && r.type === 'default');
     const kvFields = [
-      ['目的', s.purpose || '—'],
-      ['引用模型集', tcModelSets[s.model_set_id]?.name ?? '（集缺失）'],
-      ['默认模型', defaultRule ? tcWindowModel(defaultRule.entry_id) : '（未配置，用系统默认）'],
-      ['引用规则', String(s.rule_ids.length) + ' 条'],
+      ['用途说明', s.purpose || '—'],
+      ['使用的模型集', tcModelSets[s.model_set_id]?.name ?? '（集缺失）'],
+      ['默认使用', defaultRule ? tcWindowModel(defaultRule.entry_id) : '（未配置，用系统默认）'],
+      ['包含的切换规则', String(s.rule_ids.length) + ' 条'],
     ];
     for (const [k, v] of kvFields) {
       const b = document.createElement('b');
@@ -2378,7 +2379,7 @@ function tcOpenStrategyForm(editId) {
   // 层2 段A（2026-09-14 23:3x）：v4 引用式表单（名+目的+模型集下拉+规则多选）
   tcFillStrategySelects();
   tcEditingId = editId ?? null;
-  $('tc-str-form-title').textContent = editId ? '编辑策略「' + tcStrategies[editId]?.name + '」' : '新增策略';
+  $('tc-str-form-title').textContent = editId ? '编辑策略「' + tcStrategies[editId]?.name + '」' : '新建策略';
   const s = editId ? tcStrategies[editId] : null;
   $('tc-s-name').value = s?.name ?? '';
   $('tc-s-purpose').value = s?.purpose ?? '';
@@ -2417,7 +2418,7 @@ async function loadTrimmc() {
   if (!adminToken()) {
     // CEO 走查 2026-09-14 空显根因①：无管理令牌时原为静默 return——两区空表
     // 零提示，用户无从知道要先配令牌。改为显式引导+自动展开连接设置。
-    failPanel('error-card', '模型信息与时段规则需要先连接：请在页头「连接设置」填入 API 令牌与管理令牌后点「连接」');
+    failPanel('error-card', '模型条目信息与模型切换规则需要先连接：请在页头「连接设置」填入 API 令牌与管理令牌后点「连接」');
     const cs = document.getElementById('conn-settings'); if (cs) cs.open = true;
     tcBadge();
     return;
