@@ -458,3 +458,145 @@ describe('S5 迁移器: keys.enc → card synthetic entries (幂等)', () => {
 });
 
 
+
+// ── 深测②合一 S4: 两页读数同源（verify 通道，候裁点④ A 案）──
+// 兜底四域 badge（connLocalState）与「模型策略」页顶「应用于」读数（tcApplyStateSuffix）
+// 同源消费 /v1/config/verify（服务端 deriveVerifyState 单点下沉，UI 本地判定树退役）。
+describe('深测②合一 S4: 两页读数同源（verify 通道）', () => {
+  const RUNTIME_INFO = { object: 'config.runtime-info', domain_label: '本地域（TriMLC/TriRLC）', local_apply_enabled: true, machine: 'dev' };
+  const vr = (face: string, state: string, state_label: string, degraded = false) => ({
+    face, card_present: true, intent_version: 1, intent_updated_at: '2026-10-08T00:00:00Z',
+    version_applied: 1, applied_at: '2026-10-08T00:01:00Z', write_result: 'ok', write_error: null,
+    last_pull_at: '2026-10-08T00:02:00Z', last_pull_result: degraded ? 'failed' : 'ok',
+    state, state_label, pull_chain_degraded: degraded,
+  });
+
+  function connectedDom(log: Array<{ url: string; init?: RequestInit }>, verifyBody: unknown, verifyStatus = 200, runtimeInfo = RUNTIME_INFO) {
+    return bootUi(log, [(url: string): { status: number; body: unknown } => {
+      if (url.includes('/v1/config/runtime-info')) return { status: 200, body: runtimeInfo };
+      if (url === '/v1/config/verify') return { status: verifyStatus, body: verifyBody };
+      // face 卡：给每域一份「旧判定树会算已落生效」的 ledger 数据（T2 判定树退役锚）
+      const m = url.match(/\/v1\/config\/cards\/(mlc|rlc|mmc|rmc)/);
+      if (m) {
+        return {
+          status: 200,
+          body: {
+            object: 'config.card.managed',
+            card: { local_config: { version: 1, updated_at: '2026-10-08T00:00:00Z', items: {} } },
+            entries_masked: {},
+            ledger: { faces: { [m[1]]: { local_config: { version_applied: 1, applied_at: 'x', write_result: 'ok' } } } },
+          },
+        };
+      }
+      return okFor(url);
+    }]);
+  }
+
+  async function connect(d: Document): Promise<void> {
+    (d.getElementById('token') as HTMLInputElement).value = 'tk-api';
+    (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
+    d.getElementById('conn-save').click();
+  }
+
+  it('T1 同源：兜底 badge=verify state_label 且页顶「应用于」含同源读数（两页一源）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const verifyBody = { object: 'config.verify', generated_at: 'x', faces: {
+      mmc: vr('mmc', 'not-configured', '未配置'), mlc: vr('mlc', 'applied', '已落生效'),
+      rmc: vr('rmc', 'not-configured', '未配置'), rlc: vr('rlc', 'stored-not-pulled', '已存未拉'),
+    } };
+    const dom = connectedDom(log, verifyBody);
+    const d = dom.window.document;
+    await connect(d);
+    // 兜底 badge=verify 权威中文标签（直消费，UI 零复算）
+    await waitFor(() => (d.getElementById('cd-mlc-phase') as HTMLElement | null)?.textContent === '已落生效');
+    assert.equal((d.getElementById('cd-rlc-phase') as HTMLElement).textContent, '已存未拉', 'rlc badge=verify state_label');
+    // 页顶「应用于」=同一 verify 源的读数缀（face 集由域标签 display 名匹配）
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC 已落生效'));
+    assert.ok(
+      (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 本地域（TriMLC/TriRLC） · TriMLC 已落生效 · TriRLC 已存未拉'),
+      '页顶应用于读数=verify 同源（两页读数同源断言·完工门锚）',
+    );
+    assert.equal((d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMMC'), false, '域标签外 face 不进页顶缀（匹配面=本域）');
+    retireUi(dom);
+  });
+
+  it('T2 判定树退役：卡/ledger 数据说「已落生效」而 verify 说「已存未拉」→badge=verify（服务端权威单点）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const verifyBody = { object: 'config.verify', generated_at: 'x', faces: {
+      mmc: vr('mmc', 'not-configured', '未配置'), mlc: vr('mlc', 'applied', '已落生效'),
+      rmc: vr('rmc', 'not-configured', '未配置'), rlc: vr('rlc', 'stored-not-pulled', '已存未拉'),
+    } };
+    const dom = connectedDom(log, verifyBody);
+    const d = dom.window.document;
+    await connect(d);
+    // face 卡 mock 的 ledger（version_applied=1+write_result ok）按旧本地判定树=「已落生效」；
+    // verify 说 stored-not-pulled → badge 必须跟 verify（UI 不复算=判定树退役实证）
+    await waitFor(() => (d.getElementById('cd-rlc-phase') as HTMLElement | null)?.textContent === '已存未拉');
+    assert.equal((d.getElementById('cd-rlc-phase') as HTMLElement).textContent, '已存未拉', '判定树退役：badge=verify 读数非本地复算');
+    retireUi(dom);
+  });
+
+  it('T3 拉取链异常后缀：pull_chain_degraded → badge 与页顶读数同缀「·拉取链异常」', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const verifyBody = { object: 'config.verify', generated_at: 'x', faces: {
+      mmc: vr('mmc', 'not-configured', '未配置'), mlc: vr('mlc', 'applied', '已落生效', true),
+      rmc: vr('rmc', 'not-configured', '未配置'), rlc: vr('rlc', 'stored-not-pulled', '已存未拉'),
+    } };
+    const dom = connectedDom(log, verifyBody);
+    const d = dom.window.document;
+    await connect(d);
+    await waitFor(() => (d.getElementById('cd-mlc-phase') as HTMLElement | null)?.textContent.includes('拉取链异常'));
+    assert.equal((d.getElementById('cd-mlc-phase') as HTMLElement).textContent, '已落生效 ·拉取链异常', 'badge degraded 后缀（结构化面）');
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC 已落生效 ·拉取链异常'));
+    retireUi(dom);
+  });
+
+  it('T4 读取失败如实：verify 500 → 卡数据在的 face badge=「读取失败」，页顶读数同源如实', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = connectedDom(log, { error: 'boom' }, 500);
+    const d = dom.window.document;
+    await connect(d);
+    await waitFor(() => (d.getElementById('cd-mlc-phase') as HTMLElement | null)?.textContent === '读取失败');
+    assert.equal((d.getElementById('cd-rlc-phase') as HTMLElement).textContent, '读取失败', '断链候选如实（不造数）');
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC 读取失败'));
+    retireUi(dom);
+  });
+
+  it('T5 全落单词缀+未知域标签零缀（不猜）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const verifyBody = { object: 'config.verify', generated_at: 'x', faces: {
+      mmc: vr('mmc', 'applied', '已落生效'), mlc: vr('mlc', 'applied', '已落生效'),
+      rmc: vr('rmc', 'applied', '已落生效'), rlc: vr('rlc', 'applied', '已落生效'),
+    } };
+    const dom = connectedDom(log, verifyBody);
+    const d = dom.window.document;
+    await connect(d);
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('· 已落生效'));
+    assert.ok(
+      (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 本地域（TriMLC/TriRLC） · 已落生效'),
+      '全落=单词缀（不逐 face 枚举）',
+    );
+    retireUi(dom);
+
+    // 未知域标签：display 名零匹配 → 零缀（现役形态原样，不猜）
+    const log2: Array<{ url: string; init?: RequestInit }> = [];
+    const dom2 = connectedDom(log2, verifyBody, 200, { ...RUNTIME_INFO, domain_label: '未知域' });
+    const d2 = dom2.window.document;
+    await connect(d2);
+    await waitFor(() => (d2.getElementById('tc-active-line') as HTMLElement).textContent.includes('应用于 未知域'));
+    const line2 = (d2.getElementById('tc-active-line') as HTMLElement).textContent;
+    assert.equal(line2.includes('已落生效'), false, '未知标签零缀（不猜）');
+    retireUi(dom2);
+  });
+
+  it('T6 三型副文换新（CPO 定稿）+旧「三型」串零残留（渲染面）', async () => {
+    const log: Array<{ url: string; init?: RequestInit }> = [];
+    const dom = bootUi(log, [okFor]);
+    await new Promise((r) => setTimeout(r, 60));
+    const d = dom.window.document;
+    const empty = (d.getElementById('tc-r-empty') as HTMLElement).textContent;
+    assert.ok(empty.includes('支持：按时间段自动切换 / 始终用某个模型 / 用量用完自动换下一个'), '三型描述式 CPO 定稿在位');
+    assert.equal(empty.includes('时段/默认/额度三型'), false, '旧「三型」串零残留');
+    retireUi(dom);
+  });
+});

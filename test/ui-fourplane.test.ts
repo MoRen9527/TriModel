@@ -144,7 +144,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     }
     // 卡特有差异面（CPO §3.B 四行）
     assert.ok((d.getElementById('cf-rlc-special') as HTMLElement).textContent.includes('8711'), 'rlc 特有：8711 健康锚');
-    assert.ok((d.getElementById('cf-mmc-special') as HTMLElement).textContent.includes('值席'), 'mmc 特有：值席面关联');
+    assert.ok((d.getElementById('cf-mmc-special') as HTMLElement).textContent.includes('「模型策略」页同一份'), 'mmc 特有：同卡双源指引（深测②合一 S4·CPO 搭车② special 清洗后锚跟随）');
     assert.ok((d.getElementById('cf-rmc-special') as HTMLElement).textContent.includes('禁跨机复制'), 'rmc 特有：域锚约束');
     assert.ok(d.querySelector('#panel-card-mmc [data-goto="connect"]'), 'mmc 模板槽=指路连接配置（通道不重复）');
     retireUi(dom);
@@ -462,6 +462,16 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const base = faceResponder({ mmc: { present: true }, rlc: { present: true }, rmc: { present: true } });
     const responder = (url: string): Resp => {
+      // 深测②合一 S4：badge 驱动源=/v1/config/verify（判定树退役·服务端单点）——
+      // 本 mock 与下方三域三态数据面对齐（mmc=已存未拉/rlc=已落生效/rmc=已拉未落）
+      if (url === '/v1/config/verify') {
+        const lbl = { 'not-configured': '未配置', 'stored-not-pulled': '已存未拉', 'pulled-not-applied': '已拉未落', 'applied': '已落生效' } as Record<string, string>;
+        const mk = (face: string, state: string) => ({ face, state, state_label: lbl[state], pull_chain_degraded: false });
+        return { status: 200, body: { object: 'config.verify', generated_at: 'x', faces: {
+          mmc: mk('mmc', 'stored-not-pulled'), mlc: mk('mlc', 'not-configured'),
+          rmc: mk('rmc', 'pulled-not-applied'), rlc: mk('rlc', 'applied'),
+        } } };
+      }
       const m = url.match(/\/v1\/config\/cards\/(mlc|rlc|mmc|rmc)/);
       if (m && !url.includes('view=pull')) {
         // 三域三态数据面：mmc=已存未拉（拉取时点早于存盘时点）/rlc=已落生效/rmc=已拉未落

@@ -240,7 +240,7 @@
 
   <h3>模型切换规则 <button class="primary" id="tc-r-add" style="margin-left:8px;font-size:12px;padding:2px 8px">+ 新建模型切换规则</button></h3>
   <table id="tc-r-table"><thead><tr><th>规则名</th><th>类型</th><th>摘要</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-r-body"></tbody></table>
-  <div id="tc-r-empty" class="sub" style="margin-top:6px">暂无切换规则。点「新建模型切换规则」创建（时段/默认/额度三型）。</div>
+  <div id="tc-r-empty" class="sub" style="margin-top:6px">暂无切换规则。点「新建模型切换规则」创建（支持：按时间段自动切换 / 始终用某个模型 / 用量用完自动换下一个）。</div>
   <form class="card-form" id="tc-r-form" hidden style="max-width:560px">
     <h3 id="tc-r-form-title">新建模型切换规则</h3>
     <div class="field"><label>类型（先选）</label><select id="tc-r-type"><option value="time">时段（窗内用某条目，多窗）</option><option value="default">默认（其余时段用某条目）</option><option value="quota">额度（监控条目用尽依序转）</option></select></div>
@@ -336,7 +336,7 @@ const FACE_META = {
     cli: 'trirlc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rlc">读取模板</button><select id="cf-rlc-tpl-sel" hidden></select><button id="cf-rlc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rlc-tpl-msg" hidden></div>',
     bak: '<div class="sub">写卡自动留备份（保留近 5 份）；回滚前会再自动备份当前配置。</div><div class="row-form"><button data-card-bak-load="rlc">读取备份清单</button></div><div id="cf-rlc-bak-box" hidden></div>',
-    special: 'daemon 健康=8711 /healthz（态候接线）；寄居过渡形态——本机进程代管 R 面本地域，终态=独立部署本地 PC（候排）。',
+    special: '本域由本机 TriRLC 进程（8711）代管（R 面本地域）——本卡内容经该进程下发生效。',
   },
   mmc: {
     nav: 'TriMMC', meta: 'M 面 · 服务域 · M-SG 8712',
@@ -344,7 +344,7 @@ const FACE_META = {
     cli: 'trimmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">TriMMC 域的兜底直配走「兜底模型」页「M 面 · 服务域」签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往兜底模型</button></div>',
     bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
-    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=「模型策略」页同一份，策略内容见「模型策略」；TriMMC 专属卡候文件迁移方案。',
+    special: '本域读取失败时如实显示（不造数）；在此修改配置直接生效，daemon 免重启；本卡的策略内容=「模型策略」页同一份，策略编辑请到「模型策略」页。',
   },
   rmc: {
     nav: 'TriRMC', meta: 'R 面 · 服务域 · R-HY 8712',
@@ -694,6 +694,18 @@ async function refreshEffective() {
 }
 
 // ═══ 四域面卡数据面（managed 视图：掩码+状态+台账摘要；P2 随批接线）═══
+// ── 深测②合一 S4：三态读数同源通道（候裁点④ A 案 BOD 终裁）──
+// /v1/config/verify 服务端单点（deriveVerifyState 判定单源）：兜底四域 badge
+//（connLocalState）与「模型策略」页顶「应用于」读数（tcRenderActiveLine）同源
+// 消费本读数，UI 不再本地复算三态（细估 §3.4 两页读数同源；CLI show 同源一份数据）。
+const TC_FACE_DISPLAY = { mmc: 'TriMMC', mlc: 'TriMLC', rmc: 'TriRMC', rlc: 'TriRLC' };  // 与服务端 card-faces FACES.display 同值
+const TC_VERIFY_STATE_CLS = { 'applied': 'applied', 'apply-failed': 'failed', 'pulled-not-applied': 'pending', 'stored-not-pulled': 'pending', 'not-configured': 'none' };
+let tcVerifyFaces = null;   // face → verify 三态读数；null=读取失败/未拉取（断链候选如实）
+async function loadVerifyFaces() {
+  const r = await api('/v1/config/verify', { headers: adminHeaders() }).catch(() => null);
+  tcVerifyFaces = (r && r.status === 200 && r.body && r.body.faces) ? r.body.faces : null;
+  tcRenderActiveLine();     // 页顶「应用于」读数晚到补渲染（幂等）
+}
 const faceState = {}; // face -> managed body | null（null=未连接/读取失败，如实呈现）
 
 async function loadFaceCards() {
@@ -707,6 +719,7 @@ async function loadFaceCards() {
     faceState[f] = r.status === 200 ? r.body : null;
   }));
   renderFaceCards();
+  await loadVerifyFaces(); // 深测②合一 S4：三态读数先行就位（badge 首渲即真值，防闪变）
   renderConnectDomains(); // 四域直改面同源刷新（local_config+ledger 已在缓存）
 }
 
@@ -1526,21 +1539,20 @@ function connLocalState(f) {
   const st = faceState[f];
   const lc = st?.card?.local_config ?? null;
   const lf = st?.ledger?.faces?.[f] ?? null;
-  let phaseLabel = '未配置', phaseCls = 'none';
-  if (lc && lc.version > 0) {
-    const appl = lf?.local_config ?? null;
-    if (appl && appl.version_applied === lc.version && appl.write_result === 'ok') {
-      phaseLabel = '已落生效'; phaseCls = 'applied';
-    } else if (appl && appl.write_result === 'failed') {
-      phaseLabel = '落盘失败'; phaseCls = 'failed';
-    } else if (lf?.last_pull_at && lc.updated_at && lf.last_pull_at >= lc.updated_at) {
-      phaseLabel = '已拉未落'; phaseCls = 'pending';
-    } else {
-      phaseLabel = '已存未拉'; phaseCls = 'pending';
-    }
-    if (lf && (lf.last_pull_result === 'denied' || lf.last_pull_result === 'failed')) {
-      phaseLabel += ' ·拉取链异常';
-    }
+  // 深测②合一 S4：三态判定树退役（服务端 deriveVerifyState 单点下沉）——badge=
+  // verify 读数直消费（state_label 权威中文+pull_chain_degraded 结构化后缀）；
+  // 读数不可得时如实降级：卡数据在=「读取失败」（断链候选），卡数据也不在=
+  //「未配置」（未连接诚实态，原样保留）。
+  const vr = tcVerifyFaces ? tcVerifyFaces[f] : null;
+  let phaseLabel, phaseCls;
+  if (vr) {
+    phaseLabel = vr.state_label;
+    phaseCls = TC_VERIFY_STATE_CLS[vr.state] ?? 'none';
+    if (vr.pull_chain_degraded) phaseLabel += ' ·拉取链异常';
+  } else if (st) {
+    phaseLabel = '读取失败'; phaseCls = 'failed';
+  } else {
+    phaseLabel = '未配置'; phaseCls = 'none';
   }
   return { lc, lf, phaseLabel, phaseCls };
 }
@@ -1961,6 +1973,7 @@ $('tc-save').onclick = async () => {
     $('tc-dirty').textContent = '';
     tcMsg('卡片已保存，等待应用（应用完成后状态变为「已生效」）', 'ok');
     await loadTrimmc();
+    loadVerifyFaces(); // 深测②合一 S4：主卡保存=mmc face 下发意图更新——三态读数随刷
   } finally {
     saveBtn.disabled = false;
     saveBtn.textContent = prevLabel;
@@ -2232,15 +2245,33 @@ function tcRenderActiveLine() {
   if (!el) return;
   const s = tcActiveStrategy ? tcStrategies[tcActiveStrategy] : null;
   if (!s) {
-    el.textContent = '当前未启用策略——全部使用系统默认' + (tcDomainLabel ? '（应用于 ' + tcDomainLabel + '）' : '');
+    el.textContent = '当前未启用策略——全部使用系统默认' + (tcDomainLabel ? '（应用于 ' + tcDomainLabel + tcApplyStateSuffix() + '）' : '');
     return;
   }
   const hit = tcHitWindow(s);
   const defRule = s.rule_ids.map((rid) => tcRules[rid]).find((r) => r && r.type === 'default');
   const parts = ['当前生效 · 策略「' + s.name + '」'];
   parts.push(hit ? '时段窗命中 ' + hit : '默认使用 ' + (defRule ? tcWindowModel(defRule.entry_id) : '系统默认'));
-  if (tcDomainLabel) parts.push('应用于 ' + tcDomainLabel);
+  if (tcDomainLabel) parts.push('应用于 ' + tcDomainLabel + tcApplyStateSuffix());
   el.textContent = parts.join(' · ');
+}
+
+// 深测②合一 S4：「应用于」落地确认读数（verify 同源）——本域 face 集=域标签含
+// display 名匹配（未知标签不猜=零缀，现役形态原样）；全落=单词缀，有未落/异常=
+// 逐 face 如实列；读数不可得=零缀不猜。
+function tcApplyStateSuffix() {
+  if (!tcDomainLabel || !tcVerifyFaces) return '';
+  const faces = Object.keys(TC_FACE_DISPLAY).filter((f) => tcDomainLabel.includes(TC_FACE_DISPLAY[f]));
+  if (faces.length === 0) return '';
+  const allApplied = faces.every((f) => tcVerifyFaces[f] && tcVerifyFaces[f].state === 'applied');
+  if (allApplied) {
+    const degraded = faces.some((f) => tcVerifyFaces[f].pull_chain_degraded);
+    return ' · 已落生效' + (degraded ? ' ·拉取链异常' : '');
+  }
+  return ' · ' + faces.map((f) => {
+    const vr = tcVerifyFaces[f];
+    return TC_FACE_DISPLAY[f] + ' ' + (vr ? vr.state_label + (vr.pull_chain_degraded ? ' ·拉取链异常' : '') : '读取失败');
+  }).join(' · ');
 }
 
 /** 此刻时段窗命中判定（读数行专用）：now ∈ [start,end) 的窗行描述，未命中=null。 */
