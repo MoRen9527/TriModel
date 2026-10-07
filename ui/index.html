@@ -186,25 +186,29 @@
 <!-- ═══ TriRMC 卡 ═══ -->
 <div id="panel-card-rmc" class="page-panel" hidden></div>
 
-<!-- ═══ 模型策略（参照层；LG-035 面——v4 卡本体=模型集/规则/策略/活动策略，
-     原混杂卡正名归位（CPO IA §〇.1；旧栏目名随 P2 批窗退役，字面零出现，测试锚定）。
-     走查冻结期纪律：本卡页内布局零改动，菜单仅外层挂锚点零位移。═══ -->
+<!-- ═══ 模型策略（LG-058 深测②合一施工面——CPO 合一终态结构：页顶连接/读数两行+
+     四区块平铺（模型条目/模型集/切换规则/策略列表=扩权唯一策略区）；策略读数/操作/详情
+     三路分流：读数升页顶 tc-active-line·操作收行内列·详情=选中行展开（原生 details）；
+     独立生效时段展示区砍（融合入展开详情）。联席菜单机制外层挂锚零位移纪律不变。═══ -->
 <div id="panel-strategy" class="card-main page-panel" hidden>
-  <h2>☁ 模型策略（本机过渡位实例） <span id="tc-badge" class="badge none">未配置</span></h2>
+  <h2>☁ 模型策略 <span id="tc-badge" class="badge none">未配置</span></h2>
   <div class="sub" style="margin:-6px 0 10px">过渡期形态 · 常态只读（编辑窗候 CEO 终验）；保存后待应用</div>
   <div id="error-card" class="error-panel" hidden></div>
 
-  <h3>机器信息</h3>
-  <div class="row-form">
+  <!-- 页顶连接状态行（批 B：机器信息区缩并一行化，先连接后可用门禁照旧；深测②合一 S2） -->
+  <div class="row-form" id="tc-conn-line" style="margin-top:8px">
     <label>名称（必填）</label><input id="tc-conn" placeholder="本机名称" style="width:200px">
     <details><summary>连接档案（预置，只读）</summary><div class="sub" id="tc-profile">machine.json 预置档案（当前版本仅展示）</div></details>
   </div>
+  <!-- 页顶生效读数行（条 5 三路分流·读数腿：活动策略读数升页顶·去操作化——操作全收策略列表行内） -->
+  <div class="sub" id="tc-active-line" style="margin:4px 0 10px"></div>
 
   <h3>模型信息</h3>
   <div id="tc-error-entries" class="error-panel" hidden></div>
   <table id="tc-entries"><thead><tr><th>条目名</th><th>厂商</th><th>模型</th><th>密钥</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-entry-body"></tbody></table>
   <div id="tc-empty-entries" class="sub" style="margin-top:8px">暂无条目。点「添加模型条目」录入第一个模型的密钥。</div>
   <div class="row-form"><button id="tc-open-add" title="先连接后可用（未连接时禁用）">添加模型条目</button><span class="sub" id="tc-add-hint" hidden>先连接后可用</span></div>
+  <div class="row-form" style="margin-top:4px"><span id="tc-chips" class="sub">暂无已启用条目</span></div>
 
   <form class="card-form" id="tc-form" hidden>
     <h3 id="tc-form-title">添加模型条目</h3>
@@ -254,20 +258,11 @@
     </div>
   </form>
 
-  <h3>活动策略</h3>
-  <div class="sub" style="margin:-6px 0 10px">以下策略应用于 <span id="tc-domain-label">本地域（TriMLC/TriRLC）</span></div>
-  <div class="row-form">
-    <label>策略</label>
-    <select id="tc-strategy-sel" style="width:260px"><option value="">暂无策略，请先新增</option></select>
-    <button id="tc-str-switch">切换至选中策略</button>
-    <button id="tc-str-clear">清除（不使用策略）</button>
-    <button class="primary" id="tc-apply" hidden>应用到本机</button>
-  </div>
-  <div class="kv" id="tc-str-detail" style="margin-top:8px"></div>
-  <table id="tc-str-rules" style="margin-top:8px"><thead><tr><th>时段</th><th>模型</th><th>优先级</th><th>启用</th></tr></thead><tbody id="tc-str-rules-body"></tbody></table>
-  <div class="row-form"><span id="tc-chips" class="sub">暂无已启用条目</span></div>
-
+  <!-- 区 4 策略列表=扩权唯一策略区（条 5 三路分流·操作腿+详情腿：行内操作列
+       [设为生效/取消生效/应用到本机]+选中行展开详情[原生 details 最简形]）；
+       旧「活动策略」独立区壳退役——读数腿升页顶 tc-active-line，操作全收行内 -->
   <h3 style="margin-top:14px">策略列表 <button class="primary" id="tc-str-add" style="margin-left:8px;font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">+ 新增策略</button></h3>
+  <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin:4px 0 6px" hidden></div>
   <table id="tc-str-table"><thead><tr><th>名称</th><th>模型集</th><th>规则数</th><th>状态</th><th>操作</th></tr></thead><tbody id="tc-str-body"></tbody></table>
   <div id="tc-str-list-empty" class="sub" style="margin-top:6px">暂无策略。<button class="primary" style="font-size:12px;padding:2px 8px" onclick="tcOpenStrategyForm()">新增策略</button></div>
 
@@ -282,11 +277,6 @@
       <button type="button" id="tc-s-cancel">取消</button>
     </div>
   </form>
-
-  <h3 style="margin-top:14px">生效时段规则 <span class="sub">只读——规则在「规则」区管理（层2 全量开放中），当前生效=活动策略引用的规则</span></h3>
-  <table id="tc-wrules"><thead><tr><th>时段</th><th>目标条目</th><th>优先级</th><th>启用</th><th>操作</th></tr></thead><tbody id="tc-wr-body"></tbody></table>
-  <div id="tc-wr-empty" class="sub" style="margin-top:6px">暂无时段规则。点「添加时段规则」创建。</div>
-  <div id="tc-fallback-tip" class="warn" style="font-size:13px;margin-top:6px" hidden></div>
 
   <div class="row-form">
     <button class="primary" id="tc-save">保存卡片</button>
@@ -1817,9 +1807,11 @@ function tcRender() {
     tb.appendChild(tr);
   });
   tcRenderChips();
-  // D12① 单点接线：条目增删/启用翻转走 tcRender 后时段规则下拉同步重填
-  // （幂等渲染；loadTrimmc 尾的既有配对不变——双点冗余防御渲染竞态）
-  tcRenderWindowRules();
+  // D12① 单点接线（深测②合一 S2 改形）：条目增删/启用翻转走 tcRender 后策略
+  // 展示面同步重渲（行内展开条目名+回落提示）；loadTrimmc 尾的既有配对不变
+  // ——双点冗余防御渲染竞态
+  tcRenderStrategyTable();
+  tcRenderFallbackTip();
 }
 
 function tcMarkDirty() { $('tc-dirty').textContent = '（有未保存改动，保存后待应用）'; }
@@ -1890,18 +1882,26 @@ $('tc-e-save').onclick = () => {
 };
 
 // ── LG-035 本地侧：运行时信息（域标签 + 本机应用开关）──
+// 深测②合一 S2：独立策略区壳退役——域标签并入页顶生效读数行（tc-active-line），
+// 本机应用开关转行内渲染门（tcLocalApplyEnabled，策略列表「应用到本机」按钮按它出没）。
+let tcDomainLabel = '';
+let tcLocalApplyEnabled = false;
 async function loadRuntimeInfo() {
   const r = await api('/v1/config/runtime-info').catch(() => null);
   if (!r || r.status !== 200) return;
-  const label = document.getElementById('tc-domain-label');
-  if (label && r.body.domain_label) label.textContent = r.body.domain_label;
-  const applyBtn = document.getElementById('tc-apply');
-  if (applyBtn) applyBtn.hidden = !r.body.local_apply_enabled;
+  if (r.body.domain_label && r.body.domain_label !== tcDomainLabel) {
+    tcDomainLabel = r.body.domain_label;
+    tcRenderActiveLine();
+  }
+  const prevApply = tcLocalApplyEnabled;
+  tcLocalApplyEnabled = !!r.body.local_apply_enabled;
+  if (tcLocalApplyEnabled !== prevApply) tcRenderStrategyTable();  // 应用开关晚到→行内应用按钮补渲染（幂等）
 }
 
-// ── LG-035 本地侧：「应用到本机」——活动策略落本机生效面（时段切换即刻生效）──
-$('tc-apply').onclick = async () => {
-  const btn = $('tc-apply');
+// ── LG-035 本地侧：「应用到本机」——生效策略落本机生效面（时段切换即刻生效）──
+// 深测②合一 S2：按钮从页顶独立行迁策略列表生效行内（条 5 去操作化），处理逻辑函数化复用。
+async function applyActiveStrategy(btn) {
+  if (!btn) return;
   btn.disabled = true;
   const prevLabel = btn.textContent;
   btn.textContent = '应用中…';
@@ -1917,11 +1917,11 @@ $('tc-apply').onclick = async () => {
     btn.disabled = false;
     btn.textContent = prevLabel;
   }
-};
+}
 
 $('tc-save').onclick = async () => {
   const name = $('tc-conn').value.trim();
-  if (!name) return tcMsg('请先填写机器信息中的名称', 'err');
+  if (!name) return tcMsg('请先填写页顶的名称', 'err');
   // D15① 防双击：提交中禁用+「保存中…」（S7 灰系），完成/失败后恢复
   const saveBtn = $('tc-save');
   saveBtn.disabled = true;
@@ -1968,50 +1968,12 @@ $('tc-save').onclick = async () => {
 
 $('tc-reload').onclick = () => loadTrimmc().then(() => tcMsg('已重新读取', 'ok'));
 
-// ── D10 时段规则（window 规则编辑；随卡保存；应用时映射 policy window 条目）──
-let tcWindowRules = [];
-function tcRenderWindowRules() {
-  const tb = document.getElementById('tc-wr-body');
-  if (!tb) return;
-  tb.innerHTML = '';
-  // CEO 走查 2026-09-14 空显根因③→v4（23:1x 急修）：「时段规则」区直显当前生效
-  // 的规则=活动策略引用的 time 规则（整组窗行，含窗级模型）；编辑入口在规则
-  // 卡（层2），此区只读。无活动策略时空态导流照旧。
-  const emptyHint = document.getElementById('tc-wr-empty');
-  const activeStrategy = tcActiveStrategy && tcStrategies[tcActiveStrategy] ? tcStrategies[tcActiveStrategy] : null;
-  const activeTimeRules = activeStrategy
-    ? activeStrategy.rule_ids.map((rid) => tcRules[rid]).filter((r) => r && r.type === 'time' && (r.windows?.length ?? 0) > 0)
-    : [];
-  if (tcWindowRules.length === 0 && activeTimeRules.length > 0) {
-    emptyHint.hidden = false;
-    emptyHint.textContent = '以下为活动策略「' + activeStrategy.name + '」引用的时段规则（在规则管理中编辑）：';
-    for (const r of activeTimeRules) {
-      for (const w of r.windows) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td>';
-        tr.children[0].textContent = w.start + '–' + w.end;
-        tr.children[1].textContent = tcWindowModel(w.entry_id);
-        tr.children[2].textContent = String(r.priority ?? '—');
-        tr.children[3].textContent = r.enabled ? '✓' : '✗';
-        tr.children[4].textContent = '规则「' + r.name + '」';
-        tb.appendChild(tr);
-      }
-    }
-    return;
-  }
-  emptyHint.hidden = tcWindowRules.length > 0;
-  if (tcWindowRules.length === 0) {
-    emptyHint.textContent = activeStrategy
-      ? '当前无生效时段规则——活动策略「' + activeStrategy.name + '」未引用时段型规则'
-      : '暂无生效时段规则（未启用策略——全部使用系统默认）。';
-  }
-  // D15/增补件4②：chips 行（已启用条目派生只读）——固定使用概念退役后的派生展示
-  const all = { ...tcMirror, ...tcEntries };
-  const chips = Object.keys(all).filter((id) => all[id].enabled);
-  document.getElementById('tc-chips').textContent = chips.length > 0
-    ? chips.map((id) => id + '（' + all[id].model + '）').join(' · ')
-    : '暂无已启用条目';
-  // D5 回落提示（v4 语义 2026-09-14）：applied 卡活动策略 default 规则条目被停用=
+// ── D10 时段规则展示面（深测②合一 S2：独立「生效时段规则」区退役——生效规则
+// 展示融合进策略列表行展开详情（tcRenderStrategyTable）；本函数只留 D5 回落提示，
+// chips 派生归 tcRenderChips 单点（原冗余双写段一并退役）。──
+let tcWindowRules = [];  // v4 兼容位（v3 旧卡读法防 TypeError；无独立展示面消费者）
+function tcRenderFallbackTip() {
+  // D5 回落提示（v4 语义 2026-09-14）：applied 卡生效策略 default 规则条目被停用=
   // 引擎事实——「已回落：条目 X 已停用」（fixed 规则退役，default 承其位）
   const activeS = tcActiveStrategy ? tcStrategies[tcActiveStrategy] : null;
   const defRule = activeS ? activeS.rule_ids.map((rid) => tcRules[rid]).find((r) => r && r.type === 'default') : undefined;
@@ -2030,7 +1992,7 @@ function tcRenderWindowRules() {
 
 // ═══ D19→v4 三实体（策略=一等实体；策略={命名,目的,引用模型集,引用规则[]}）═══
 let tcStrategies = {};   // 策略字典（id -> StrategyEntity v4）
-let tcActiveStrategy = null;  // 活动策略 id（「活动策略」词汇定稿，「当前策略」退役）
+let tcActiveStrategy = null;  // 生效策略 id（深测②条 5：「活动策略」词汇退役——生效态=策略列表行内「生效中」徽章）
 let tcDeletedModelSets = [];  // 段B：模型集删除通道（PUT 显式移除）
 let tcDeletedRules = [];      // 段C：规则删除通道（PUT 显式移除）
 let tcModelSets = {};    // v4 模型集字典（id -> ModelSetEntity）
@@ -2141,7 +2103,8 @@ function tcRenderRules() {
       tcDeletedRules.push(id);
       tcRenderRules();
       tcFillStrategySelects();
-      tcRenderWindowRules();
+      tcRenderStrategyTable();
+      tcRenderFallbackTip();
       tcMarkDirty();
     };
     tb.appendChild(tr);
@@ -2254,93 +2217,161 @@ $('tc-r-save').onclick = () => {
   $('tc-r-form').hidden = true;
   tcRenderRules();
   tcFillStrategySelects();
-  tcRenderWindowRules();
-  tcRenderStrategyDetail();
+  tcRenderStrategyTable();   // 深测②合一 S2：生效规则展示融合行内展开——规则变更须重渲表格
+  tcRenderFallbackTip();
+  tcRenderActiveLine();
   tcMarkDirty();
 };
 
-function tcRenderStrategySel() {
-  const sel = $('tc-strategy-sel');
-  sel.innerHTML = '<option value="">暂无策略，请先新增</option>';
-  const ids = Object.keys(tcStrategies);
-  for (const id of ids) {
-    const o = document.createElement('option');
-    o.value = id; o.textContent = tcStrategies[id].name + (tcActiveStrategy === id ? '（活动中）' : '');
-    sel.appendChild(o);
-  }
-  if (tcActiveStrategy && tcStrategies[tcActiveStrategy]) sel.value = tcActiveStrategy;
-}
-
-function tcRenderStrategyDetail() {
-  const el = $('tc-str-detail');
-  const rulesBody = document.getElementById('tc-str-rules-body');
-  const rulesTable = document.getElementById('tc-str-rules');
+// ── 页顶生效读数行（深测②合一 S2：条 5 三路分流·读数腿）——原独立策略详情区
+// 读数升页顶·去操作化：当前生效策略名+时段窗命中详情（此刻命中哪窗用哪条目，
+// 无命中=默认模型）。操作腿=策略列表行内列；详情腿=选中行展开。──
+function tcRenderActiveLine() {
+  const el = $('tc-active-line');
+  if (!el) return;
   const s = tcActiveStrategy ? tcStrategies[tcActiveStrategy] : null;
-  if (rulesBody) rulesBody.innerHTML = '';
   if (!s) {
-    el.innerHTML = '<b>活动策略</b><span>无（未启用——全部使用系统默认）</span>';
-    if (rulesTable) rulesTable.hidden = true;
+    el.textContent = '当前未启用策略——全部使用系统默认' + (tcDomainLabel ? '（应用于 ' + tcDomainLabel + '）' : '');
     return;
   }
-  const setName = tcModelSets[s.model_set_id]?.name ?? '（集缺失）';
-  const defaultRule = s.rule_ids.map((rid) => tcRules[rid]).find((r) => r && r.type === 'default');
-  el.innerHTML = '<b>活动策略</b><span>' + s.name + '</span>'
-    + '<b>目的</b><span>' + (s.purpose || '—') + '</span>'
-    + '<b>引用模型集</b><span>' + setName + '</span>'
-    + '<b>默认模型</b><span>' + (defaultRule ? tcWindowModel(defaultRule.entry_id) : '（未配置，用系统默认）') + '</span>'
-    + '<b>引用规则</b><span>' + s.rule_ids.length + ' 条</span>';
-  // v4：规则列表挂策略详情内（time=窗行展开；default=全时段行；quota=徽标行）
-  if (rulesTable && rulesBody) {
-    rulesTable.hidden = s.rule_ids.length === 0;
-    for (const rid of s.rule_ids) {
-      const r = tcRules[rid];
-      if (!r) continue;
-      if (r.type === 'time') {
-        for (const w of r.windows ?? []) {
-          const tr = document.createElement('tr');
-          tr.innerHTML = '<td></td><td></td><td></td><td></td>';
-          tr.children[0].textContent = w.start + '–' + w.end;
-          tr.children[1].textContent = tcWindowModel(w.entry_id);
-          tr.children[2].textContent = '规则「' + r.name + '」';
-          tr.children[3].textContent = r.enabled ? '✓' : '✗';
-          rulesBody.appendChild(tr);
-        }
-      } else {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td></td><td></td><td></td><td></td>';
-        tr.children[0].textContent = r.type === 'default' ? '全时段（默认）' : '额度联动';
-        tr.children[1].textContent = r.type === 'default' ? tcWindowModel(r.entry_id) : '（待额度数据）';
-        tr.children[2].textContent = '规则「' + r.name + '」';
-        tr.children[3].textContent = r.enabled ? '✓' : '✗';
-        rulesBody.appendChild(tr);
-      }
-    }
-  }
+  const hit = tcHitWindow(s);
+  const defRule = s.rule_ids.map((rid) => tcRules[rid]).find((r) => r && r.type === 'default');
+  const parts = ['当前生效 · 策略「' + s.name + '」'];
+  parts.push(hit ? '时段窗命中 ' + hit : '默认使用 ' + (defRule ? tcWindowModel(defRule.entry_id) : '系统默认'));
+  if (tcDomainLabel) parts.push('应用于 ' + tcDomainLabel);
+  el.textContent = parts.join(' · ');
 }
 
+/** 此刻时段窗命中判定（读数行专用）：now ∈ [start,end) 的窗行描述，未命中=null。 */
+function tcHitWindow(s) {
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  for (const rid of s.rule_ids) {
+    const r = tcRules[rid];
+    if (!r || r.type !== 'time') continue;
+    for (const w of r.windows ?? []) {
+      if (w.start <= hhmm && hhmm < w.end) return w.start + '–' + w.end + ' → ' + tcWindowModel(w.entry_id);
+    }
+  }
+  return null;
+}
+
+// ── 策略列表（深测②合一 S2：扩权唯一策略区——条 5 操作腿+详情腿行内化）──
+// 每行：名称格挂 <details> 展开详情（用途/引用模型集/默认模型/引用规则+规则行表，
+// 生效规则展示融合于此=条 7「展开即所见」）；状态列=「生效中」徽章行内化；
+// 操作列=编辑/删除/设为生效（生效行=取消生效/应用到本机）。
 function tcRenderStrategyTable() {
   const tb = $('tc-str-body');
   tb.innerHTML = '';
   $('tc-str-list-empty').hidden = Object.keys(tcStrategies).length > 0;
   Object.entries(tcStrategies).forEach(([id, s]) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td><button data-edit style="margin-right:4px">编辑</button><button class="danger" data-del>删除</button></td>';
-    tr.children[0].textContent = s.name + (tcActiveStrategy === id ? '（活动中）' : '');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td>';
+    const active = tcActiveStrategy === id;
+
+    // 名称格：策略名+展开详情（原生 details 最简形，零动画）
+    const det = document.createElement('details');
+    det.className = 'sub';
+    const sum = document.createElement('summary');
+    sum.textContent = s.name;
+    sum.style.cursor = 'pointer';
+    det.appendChild(sum);
+    const kv = document.createElement('div');
+    kv.className = 'kv';
+    kv.style.marginTop = '4px';
+    const defaultRule = s.rule_ids.map((rid) => tcRules[rid]).find((r) => r && r.type === 'default');
+    const kvFields = [
+      ['目的', s.purpose || '—'],
+      ['引用模型集', tcModelSets[s.model_set_id]?.name ?? '（集缺失）'],
+      ['默认模型', defaultRule ? tcWindowModel(defaultRule.entry_id) : '（未配置，用系统默认）'],
+      ['引用规则', String(s.rule_ids.length) + ' 条'],
+    ];
+    for (const [k, v] of kvFields) {
+      const b = document.createElement('b');
+      b.textContent = k;
+      const sp = document.createElement('span');
+      sp.textContent = v;
+      kv.appendChild(b);
+      kv.appendChild(sp);
+    }
+    det.appendChild(kv);
+    // 规则行表（time=窗行展开；default=全时段行；quota=徽标行）——原独立详情表下沉
+    if (s.rule_ids.length > 0) {
+      const rulesTable = document.createElement('table');
+      rulesTable.style.marginTop = '6px';
+      rulesTable.innerHTML = '<thead><tr><th>时段</th><th>模型</th><th>规则</th><th>启用</th></tr></thead>';
+      const rulesBody = document.createElement('tbody');
+      for (const rid of s.rule_ids) {
+        const r = tcRules[rid];
+        if (!r) continue;
+        if (r.type === 'time') {
+          for (const w of r.windows ?? []) {
+            const rr = document.createElement('tr');
+            rr.innerHTML = '<td></td><td></td><td></td><td></td>';
+            rr.children[0].textContent = w.start + '–' + w.end;
+            rr.children[1].textContent = tcWindowModel(w.entry_id);
+            rr.children[2].textContent = '「' + r.name + '」';
+            rr.children[3].textContent = r.enabled ? '✓' : '✗';
+            rulesBody.appendChild(rr);
+          }
+        } else {
+          const rr = document.createElement('tr');
+          rr.innerHTML = '<td></td><td></td><td></td><td></td>';
+          rr.children[0].textContent = r.type === 'default' ? '全时段（默认）' : '额度联动';
+          rr.children[1].textContent = r.type === 'default' ? tcWindowModel(r.entry_id) : '（待额度数据）';
+          rr.children[2].textContent = '「' + r.name + '」';
+          rr.children[3].textContent = r.enabled ? '✓' : '✗';
+          rulesBody.appendChild(rr);
+        }
+      }
+      rulesTable.appendChild(rulesBody);
+      det.appendChild(rulesTable);
+    }
+    tr.children[0].appendChild(det);
+
     tr.children[1].textContent = tcModelSets[s.model_set_id]?.name ?? '（集缺失）';
     tr.children[2].textContent = String(s.rule_ids.length);
-    const defaultRule = s.rule_ids.map((rid) => tcRules[rid]).find((r) => r && r.type === 'default');
-    tr.children[3].textContent = defaultRule ? tcWindowModel(defaultRule.entry_id) : '—';
-    tr.children[4].textContent = tcActiveStrategy === id ? '活动中' : '—';
-    tr.querySelector('[data-edit]').onclick = () => tcOpenStrategyForm(id);
-    tr.querySelector('[data-del]').onclick = () => {
-      if (tcActiveStrategy === id) { tcMsg('活动策略使用中，请先切换', 'err'); return; }
+    // 状态列：生效中徽章行内化（条 5 锚②：「生效中」徽章在生效行可见）
+    if (active) {
+      const badge = document.createElement('span');
+      badge.className = 'badge applied';
+      badge.textContent = '生效中';
+      tr.children[3].appendChild(badge);
+    } else {
+      tr.children[3].textContent = '—';
+    }
+
+    // 操作列：编辑/删除沿旧；切换腿=设为生效|取消生效；应用腿=生效行内「应用到本机」
+    const ops = tr.children[4];
+    const mkBtn = (label, cls, fn) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      if (cls) btn.className = cls;
+      btn.style.marginRight = '4px';
+      btn.onclick = fn;
+      ops.appendChild(btn);
+    };
+    mkBtn('编辑', '', () => tcOpenStrategyForm(id));
+    mkBtn('删除', 'danger', () => {
+      if (active) { tcMsg('生效中策略，请先取消生效再删除', 'err'); return; }
       delete tcStrategies[id];
       tcDeletedStrategyIds.push(id);   // 波⑤ D1：删除通道接线（对齐 tcDeletedModelSets/tcDeletedRules 形态）
       tcRenderStrategyTable();
       tcMarkDirty();
-    };
+    });
+    mkBtn(active ? '取消生效' : '设为生效', '', () => {
+      tcActiveStrategy = active ? null : id;
+      tcMarkDirty();
+      tcMsg(active ? '已取消生效（保存卡片后生效）' : '已设为生效策略（保存卡片后生效）', 'ok');
+      tcRenderStrategyTable();
+      tcRenderActiveLine();
+    });
+    if (active && tcLocalApplyEnabled) {
+      mkBtn('应用到本机', 'primary', (ev) => applyActiveStrategy(ev.currentTarget));
+    }
     tb.appendChild(tr);
   });
+  tcRenderActiveLine();   // 读数腿与表格同源刷新（active_strategy_id 变更即反映）
 }
 
 function tcOpenStrategyForm(editId) {
@@ -2375,26 +2406,12 @@ $('tc-s-save').onclick = () => {
   };
   $('tc-str-form').hidden = true;
   tcRenderStrategyTable();
-  tcRenderStrategySel();
-  tcRenderStrategyDetail();
-  tcRenderWindowRules();
+  tcRenderFallbackTip();
   tcMarkDirty();
 };
 
-$('tc-str-switch').onclick = () => {
-  const id = $('tc-strategy-sel').value;
-  if (!id) return tcMsg('请先选择策略', 'err');
-  tcActiveStrategy = id;
-  tcMarkDirty();
-  tcMsg('已切换至策略 ' + id + '（保存卡片后生效）', 'ok');
-};
-
-$('tc-str-clear').onclick = () => {
-  tcActiveStrategy = null;
-  tcMarkDirty();
-  tcMsg('已清除策略（不使用策略）', 'ok');
-};
-
+// 深测②合一 S2：旧「切换至选中策略/清除」页顶按钮对随独立区壳退役——
+// 切换/清除收策略列表行内（tcRenderStrategyTable 操作列「设为生效/取消生效」）。
 
 async function loadTrimmc() {
   if (!adminToken()) {
@@ -2432,10 +2449,8 @@ async function loadTrimmc() {
   tcRender();
   tcRenderModelSets();
   tcRenderRules();
-  tcRenderWindowRules();
-  tcRenderStrategySel();
   tcRenderStrategyTable();
-  tcRenderStrategyDetail();
+  tcRenderFallbackTip();
   // 方案二联席：菜单数据（模型策略条目/模型集/规则）落定后幂等重渲域卡——
   // 溯源标注/规则勾选态/模型集下拉以菜单为准（loadFaceCards 先完成时的竞态闭合）
   renderFaceCards();

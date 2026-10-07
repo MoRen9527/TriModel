@@ -429,12 +429,11 @@ describe('GATE UI E2E (E1-E8): real browser, env-gated, two-phase', { skip: SKIP
     await page.context().close();
   });
 
-  it('W5 (⑤) v4: 域标签动态化（runtime-info 驱动）— 作用域小字随域显', async () => {
+  it('W5 (⑤) v4→S2: 域标签动态化（runtime-info 驱动）— 页顶生效读数行随域显（深测②合一：域标签并入 tc-active-line）', async () => {
     const page = await freshPage();
-    await gotoStrategy(page); // P2：作用域小字随策略卡面板（innerText 不含 hidden 面板文本）
+    await gotoStrategy(page); // S2：读数行随策略页顶（innerText 不含 hidden 面板文本）
     const body = await page.evaluate(() => document.body.innerText);
-    assert.ok(body.includes('以下策略应用于'), '作用域小字框架在位');
-    assert.ok(body.includes('本地域'), '本地实例域标签=本地域（runtime-info 驱动动态值；sg 域部署时由 TRIMODEL_DOMAIN_LABEL 显 sg）');
+    assert.ok(body.includes('应用于 本地域'), '页顶生效读数行域标签在位（S2：域标签并入 tc-active-line；runtime-info 驱动动态值，sg 域部署时由 TRIMODEL_DOMAIN_LABEL 显 sg）');
     await page.context().close();
   });
 });

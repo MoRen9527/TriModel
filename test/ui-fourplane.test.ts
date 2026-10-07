@@ -254,7 +254,7 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     const modelCell = d.querySelector('#cf-rlc-entries tbody tr td:nth-child(2)') as HTMLElement;
     const mcText = modelCell.textContent ?? '';
     assert.ok(mcText.includes('GLM-5.3'), '模型值在位');
-    assert.ok(mcText.includes('来自策略卡·主力集'), `溯源标注=集合名（got=${mcText.trim()}）`);
+    assert.ok(mcText.includes('来自模型策略·主力集'), `溯源标注=集合名（批 A 正名词面；got=${mcText.trim()}）`);
     // 规则适用勾选：菜单规则 r1 在列+勾选态=本域现役 rules（两边互相可见）
     const ruleChk = d.querySelector('#cf-rlc-rules input[data-face-rule]') as HTMLInputElement;
     assert.ok(ruleChk, '规则勾选框在位');
@@ -438,14 +438,18 @@ describe('LG-058 P2 四域面卡 UI 骨架', () => {
     retireUi(dom);
   });
 
-  it('⑦ 策略卡参照层正名+常态只读标注+面板隐藏不破策略卡功能', async () => {
+  it('⑦ 模型策略页正名（批 A 改名+S2 砍后缀）+常态只读标注+面板隐藏不破策略页功能', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const dom = bootUi(log, faceResponder({}));
     const d = dom.window.document;
     await waitFor(() => (d.getElementById('panel-overview') as HTMLElement).hidden === false);
     const strategyH2 = (d.querySelector('#panel-strategy h2') as HTMLElement).textContent;
-    assert.ok(strategyH2.includes('TriModel 策略卡'), '策略卡正名（参照层）');
-    assert.ok(strategyH2.includes('本机过渡位实例'), '过渡位实例标注');
+    // 批 A 19 处改名（策略卡→模型策略）+深测②合一 S2 条 2 页名砍后缀——
+    // 测试锚随批跟改（原锚『TriModel 策略卡』『本机过渡位实例』双双退役，
+    // 退役面反向锚定防回退）。
+    assert.ok(strategyH2.includes('模型策略'), '模型策略页名（批 A 正名）');
+    assert.equal(strategyH2.includes('本机过渡位实例'), false, '过渡位实例后缀已砍（S2 条 2）');
+    assert.equal(strategyH2.includes('策略卡'), false, '旧名『策略卡』零残留（批 A 断言面）');
     assert.ok(((d.getElementById('panel-strategy') as HTMLElement).textContent ?? '').includes('常态只读'), '常态只读标注（编辑窗候 CEO 终验）');
     // 面板隐藏（display:none!important）不改变元素本位显隐语义：三型字段锚仍可切换
     (Array.from(d.querySelectorAll('#page-menu .menu-btn')) as HTMLElement[]).find((b) => b.dataset.view === 'strategy').click();

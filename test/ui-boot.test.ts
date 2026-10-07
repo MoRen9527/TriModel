@@ -173,7 +173,7 @@ describe('S8.2: jsdom 首启五断言', () => {
     await new Promise((r) => setTimeout(r, 80));
   });
 
-  it('本地侧: 域标签+应用到本机按钮（runtime-info 驱动；点击 POST apply）', async () => {
+  it('本地侧: 页顶生效读数行+行内应用到本机按钮（runtime-info 驱动；点击 POST apply）——深测②合一 S2 结构（读数升页顶·操作收行内）', async () => {
     const log: Array<{ url: string; init?: RequestInit }> = [];
     const card = {
       version: 4, machine: { name: 'm' }, connection: { name: '本机' },
@@ -195,23 +195,27 @@ describe('S8.2: jsdom 首启五断言', () => {
       return okFor(url);
     }]);
     const d = dom.window.document;
-    // 域标签无鉴权即可见（runtime-info 驱动）
-    await waitFor(() => (d.getElementById('tc-domain-label') as HTMLElement).textContent.includes('本地域'));
-    assert.ok((d.getElementById('tc-domain-label') as HTMLElement).textContent.includes('TriMLC/TriRLC'), '域标签=本地域（runtime-info 驱动）');
-    // 连接后按钮可见
+    // 页顶生效读数行（域标签并入）无鉴权即可见（runtime-info 驱动；S2 读数腿）
+    await waitFor(() => (d.getElementById('tc-active-line') as HTMLElement).textContent.includes('本地域'));
+    assert.ok((d.getElementById('tc-active-line') as HTMLElement).textContent.includes('TriMLC/TriRLC'), '域标签并入页顶生效读数行（runtime-info 驱动）');
+    // 连接后：卡内 active_strategy_id=s1 → 列表行渲染+读数行出策略名
     (d.getElementById('token') as HTMLInputElement).value = 'tk-api';
     (d.getElementById('adminToken') as HTMLInputElement).value = 'tk-admin';
     d.getElementById('conn-save').click();
-    await waitFor(() => !(d.getElementById('tc-apply') as HTMLButtonElement).hidden);
-    assert.equal((d.getElementById('tc-apply') as HTMLButtonElement).hidden, false, 'local_apply_enabled=true → 应用按钮可见');
-    // hydrate 回归断言（真浏览器走查实证缺陷位 2026-09-14）：连接后策略下拉
-    // 必须含卡内策略 + 规则列表渲染（loadTrimmc 漏赋值=下拉永空）
-    await waitFor(() => Array.from((d.getElementById('tc-strategy-sel') as HTMLSelectElement).options).some((o) => o.value === 's1'));
-    assert.ok(Array.from((d.getElementById('tc-strategy-sel') as HTMLSelectElement).options).some((o) => o.value === 's1'), '连接后策略下拉必须含卡内策略（hydrate）');
-    assert.equal((d.getElementById('tc-str-detail') as HTMLElement).textContent.includes('工作时段'), true, '策略详情渲染');
-    assert.equal((d.getElementById('tc-str-rules-body') as HTMLElement).children.length, 2, '策略规则列表渲染（v4：1 time 窗行+1 default 行）');
+    // hydrate 回归断言（真浏览器走查实证缺陷位 2026-09-14；S2 新锚=列表行）：
+    // 连接后策略列表必须含卡内策略 + 页顶读数行出策略名（loadTrimmc 漏赋值=永空）
+    await waitFor(() => (d.getElementById('tc-str-body') as HTMLElement).children.length >= 1);
+    assert.ok((d.getElementById('tc-str-body') as HTMLElement).textContent.includes('工作时段'), '连接后策略列表必须含卡内策略（hydrate）');
+    assert.ok((d.getElementById('tc-active-line') as HTMLElement).textContent.includes('当前生效 · 策略「工作时段」'), '页顶生效读数行渲染（读数腿）');
+    // 行内操作列：生效行=「生效中」徽章+取消生效+应用到本机（local_apply_enabled=true）
+    await waitFor(() => Array.from(d.querySelectorAll('#tc-str-body button')).some((b) => b.textContent === '应用到本机'));
+    assert.ok((d.getElementById('tc-str-body') as HTMLElement).querySelector('.badge.applied')?.textContent.includes('生效中'), '生效中徽章在生效行可见（条5 锚②）');
+    const applyBtn = Array.from(d.querySelectorAll('#tc-str-body button')).find((b) => b.textContent === '应用到本机') as HTMLButtonElement;
+    assert.ok(applyBtn, 'local_apply_enabled=true → 行内应用到本机按钮可见（渲染门）');
+    // 展开详情规则行渲染（v4：1 time 窗行+1 default 行；详情腿=行内 details）
+    assert.equal(d.querySelectorAll('#tc-str-body details tbody tr').length, 2, '展开详情规则行渲染（v4：1 time 窗行+1 default 行）');
     // 点击 → POST apply 发出 + 成功提示
-    d.getElementById('tc-apply').click();
+    applyBtn.click();
     await waitFor(() => log.some((c) => c.url.includes('trimmc-card/apply') && c.init?.method === 'POST'));
     await waitFor(() => (d.getElementById('tc-msg') as HTMLElement).textContent.includes('已应用到本机'));
     assert.ok((d.getElementById('tc-msg') as HTMLElement).textContent.includes('已应用到本机'), 'apply 成功提示在位');
