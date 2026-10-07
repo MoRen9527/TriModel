@@ -186,11 +186,11 @@
 <!-- ═══ TriRMC 卡 ═══ -->
 <div id="panel-card-rmc" class="page-panel" hidden></div>
 
-<!-- ═══ TriModel 策略卡（参照层；LG-035 面——v4 卡本体=模型集/规则/策略/活动策略，
+<!-- ═══ 模型策略（参照层；LG-035 面——v4 卡本体=模型集/规则/策略/活动策略，
      原混杂卡正名归位（CPO IA §〇.1；旧栏目名随 P2 批窗退役，字面零出现，测试锚定）。
      走查冻结期纪律：本卡页内布局零改动，菜单仅外层挂锚点零位移。═══ -->
 <div id="panel-strategy" class="card-main page-panel" hidden>
-  <h2>☁ TriModel 策略卡（本机过渡位实例） <span id="tc-badge" class="badge none">未配置</span></h2>
+  <h2>☁ 模型策略（本机过渡位实例） <span id="tc-badge" class="badge none">未配置</span></h2>
   <div class="sub" style="margin:-6px 0 10px">过渡期形态 · 常态只读（编辑窗候 CEO 终验）；保存后待应用</div>
   <div id="error-card" class="error-panel" hidden></div>
 
@@ -296,13 +296,13 @@
   <div id="tc-msg" class="msg"></div>
 </div>
 
-<!-- ═══ 连接配置（导航层第 4 组；LG-058 N5 方案三四域化——四域各一份本地配置
+<!-- ═══ 兜底模型（导航层第 4 组；LG-058 N5 方案三四域化——四域各一份本地配置
      直改面，改→存→拉→落→效五步；CEO 定性「直接修改本地配置…直接影响
      setting.json」。旧口径「本机 Claude Code 指路便签」作废（fb-sg 栏退役，
      应急恢复命令保留）；fb-zone 本机栏已并入 TriMLC 卡）═══ -->
 <div id="panel-connect" class="page-panel" hidden>
 <section id="fb-zone">
-  <h2>连接配置 <span class="sub">四域本地配置直改面——改完经拉取下发落到该域落地配置（诚实三态：已存未拉 / 已拉未落 / 已落生效）</span></h2>
+  <h2>兜底模型 <span class="sub">四域各一份保底直配——改完经拉取下发，直接落到该域的落地配置。模型策略管平时怎么用得灵活，这里管万一的时候拿什么保底。（诚实三态：已存未拉 / 已拉未落 / 已落生效）</span></h2>
   <div class="warn" style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:10px">
     ⚠ TriModel 服务不可用时请用命令恢复（本页不承担应急兜底）：
     <code id="fb-recover-cmd" style="word-break:break-all">powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Code\ai\TriCompany\scripts\ops\local\restore-claude-direct.ps1"</code>
@@ -351,9 +351,9 @@ const FACE_META = {
     nav: 'TriMMC', meta: 'M 面 · 服务域 · M-SG 8712',
     pull: 'TriModel（M-SG 出面走本机 8460 代理）',
     cli: 'trimmc config pull｜show｜verify｜cache',
-    tpl: '<div class="sub">TriMMC 域的本地配置直改走「连接配置」页「M 面 · 服务域」签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往连接配置</button></div>',
+    tpl: '<div class="sub">TriMMC 域的兜底直配走「兜底模型」页「M 面 · 服务域」签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往兜底模型</button></div>',
     bak: '<div class="sub">候建——备份与回滚入口随后续批次开通</div>',
-    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=策略卡过渡位，策略内容见「TriModel 策略卡」；TriMMC 专属卡候文件迁移方案。',
+    special: '断链候修诚实态：卡未配置或读取失败=断链/降级如实呈现，不造数；配置更新走机内管理写面，daemon 免重启拉取；值席（MMC）拾取执行面与本卡状态关联（通知经 TriMLC poller）。注：本卡配置文件现役=模型策略过渡位，策略内容见「模型策略」；TriMMC 专属卡候文件迁移方案。',
   },
   rmc: {
     nav: 'TriRMC', meta: 'R 面 · 服务域 · R-HY 8712',
@@ -377,8 +377,8 @@ function faceCardHtml(f) {
     + '<h3>现役配置</h3>'
     + `<div class="kv" id="cf-${f}-cfg"><b>读数</b><span class="idle">暂无——连接后显示</span></div>`
     + `<table id="cf-${f}-entries" hidden><thead><tr><th>条目名</th><th>模型</th><th>密钥</th><th>启用</th><th>来源</th></tr></thead><tbody></tbody></table>`
-    // LG-058 N5 方案二联席（菜单点菜心智）：点菜必须从菜单点——模型下拉出自策略卡清单，
-    // 手填降为高级；规则适用勾选=从策略卡规则清单点进本域（选择引用层）。
+    // LG-058 N5 方案二联席（菜单点菜心智）：点菜必须从菜单点——模型下拉出自模型策略清单，
+    // 手填降为高级；规则适用勾选=从模型策略规则清单点进本域（选择引用层）。
     + `<div class="row-form" id="cf-${f}-entry-actions"><button data-face-add-entry="${f}">新增条目</button><select id="cf-${f}-set-sel" hidden></select><button data-face-bring-set="${f}" hidden>引用模型集带出</button><span class="sub" id="cf-${f}-entry-msg" hidden></span></div>`
     + `<form class="card-form" id="cf-${f}-entry-form" hidden></form>`
     + `<div class="kv" id="cf-${f}-rules"><b>本域适用规则</b><span class="idle">暂无——连接后显示</span></div>`
@@ -397,15 +397,15 @@ function faceCardHtml(f) {
     + '</section>';
 }
 
-// 导航层（§4.1：总览默认 + 四角色卡 + 策略卡 + 连接配置）
+// 导航层（§4.1：总览默认 + 四角色卡 + 模型策略 + 兜底模型）
 const VIEWS = [
   { id: 'overview', label: '当前生效' },
   { id: 'card-mlc', label: FACE_META.mlc.nav },
   { id: 'card-rlc', label: FACE_META.rlc.nav },
   { id: 'card-mmc', label: FACE_META.mmc.nav },
   { id: 'card-rmc', label: FACE_META.rmc.nav },
-  { id: 'strategy', label: 'TriModel 策略卡', title: '过渡期形态 · 常态只读（编辑窗候 CEO 终验）' },
-  { id: 'connect', label: '连接配置' },
+  { id: 'strategy', label: '模型策略', title: '过渡期形态 · 常态只读（编辑窗候 CEO 终验）' },
+  { id: 'connect', label: '兜底模型' },
 ];
 
 function buildMenu() {
@@ -485,7 +485,7 @@ document.addEventListener('click', (ev) => {
   if (cdReload) { renderConnectDomains(); return; }
 });
 
-// 方案二联席：规则适用勾选（change 委托）——勾=策略卡规则对象复制进本域卡
+// 方案二联席：规则适用勾选（change 委托）——勾=模型策略规则对象复制进本域卡
 // （upsert 既有通道）；取消=deleted_rule_ids 通道（被本域活动策略引用时守卫 400 如实报）。
 /** 规则实体引用的条目 id 全集（分型解析：time=windows/default=entry_id/quota=watch+fallback）。 */
 function ruleEntryIds(r) {
@@ -536,7 +536,7 @@ document.addEventListener('change', async (ev) => {
     const full = tcRules?.[rid];
     if (!full) {
       chk.checked = false;
-      faceEntryMsg(f, '策略卡规则数据未加载——先在策略卡页连接后再勾选', 'sub err');
+      faceEntryMsg(f, '模型策略数据未加载——先在模型策略页连接后再勾选', 'sub err');
       return;
     }
     // 悬挂前置（人话即时引导；服务端悬挂守卫为硬门）：规则按条目 id 解析，
@@ -865,13 +865,13 @@ function faceEntrySource(f) {
   return '暂无回写';
 }
 
-// ═══ 方案二联席（LG-058 N5）：策略卡=菜单，域卡=点菜 ═══
-// 点菜必须从菜单点——模型下拉出自策略卡清单，手填降为高级并显式标注「自填（菜单外）」；
-// key 不进策略面（CPO 方稿 2.4：策略卡不搬钥匙，各域域内自管——新条目密钥必填）；
-// 规则适用=从策略卡规则清单勾选复制进本域卡（选择引用层，upsert/deleted_rule_ids 既有通道）。
+// ═══ 方案二联席（LG-058 N5）：模型策略=菜单，域卡=点菜 ═══
+// 点菜必须从菜单点——模型下拉出自模型策略清单，手填降为高级并显式标注「自填（菜单外）」；
+// key 不进策略面（CPO 方稿 2.4：模型策略不搬钥匙，各域域内自管——新条目密钥必填）；
+// 规则适用=从模型策略规则清单勾选复制进本域卡（选择引用层，upsert/deleted_rule_ids 既有通道）。
 // server 零改：PUT /v1/config/cards/{face} D7 合并语义现役够用。
 
-/** 菜单快照：策略卡（过渡位 trimmc-card）条目/模型集/规则三清单（合并视图 ∪ 脏）。 */
+/** 菜单快照：模型策略（过渡位 trimmc-card）条目/模型集/规则三清单（合并视图 ∪ 脏）。 */
 function menuSnapshot() {
   const all = { ...tcMirror, ...tcEntries };
   return {
@@ -887,7 +887,7 @@ function menuOriginLabel(provider, model) {
   const hit = ms.models.find((m) => m.provider === provider && m.model === model);
   if (!hit) return '自填（菜单外）';
   const set = ms.sets.find((st) => st.entry_ids.includes(hit.id));
-  return set ? '来自策略卡·' + set.name : '来自策略卡菜单';
+  return set ? '来自模型策略·' + set.name : '来自模型策略菜单';
 }
 
 /** 反向引用清单（验收锚②③）：哪些域卡条目在点这道菜（faceState 缓存面，零额外请求）。 */
@@ -945,7 +945,7 @@ function faceEntryRow(pre) {
       const hit = ms.models.find((x) => x.provider === p && x.model === m);
       if (hit && !idIn.value.trim()) idIn.value = hit.id;
     } else if (v === '__manual__') {
-      manualIn.hidden = false; hint.textContent = '菜单外手填——建议先在策略卡登记';
+      manualIn.hidden = false; hint.textContent = '菜单外手填——建议先在模型策略登记';
     } else {
       hint.textContent = '';
     }
@@ -954,7 +954,7 @@ function faceEntryRow(pre) {
   manualIn.oninput = () => {
     const p = provIn.value.trim(), m = manualIn.value.trim();
     hint.textContent = (m && menuSnapshot().models.some((x) => x.provider === p && x.model === m))
-      ? '菜单已有此模型——建议改从下拉选' : '菜单外手填——建议先在策略卡登记';
+      ? '菜单已有此模型——建议改从下拉选' : '菜单外手填——建议先在模型策略登记';
   };
   if (pre) {
     const menuHit = ms.models.find((x) => x.provider === pre.provider && x.model === pre.model);
@@ -983,7 +983,7 @@ function openFaceEntryForm(f, prefillList) {
   if (ms.models.length === 0) {
     const warn = document.createElement('div');
     warn.className = 'sub';
-    warn.textContent = '策略卡菜单为空（未连接策略卡或暂无条目）——仍可手填，但会标注为菜单外';
+    warn.textContent = '模型策略菜单为空（未连接或暂无条目）——仍可手填，但会标注为菜单外';
     form.appendChild(warn);
   }
   for (const pre of (prefillList ?? [null])) form.appendChild(faceEntryRow(pre));
@@ -1031,7 +1031,7 @@ async function submitFaceEntries(f) {
     if (!id) return faceEntryMsg(f, '有行缺条目名', 'sub err');
     if (!model) return faceEntryMsg(f, id + '：模型必填（从菜单选或手填）', 'sub err');
     if (!effProvider) return faceEntryMsg(f, id + '：厂商必填', 'sub err');
-    if (!key) return faceEntryMsg(f, id + '：新条目需填密钥（各域密钥域内自管，策略卡不搬钥匙）', 'sub err');
+    if (!key) return faceEntryMsg(f, id + '：新条目需填密钥（各域密钥域内自管，模型策略不搬钥匙）', 'sub err');
     if (key.includes('*')) return faceEntryMsg(f, id + '：检测到占位符，请输入真实密钥', 'sub err');
     payload[id] = { provider: effProvider, model, enabled, api_key: key, ...(baseUrl ? { base_url: baseUrl } : {}) };
   }
@@ -1047,7 +1047,7 @@ async function submitFaceEntries(f) {
   }
 }
 
-/** 本域适用规则勾选行：菜单=策略卡规则清单，勾选态=本域卡现役 rules（两边互相可见）。 */
+/** 本域适用规则勾选行：菜单=模型策略规则清单，勾选态=本域卡现役 rules（两边互相可见）。 */
 function renderFaceRules(f) {
   const line = $('cf-' + f + '-rules');
   if (!line) return;
@@ -1064,7 +1064,7 @@ function renderFaceRules(f) {
   if (ms.rules.length === 0 && localIds.length === 0) {
     const idle = document.createElement('span');
     idle.className = 'idle';
-    idle.textContent = '策略卡暂无规则清单';
+    idle.textContent = '模型策略暂无规则清单';
     cell.appendChild(idle);
   }
   for (const r of ms.rules) {
@@ -1081,7 +1081,7 @@ function renderFaceRules(f) {
     if (!ms.rules.some((r) => r.id === rid)) {
       const tag = document.createElement('span');
       tag.className = 'sub';
-      tag.textContent = rid + '（策略卡已删，本域仍有副本）';
+      tag.textContent = rid + '（模型策略已删，本域仍有副本）';
       cell.appendChild(tag);
     }
   }
@@ -1266,7 +1266,7 @@ function wireEyeToggle(inputId, eyeId) {
   $(inputId).addEventListener('blur', conceal);
 }
 
-// ═══ TriModel 策略卡（LG-035 v4：S2 交互唯一模式 + S4 只写卡片→待应用 + D7 脏追踪）═══
+// ═══ 模型策略（LG-035 v4：S2 交互唯一模式 + S4 只写卡片→待应用 + D7 脏追踪）═══
 // D7 保存语义：tcEntries=脏条目（用户新增/编辑，持明文）；tcMirror=GET 只读
 // 镜像（密文条目回显）；保存=只发脏条目+deleted（后端合并），镜像永不回写。
 let tcCard = null;
@@ -1278,7 +1278,7 @@ let tcEditingId = null;
 
 function tcMsg(text, cls) { const n = $('tc-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); if (cls === 'ok' || cls === 'warn') setTimeout(() => { try { n.textContent = ''; } catch { /* detached */ } }, 6000); }
 
-// ── 连接配置页 v2（波① 2026-09-25）：模板切换+预览门控+独立钥注入+备份回滚；写入需管理令牌（服务端 fail-closed）──
+// ── 兜底模型页 v2（波① 2026-09-25）：模板切换+预览门控+独立钥注入+备份回滚；写入需管理令牌（服务端 fail-closed）──
 // P2 结构注：本机栏（模板切换+备份回滚）已并入 TriMLC 卡；此处仅 M-SG 栏+应急帮助。
 function fbMsg(text, cls) { const n = $('fb-msg'); n.textContent = text || ''; n.className = 'msg ' + (cls || ''); }
 
@@ -1469,7 +1469,7 @@ $('fb-cmd-copy').onclick = async () => {
 };
 
 // ── LG-036 TriMMC（M-SG）栏：status 读（无鉴权，X-SG-Admin-Token 转发）+restore 写（本地令牌+M-SG 令牌）──
-// ═══ 连接配置四域直改面（LG-058 N5 方案三；CPO 方稿 §3.3-3.6）═══
+// ═══ 兜底模型四域直改面（LG-058 N5 方案三；CPO 方稿 §3.3-3.6）═══
 // 四域签=M 面 · 服务域/M 面 · 本地域/R 面 · 服务域/R 面 · 本地域（CPO §3.3 序+CEO 三段式机器位正名令 2026-10-06 21:22：压缩形全站清零，与四域面卡同构）。
 // 取数零额外请求：faceState[f]（managed 缓存）.card.local_config + .ledger.faces[f]。
 // 诚实三态派生（3.6：下发没落盘不许显示成功；拉取链异常如实并注）。
@@ -2436,7 +2436,7 @@ async function loadTrimmc() {
   tcRenderStrategySel();
   tcRenderStrategyTable();
   tcRenderStrategyDetail();
-  // 方案二联席：菜单数据（策略卡条目/模型集/规则）落定后幂等重渲域卡——
+  // 方案二联席：菜单数据（模型策略条目/模型集/规则）落定后幂等重渲域卡——
   // 溯源标注/规则勾选态/模型集下拉以菜单为准（loadFaceCards 先完成时的竞态闭合）
   renderFaceCards();
 }
