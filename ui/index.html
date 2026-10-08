@@ -52,6 +52,8 @@
   .disabled-panel { opacity: 0.45; pointer-events: none; user-select: none; }
   code { background: var(--bg-subtle); padding: 1px 5px; border-radius: 3px; }
   details summary { cursor: pointer; font-size: 13px; color: var(--fg-dim); }
+  /* 页头连接设置与主布局间隙（BOD 派工 2026-10-08 09:31·CEO 走查反馈：token 行与下方网格贴死——两侧间距均未声明，本侧补 12px 入区块级 10-14px 既有节奏） */
+  #conn-settings { margin-bottom: 12px; }
   form.card-form { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 10px; max-width: 460px; }
   form.card-form .field { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; align-items: center; margin-bottom: 8px; }
   /* 型显隐根治（BOD 23:5x 走查必修）：.field 的 display:grid 会覆盖 hidden 属性的
