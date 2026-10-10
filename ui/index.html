@@ -341,7 +341,7 @@ const FACE_META = {
     special: '本域由本机 TriRLC 进程（8711）代管（R 面本地域）——本卡内容经该进程下发生效。',
   },
   mmc: {
-    nav: 'TriMMC', meta: 'M 面 · 服务域 · M-SG 8712',
+    nav: 'TriMMC', meta: 'M 面 · 服务域 · M-SG 8710',
     pull: 'TriModel（M-SG 出面走本机 8460 代理）',
     cli: 'trimmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">TriMMC 域的兜底直配走「兜底模型」页「M 面 · 服务域」签（通道不在此重复）</div><div class="row-form"><button data-goto="connect">前往兜底模型</button></div>',
@@ -349,7 +349,7 @@ const FACE_META = {
     special: '本域读取失败时如实显示（不造数）；在此修改配置直接生效，daemon 免重启；本卡的策略内容=「模型策略」页同一份，策略编辑请到「模型策略」页。',
   },
   rmc: {
-    nav: 'TriRMC', meta: 'R 面 · 服务域 · R-HY 8712',
+    nav: 'TriRMC', meta: 'R 面 · 服务域 · R-HY 8710',
     pull: 'TriModel（现役拉取端点=同机 R-HY 3333；独立服务器位候迁）',
     cli: 'trirmc config pull｜show｜verify｜cache',
     tpl: '<div class="sub">模板切换=整卡替换为预设组合，当前配置自动备份，daemon 下次拉取落地。</div><div class="row-form"><button data-card-tpl-load="rmc">读取模板</button><select id="cf-rmc-tpl-sel" hidden></select><button id="cf-rmc-tpl-apply" hidden>应用模板</button></div><div class="sub" id="cf-rmc-tpl-msg" hidden></div>',
@@ -1501,9 +1501,9 @@ $('fb-cmd-copy').onclick = async () => {
 // 保存载荷空 provider_entries 搭载（P1 候修①守卫形：键须在场，空=本次不改条目）。
 
 const CONN_DOMAINS = [
-  ['mmc', 'M 面 · 服务域', 'TriMMC · M-SG 8712'],
+  ['mmc', 'M 面 · 服务域', 'TriMMC · M-SG 8710'],
   ['mlc', 'M 面 · 本地域', 'TriMLC · 本机 8713'],
-  ['rmc', 'R 面 · 服务域', 'TriRMC · R-HY 8712'],
+  ['rmc', 'R 面 · 服务域', 'TriRMC · R-HY 8710'],
   ['rlc', 'R 面 · 本地域', 'TriRLC · 本机 8711'],
 ];
 
