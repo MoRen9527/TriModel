@@ -14,6 +14,7 @@ import { createModelClient, readConfig } from './index.js';
 import { dispatch } from './api/routes.js';
 import { migrateKeysEncToCard } from './secure-keys.js';
 import { loadCard, migrateLegacyDistCard } from './trimmc-card.js';
+import { spawnProxyWithKeys } from './proxy-spawn.js';
 import { migrateLegacyPolicy, getCardDefaultModel, registerCardDefaultModelFn, registerQuotaSignalFn, migrateLegacyPoliciesDir } from './policy.js';
 
 const HOST = process.env.TRIMODEL_HOST ?? '127.0.0.1';
@@ -139,8 +140,16 @@ async function main(): Promise<void> {
   server.listen(PORT, HOST, () => {
     console.log(`[trimodel] configuration-plane API listening on http://${HOST}:${PORT}`);
     console.log(`[trimodel] endpoints: /health /v1/models /v1/config/keys /v1/config/keys/refresh /v1/config/policy (GET|PUT) /ui`);
+    spawnProxyWithKeys();
   });
 }
+
+// ── a1 机制（BOD 裁124 续·CTO 六判据门禁一审绿·2026-11-17）──────────────
+// 进程内解卡→spawn 3334 带 env：机制正身=src/proxy-spawn.ts（本文件仅挂钩点
+// ——3333 listen 后调 spawnProxyWithKeys()·启动序末段）。
+// 源面勘正（编码期实勘）：条目活源=trimmc-card.json provider_entries
+// （key-source.ts 裁定 keys.enc 已退役）；双 GLM 条目=e-glm-anthropic/
+// e-glm-flash-anthropic；key 零出进程（父内存→子 env 链·D-46）。
 
 main().catch((err) => {
   console.error('[trimodel] failed to start:', err instanceof Error ? err.message : String(err));
