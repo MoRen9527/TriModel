@@ -9,7 +9,7 @@
 //   · 版本拒跑端到端：不匹配版本→stderr fail-visible+exit 1（禁静默跨版本）
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'path';
 import {
@@ -17,6 +17,7 @@ import {
   SUPPORTED_VERSIONS,
   validateConfig,
   versionSupported,
+  versionSourceLabel,
   shapeReadout,
   apply,
   type RunnerIo,
@@ -129,9 +130,71 @@ describe('v3 runner: Config schema 形', () => {
   });
 });
 
-// ── 版本 pin（§9.3 fail-visible） ──
+// ── 版本 pin（§9.3 fail-visible·BOD 裁135 三修①检查源面） ──
+
+function makeAnchor(dir: string, version: string, appBootVersion?: string): string {
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'dsh', version }));
+  if (appBootVersion !== undefined) {
+    const ab = join(dir, 'node_modules', '@deepseek-ai', 'dsh-app-boot');
+    mkdirSync(ab, { recursive: true });
+    writeFileSync(join(ab, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-app-boot', version: appBootVersion }));
+  }
+  return dir;
+}
+
+/** 给定 anchor 的 apply 直跑（三修①检查源面专用·stub 消息工厂同 runApply）。 */
+async function runApplyWithAnchor(anchor: string) {
+  const letterFile = join(anchor, 'letter.txt');
+  writeFileSync(letterFile, 'convene letter body (fixture)');
+  const rec: Recorder = { calls: [] };
+  const { registry } = fakeAgents(rec);
+  const io = fakeIo();
+  await apply(fakeCtx(registry), {
+    seat: 'r-duty-cto', mode: 'queue', letterFile, dshInstallAnchor: anchor,
+  }, io, (text) => ({ marker: 'stub-message', text }));
+  return { rec, io };
+}
 
 describe('v3 runner: 版本 pin fail-visible', () => {
+  it('检查源=app-boot runtime 正源（getDshRuntimeVersion 同源·CLI --version 真形）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trimodel-adoptrunner-src-'));
+    try {
+      // 主源=0.2.0-rc.2（CLI 版本族）·anchor 包=1.0.0（河源实弹错位形——主源优先不误读）
+      makeAnchor(dir, '1.0.0', '0.2.0-rc.2');
+      assert.equal(versionSourceLabel(dir), 'runtime');
+      const { io } = await runApplyWithAnchor(dir);
+      assert.equal(io.codes[0], 0, '主源在册=放行（安装域包 version 错位不误拒）');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('主源缺席→回落 anchor 包+源标记 fallback（兼容保留面）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trimodel-adoptrunner-fb-'));
+    try {
+      makeAnchor(dir, '0.2.0-rc.2'); // 无 app-boot 包
+      assert.equal(versionSourceLabel(dir), 'anchor-fallback');
+      const { io } = await runApplyWithAnchor(dir);
+      assert.equal(io.codes[0], 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('主源版本不在册=拒跑·fail-visible 消息载源标记（c7340cb66 七席 fail 形对表）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trimodel-adoptrunner-rej-'));
+    try {
+      makeAnchor(dir, '1.0.0', '2.0.0');
+      const { io } = await runApplyWithAnchor(dir);
+      assert.equal(io.codes[0], 1);
+      assert.match(io.errs[0], /not in supported matrix/);
+      assert.match(io.errs[0], /\(source=runtime\)/);
+      assert.match(io.errs[0], /2\.0\.0/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('矩阵两行在册（0.2.0-rc.2+0.2.2-rc.3·跨版本实证承录）', () => {
     assert.deepEqual([...SUPPORTED_VERSIONS], ['0.2.0-rc.2', '0.2.2-rc.3']);
     assert.ok(versionSupported('0.2.0-rc.2'));

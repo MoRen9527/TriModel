@@ -95,12 +95,34 @@ export function versionSupported(installed: string): boolean {
   return (SUPPORTED_VERSIONS as readonly string[]).includes(installed);
 }
 
+/**
+ * 版本检查源（BOD 裁135 三修令修①·检查源修正）：CLI 真形版本=getDshRuntimeVersion
+ * 同源读形——@deepseek-ai/dsh-app-boot package.json version（dsh-app-boot
+ * lib/index.js :271 源码级实锚=CLI --version 正源·零子进程同源读形）。
+ * 主源缺席/坏=回落安装域 anchor package.json（回落面 fail-visible 消息载源标记
+ * ——安装域包 version 与 CLI 版本线不同域（河源实锚 1.0.0≠0.2.0-rc.2）·回落仅
+ * 兼容保留不荐用）。 */
 export function readInstalledVersion(anchor: string): string {
+  const appBoot = join(anchor, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'package.json');
+  try {
+    const pkg = JSON.parse(readFileSync(appBoot, 'utf-8')) as { version?: string };
+    if (typeof pkg.version === 'string' && pkg.version !== '') return pkg.version;
+  } catch { /* 主源缺席→回落面 */ }
   const pkg = JSON.parse(readFileSync(join(anchor, 'package.json'), 'utf-8')) as { version?: string };
   if (typeof pkg.version !== 'string' || pkg.version === '') {
-    throw new Error(`${PLUGIN_NAME}: install anchor has no version field: ${anchor}`);
+    throw new Error(`${PLUGIN_NAME}: no version source (app-boot & anchor) under: ${anchor}`);
   }
   return pkg.version;
+}
+
+/** 版本源读数标记（fail-visible/读数诊断面用——主源=runtime 正源·回落=fallback）。 */
+export function versionSourceLabel(anchor: string): 'runtime' | 'anchor-fallback' {
+  const appBoot = join(anchor, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'package.json');
+  try {
+    const pkg = JSON.parse(readFileSync(appBoot, 'utf-8')) as { version?: string };
+    if (typeof pkg.version === 'string' && pkg.version !== '') return 'runtime';
+  } catch { /* fallthrough */ }
+  return 'anchor-fallback';
 }
 
 /** 读数面成形（D-46：状态/计数面零 letter 值）。 */
@@ -158,10 +180,11 @@ export async function apply(
   try {
     const config = validateConfig(rawConfig);
 
-    // ① 版本 pin fail-visible（§9.3）
+    // ① 版本 pin fail-visible（§9.3·BOD 裁135 修①检查源=app-boot runtime 正源）
     const installed = readInstalledVersion(config.dshInstallAnchor);
+    const srcLabel = versionSourceLabel(config.dshInstallAnchor);
     if (!versionSupported(installed)) {
-      throw new Error(`${PLUGIN_NAME}: dsh ${installed} not in supported matrix [${SUPPORTED_VERSIONS.join(', ')}] — refuse to run (fail-visible)`);
+      throw new Error(`${PLUGIN_NAME}: dsh ${installed} (source=${srcLabel}) not in supported matrix [${SUPPORTED_VERSIONS.join(', ')}] — refuse to run (fail-visible)`);
     }
 
     // ② letter 载入（文件面·零 YAML 转义域）
