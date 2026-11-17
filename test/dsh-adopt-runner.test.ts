@@ -70,7 +70,7 @@ function fakeAgents(rec: Recorder, liveRequested?: object) {
   return { registry, delivered, resumedAgent, createdAgent, liveAgent };
 }
 
-function fakeCtx(agents: object) {
+function fakeCtx(agents: object, loaderAwait?: { calls: number }) {
   return {
     get(name: string) {
       if (name === 'agents') return agents;
@@ -78,6 +78,10 @@ function fakeCtx(agents: object) {
       if (name === 'sessions') return { flush: async () => {} };
       if (name === 'fs') return { resolve: async (p: string) => p, processPath: (p: string) => p };
       if (name === 'appExit') return undefined; // io.exit 兜底面
+      if (name === 'loader') {
+        // loader await 时序面（BOD 144② 修准白盒·记录 await 调用）
+        return loaderAwait ? { await: async () => { loaderAwait.calls += 1; } } : undefined;
+      }
       return undefined;
     },
   };
@@ -153,6 +157,65 @@ async function runApplyWithAnchor(anchor: string) {
     seat: 'r-duty-cto', mode: 'queue', letterFile, dshInstallAnchor: anchor,
   }, io, (text) => ({ marker: 'stub-message', text }));
   return { rec, io };
+}
+
+// ── loader await 时序面（BOD 144② 修准·required-services 根因码级钉死） ──
+
+describe('v3 runner: loader await 前置（BOD 144② 修准）', () => {
+  it('apply 先 await loader 后取服务（headless run() 首行同款时序）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trimodel-adoptrunner-loader-'));
+    try {
+      makeAnchor(dir, '0.2.0-rc.2', '0.2.0-rc.2');
+      writeFileSync(join(dir, 'letter.txt'), 'body');
+      const rec: Recorder = { calls: [] };
+      const loaderAwait = { calls: 0 };
+      const order: string[] = [];
+      const agents = {
+        get: () => undefined,
+        resume: async () => { order.push('resume'); return { agent: fakeAgentFor(order) }; },
+        create: async () => { order.push('create'); return { agent: fakeAgentFor(order) }; },
+      };
+      const io = fakeIo();
+      const ctx = {
+        get(name: string) {
+          if (name === 'loader') return { await: async () => { loaderAwait.calls += 1; order.push('loader'); } };
+          if (name === 'agents') return agents;
+          if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'p', model: 'm' }) };
+          if (name === 'sessions') return { flush: async () => {} };
+          if (name === 'fs') return { resolve: async (p: string) => p, processPath: (p: string) => p };
+          return undefined;
+        },
+      };
+      await apply(ctx, { seat: 'r-duty-cto', mode: 'inject', letterFile: join(dir, 'letter.txt'), dshInstallAnchor: dir },
+        io, (text) => ({ marker: 'stub', text }));
+      assert.equal(io.codes[0], 0);
+      assert.equal(loaderAwait.calls, 1, 'loader await 恰一次');
+      assert.ok(order[0] === 'loader', `loader 必须先于服务触面（时序=${order.join(',')})`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('loader 缺席=零 await 直进（宿主无 loader 服务面容错）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trimodel-adoptrunner-noloader-'));
+    try {
+      makeAnchor(dir, '0.2.0-rc.2', '0.2.0-rc.2');
+      const { io } = await runApplyWithAnchor(dir);
+      assert.equal(io.codes[0], 0, 'loader 缺席不阻主序（现有白盒全走无 loader ctx 即证）');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+function fakeAgentFor(order: string[]) {
+  return {
+    session: { seq: 1 },
+    followup: () => order.push('followup'),
+    steer: () => order.push('steer'),
+    inject: () => order.push('inject'),
+    whenIdle: async () => {},
+  };
 }
 
 describe('v3 runner: 版本 pin fail-visible', () => {

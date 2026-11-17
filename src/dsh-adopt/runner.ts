@@ -178,6 +178,12 @@ export async function apply(
   buildMessage: MessageFactory | undefined = undefined,
 ): Promise<void> {
   try {
+    // ⓪ loader await 前置（BOD 144② 修准·CTO 采信）：headless runner 自身 run()
+    // 首行同款（rc.2 工件码实锚）——loader 完成前 ctx.get 服务=absent
+    // （required-services 三 profile 全缺根因·SDE 三勘挂账卷承录）。
+    const loader = ctx.get('loader') as { await(): Promise<void> } | undefined;
+    if (loader && typeof loader.await === 'function') await loader.await();
+
     const config = validateConfig(rawConfig);
 
     // ① 版本 pin fail-visible（§9.3·BOD 裁135 修①检查源=app-boot runtime 正源）
