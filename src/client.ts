@@ -53,22 +53,22 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
     // back to deepseek-v4-flash (old callers upgrade transparently).
     registry['deepseek-chat'] = {
       primary: 'deepseek',
-      fallback: 'deepseek-v4-flash',
+      fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs,
     };
     registry['deepseek-reasoner'] = {
       primary: 'deepseek',
-      fallback: 'deepseek-v4-flash',
+      fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs,
     };
     registry['deepseek-v4-pro'] = {
       primary: 'deepseek',
-      fallback: 'deepseek-v4-flash',
+      fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs * 2,
     };
     registry['deepseek-v4-flash'] = {
       primary: 'deepseek',
-      fallback: 'deepseek-v4-pro',
+      fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs,
     };
   }
@@ -133,7 +133,7 @@ registry['claude-sonnet-4-20250514'] = {
     };
     registry['claude-haiku-3-5-20250514'] = {
       primary: 'anthropic',
-      fallback: 'deepseek-v4-flash',
+      fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs,
     };
     registry['claude-opus-4-20250514'] = {
@@ -152,12 +152,12 @@ registry['claude-sonnet-4-20250514'] = {
     };
     registry['gpt-5-mini'] = {
       primary: 'openai',
-      fallback: 'deepseek-v4-flash',
+      fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs,
     };
     registry['gpt-5-nano'] = {
       primary: 'openai',
-      fallback: 'deepseek-v4-flash',
+      fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs,
     };
   }
