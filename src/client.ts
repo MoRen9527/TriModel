@@ -71,6 +71,13 @@ function buildRegistry(providers: Map<string, Provider>, config: TriModelConfig)
       fallback: 'glm-5.3-flash',
       timeoutMs: config.requestTimeoutMs,
     };
+    // deepseek-flash：CEO 948 统一定谳在册名（WO-D7-CARRYOVER-P2·非别名映射
+    // 直连 deepseek 供给轨；fallback 兜底 glm-5.3-flash 同族形）。
+    registry['deepseek-flash'] = {
+      primary: 'deepseek',
+      fallback: 'glm-5.3-flash',
+      timeoutMs: config.requestTimeoutMs,
+    };
   }
 
   // TriMetaverse-routed models
