@@ -57,7 +57,7 @@ export function readConfig(): TriModelConfig {
 
     // O-R3-1 (2026-08-13): 默认模型名同步 tmv-* 注册表（r3 教训：注册表变更必须
     // 同步默认值硬编码）。env TRIMODEL_DEFAULT_MODEL 覆盖仍优先。
-    defaultModel: process.env.TRIMODEL_DEFAULT_MODEL ?? 'tmv-deepseek-v4-pro',
+    defaultModel: process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-flash',
     fallbackModel: process.env.TRIMODEL_FALLBACK_MODEL ?? 'deepseek-v4-flash',
     requestTimeoutMs: Number(process.env.TRIMODEL_REQUEST_TIMEOUT_MS ?? 60_000),
   };

@@ -54,7 +54,7 @@ const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** Env fallback shared with keys.ts（官方名，LG-035 增补标准化）。 */
 export function envDefaultModel(): string {
-  return process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-v4-pro';
+  return process.env.TRIMODEL_DEFAULT_MODEL ?? 'deepseek-flash';
 }
 
 /**
